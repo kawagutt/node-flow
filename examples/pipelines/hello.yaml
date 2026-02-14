@@ -1,0 +1,7 @@
+steps:
+  - id: hello
+    node: hello
+    config:
+      message: "Hello, NodeFlow!"
+    on:
+      success: STOP
