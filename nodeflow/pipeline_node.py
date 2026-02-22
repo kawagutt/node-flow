@@ -1,13 +1,12 @@
 """
 PipelineNode 実装（Pipeline も Node）
 """
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 import importlib.util
 from pathlib import Path
 from .node import BaseNode
 from .context import Context
 from .config import load_node_config
-from .updates import apply_updates
 
 
 class PipelineNode(BaseNode):
@@ -46,14 +45,11 @@ class PipelineNode(BaseNode):
                 "updates": []
             }
         """
-        current_step_id = None
-        
         # step loop
         step_index = 0
         while step_index < len(self.steps):
             step = self.steps[step_index]
-            current_step_id = step.get("id")
-            
+
             # Node を実行
             result = self._execute_step(step, context)
             
@@ -103,25 +99,18 @@ class PipelineNode(BaseNode):
         if node_class is None:
             return {"status": "abort", "updates": []}
         
-        # Node config を deep merge
+        # Node config を deep merge（DEFAULT_CONFIG → config.yaml → step config）
         pipeline_config = step.get("config", {})
-        node_config = load_node_config(node_name, self.workspace_dir, pipeline_config)
+        default_config = getattr(node_class, "DEFAULT_CONFIG", {})
+        node_config = load_node_config(
+            node_name, self.workspace_dir, pipeline_config, default_config=default_config
+        )
         
         # Node インスタンス生成
         node = node_class(node_config, self.system_info)
         
-        # Node.execute を呼ぶ（BaseNode.execute が limit 評価する）
-        result = node.execute(context, step_id=step_id)
-
-        # PipelineNode 側で metrics.node_calls を add_metric（1 step = 1 call）
-        # limit は check_limits_pre/post で context.metrics["node_calls"] を見る
-        apply_updates(
-            context,
-            [{"op": "add_metric", "key": "node_calls", "value": 1}],
-            step_id=step_id,
-        )
-
-        return result
+        # Node.execute を呼ぶ（limit 評価・node_calls 加算は BaseNode.execute 内で実施）
+        return node.execute(context, step_id=step_id)
     
     def _load_node_class(self, node_name: str):
         """
@@ -206,42 +195,29 @@ class PipelineNode(BaseNode):
         Returns:
             新しい context
         """
-        # sub_context を構築
-        sub_context = Context({
-            "inputs": {},
-            "artifacts": {},
-            "metrics": {},
-            "flags": parent_context.snapshot().get("flags", {}).copy(),  # shallow copy
-        })
-        
+        # sub_context を構築（usage は親と同一参照で共有＝単一累積）
+        sub_context = Context(
+            {
+                "inputs": {},
+                "artifacts": {},
+                "metrics": {},
+                "flags": parent_context.snapshot().get("flags", {}).copy(),
+            },
+            usage=parent_context.usage,
+        )
         return sub_context
     
     def create_child_system_info(self, parent_system_info: Dict[str, Any]) -> Dict[str, Any]:
         """
-        sub pipeline 用の system_info を作成（depth を child 実行前に増やす）
+        sub pipeline 用の system_info を作成
         
         Args:
             parent_system_info: 親 system_info
         
         Returns:
-            新しい system_info（depth は +1）
+            新しい system_info（execution はシャローコピー）
         """
         child_system_info = parent_system_info.copy()
-        
-        # execution state をコピー
-        if "execution" not in child_system_info:
-            child_system_info["execution"] = {}
-        
-        child_execution = dict(child_system_info["execution"])
-        
-        # depth を増やす
-        parent_depth = child_execution.get("depth", 0)
-        child_execution["depth"] = parent_depth + 1
-        
-        # call_count と start_time は親から継承（root execution 単位で共有）
-        child_execution.setdefault("call_count", 0)
-        child_execution.setdefault("start_time", 0.0)
-        
-        child_system_info["execution"] = child_execution
-        
+        if "execution" in child_system_info:
+            child_system_info["execution"] = dict(child_system_info["execution"])
         return child_system_info

@@ -5,20 +5,70 @@ from typing import Any, Dict, Optional
 import copy
 
 
+class Usage:
+    """
+    集計型 usage（limit 判定用）。
+    単一インスタンスを共有し、add_usage で累積するのみ。
+    """
+    __slots__ = ("wall_time_sec", "cost_usd", "token_used", "node_calls")
+
+    def __init__(
+        self,
+        wall_time_sec: float = 0.0,
+        cost_usd: float = 0.0,
+        token_used: int = 0,
+        node_calls: int = 0,
+    ):
+        self.wall_time_sec = wall_time_sec
+        self.cost_usd = cost_usd
+        self.token_used = token_used
+        self.node_calls = node_calls
+
+    def add(
+        self,
+        wall_time_sec: float = 0.0,
+        cost_usd: float = 0.0,
+        token_used: int = 0,
+        node_calls: int = 0,
+    ) -> None:
+        """
+        加算（add_usage 用・BaseNode の node_calls 用）。
+        wall_time_sec / cost_usd は float に変換。token_used / node_calls は int または str(int) のみ許可（float は切り捨てせず TypeError）。
+        """
+        self.wall_time_sec += float(wall_time_sec)
+        self.cost_usd += float(cost_usd)
+        self.token_used += self._require_int(token_used, "token_used")
+        self.node_calls += self._require_int(node_calls, "node_calls")
+
+    @staticmethod
+    def _require_int(value: Any, name: str) -> int:
+        """int または str(int) のみ許可。float 等は TypeError（暗黙の切り捨てを防ぐ）。"""
+        if type(value) is int:
+            return value
+        if isinstance(value, str):
+            return int(value)
+        raise TypeError(f"{name} must be int or str(int), got {type(value).__name__}")
+
+
 class Context:
     """
     Context クラス
     
-    内部構造: {inputs, artifacts, metrics, flags}
+    内部構造: {inputs, artifacts, metrics, flags}, usage (Usage)
     execution state は含まない（system_info.execution に分離）
     """
     
-    def __init__(self, initial_data: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        initial_data: Optional[Dict[str, Any]] = None,
+        usage: Optional[Usage] = None,
+    ):
         """
         Context を初期化
         
         Args:
             initial_data: 初期データ（inputs, artifacts, metrics, flags）
+            usage: 共有する Usage インスタンス。None の場合は新規作成。
         """
         if initial_data is None:
             initial_data = {}
@@ -29,6 +79,7 @@ class Context:
             "metrics": initial_data.get("metrics", {}),
             "flags": initial_data.get("flags", {}),
         }
+        self.usage = usage if usage is not None else Usage()
     
     def get(self, path: str, default: Any = None) -> Any:
         """
@@ -131,6 +182,9 @@ class Context:
         
         first_part = parts[0]
         
+        if first_part == "usage":
+            # usage は add_usage 経由のみ。直接 set/append 禁止
+            raise ValueError("usage is read-only for set/append; use add_usage update only")
         if first_part == "artifacts":
             # artifacts.<step_id>.* のみ許可
             if len(parts) < 2:
@@ -142,7 +196,7 @@ class Context:
                     f"Artifacts path must start with 'artifacts.{step_id}.*', got: {path}"
                 )
         elif first_part == "metrics":
-            # metrics.* は許可
+            # metrics.* は許可（観測用）。step_id 不要。limit 判定には usage を使い、metrics は使わない。
             pass
         elif first_part == "flags":
             # flags.* は許可

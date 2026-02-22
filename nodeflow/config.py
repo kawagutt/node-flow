@@ -1,6 +1,7 @@
 """
 設定管理モジュール（YAML読み込み、deep merge）
 """
+import copy
 import yaml
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -34,27 +35,29 @@ def deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]
     return result
 
 
-def load_node_config(node_name: str, workspace_dir: str, pipeline_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def load_node_config(
+    node_name: str,
+    workspace_dir: str,
+    pipeline_config: Optional[Dict[str, Any]] = None,
+    default_config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """
-    Node config を読み込んで deep merge
-    
-    優先順位:
-    1. DEFAULT_CONFIG（Node クラスから取得）
+    Node config を読み込んで deep merge。
+
+    優先順位（仕様 §6）:
+    1. DEFAULT_CONFIG（Node クラスから取得し default_config で渡す）
     2. nodes/<node>/config.yaml
     3. Pipeline step config
     """
-    # nodes/<node>/config.yaml を読み込み
+    # クラス変数 DEFAULT_CONFIG の参照共有を避けるため deepcopy
+    base = copy.deepcopy(default_config) if default_config else {}
     config_path = Path(workspace_dir) / "nodes" / node_name / "config.yaml"
     folder_config = {}
     if config_path.exists():
         folder_config = load_yaml(str(config_path))
-    
-    # Pipeline step config（引数で渡される）
+
     pipeline_config = pipeline_config or {}
-    
-    # deep merge（folder_config と pipeline_config をマージ）
-    merged_config = deep_merge(folder_config, pipeline_config)
-    
+    merged_config = deep_merge(deep_merge(base, folder_config), pipeline_config)
     return merged_config
 
 

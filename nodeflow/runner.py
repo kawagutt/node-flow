@@ -40,15 +40,14 @@ class Runner:
         system_info = {
             "workspace_dir": str(self.workspace_dir),
             "run_id": self.run_id,
-            "execution": {
-                "depth": 0,
-                "call_count": 0,
-                "start_time": time.monotonic(),
-            }
+            "execution": {},
         }
         
         pipeline_config = self.global_config.get("pipeline", {})
-        node_config = load_node_config("pipeline", str(self.workspace_dir), pipeline_config)
+        default_config = getattr(PipelineNode, "DEFAULT_CONFIG", {})
+        node_config = load_node_config(
+            "pipeline", str(self.workspace_dir), pipeline_config, default_config=default_config
+        )
         
         pipeline_node = PipelineNode(node_config, system_info, pipeline_data)
         pipeline_node.execute(context, step_id="root")
