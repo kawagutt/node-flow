@@ -156,6 +156,9 @@ f_G は Graph 構造 (Nodes, Edges) と整合的な遷移関数として定義�
 
 評価順序や適用戦略は規定しない。**Core は戦略独立な意味論を前提とする。** ただしこの前提は Node の遷移関数が決定的であることに依存する。すなわち Graph の意味論 ⟦G⟧ は評価戦略に依存しない。戦略独立とは、Graph 構造と Node の遷移関数が決定的である限り、評価順序の違いが f_G の結果に影響しないことを意味する。戦略独立性は、各 Node の遷移関数が決定的であり、Graph 構造が評価順序に依存しない設計であることを前提とする。
 
+**Scope of strategy independence**  
+The strategy independence property stated above holds for well-formed acyclic Graphs. For Graphs containing cycles, the semantics ⟦G⟧ may depend on the evaluation strategy (i.e., the fixed point reached may vary). In such cases, the semantics is defined only partially, and the Execution Layer is responsible for ensuring deterministic behavior through scheduling policy (§7.1.1) and initial value injection (§8).
+
 ただし意味論 ⟦G⟧ は：
 
 * Graph 構造のみに依存する
@@ -168,8 +171,7 @@ f_G は Graph 構造 (Nodes, Edges) と整合的な遷移関数として定義�
 
 ## 3.4 Determinism
 
-Graph G が well-formed であるとは、
-構造と Node の遷移関数が決定的であるとき、意味論 ⟦G⟧ = (S_G, f_G) が一意に定まることをいう。
+Graph G が well-formed であるとは、構造と Node の遷移関数が決定的であり、かつ G が **非循環** である（または循環に対して初期値が明示的に与えられている）とき、意味論 ⟦G⟧ = (S_G, f_G) が一意に定まることをいう。循環グラフの意味論は部分的にのみ定義される。Execution Layer における循環の扱いは §8 に従う。
 
 Core Model は決定的意味論を前提とする。**Core の determinism は、Node の遷移関数 f が決定的である場合に限り成り立つ。**
 
@@ -742,6 +744,33 @@ class Usage:
 
 ---
 
+## 3.8 node_calls の定義
+
+**node_calls** とは、`BaseNode.execute()` が呼び出された回数を指す。
+
+定義：
+
+```
+node_calls := number of times BaseNode.execute() is invoked,
+              across all Nodes within the Execution Scope.
+```
+
+**カウントの規則**
+
+* **インクリメントタイミング**：node_calls は execute() の**入場時**（limit pre 評価の前）に 1 加算する。このため limit pre で即 `{}` を返した場合も 1 call としてカウントされ、max_total_node_calls による保護が正確に機能する。
+* DataNode の execute() 呼び出し 1 回 = 1 call
+* StructuralNode の execute() 呼び出し 1 回 = 1 call（内部の子 Node の call とは別にカウント）
+* resume() 経由で呼ばれた execute() もカウント対象
+* limit pre で即 `{}` を返した execute() もカウント対象（execute が呼ばれた事実をカウントする）
+
+**集約**
+
+StructuralNode は配下の全 Node（自身を含む）の node_calls を集約する。集約は `child.read_node_calls()` により行う。Runner は node_calls を管理しない。
+
+**`max_total_node_calls`**（§12.2.1.9）は、当該 Execution Scope 内の集約 node_calls がこの値に達した時点で status = limit とする。
+
+---
+
 ## 3.9 実行状態モデル（State / Usage / Context）
 
 NodeFlow v1.2 では、実行中の可変情報を **state / usage / Context** の 3 種類に分類する。それぞれの責務・所有者・可視範囲を厳密に分離する。
@@ -758,11 +787,13 @@ state とは、**Node の実行ロジックに影響する内部可変状態**�
 
 例：LLM セッション履歴、前回処理した revision、iteration カウンタ、human review 待機フラグ、キャッシュ。
 
+state には、実行ロジックに影響する可変状態のほか、**診断目的の実行結果情報（fatal 原因例外等）**を含めてよい。診断情報は実行ロジックを変更しないが、Node インスタンスのライフタイムと同一のスコープで保持される点で state と同一の性質を持つ。外部からの読み取りは `read_status()` および `read_error()` という読み取り専用 API に限る（§9.1）。
+
 | 観点 | 内容 |
 |------|------|
 | **所有者** | Node インスタンス |
 | **書き込み主体** | Node 自身のみ（run() 内） |
-| **読み取り主体** | Node 自身。外部は `read_status()` のみ参照可能（status は state の一部） |
+| **読み取り主体** | Node 自身。外部は `read_status()` および `read_error()` で参照可能（status および fatal 原因は state の一部） |
 | **ライフタイム** | Node インスタンスと同一。Loop iteration 間で保持される。当該実行終了時に破棄される |
 
 **禁止事項**
@@ -1022,6 +1053,14 @@ revision 計算に使用する **Canonical JSON** は以下を満たす。**Cano
 5. 不要な空白を含まない
 6. list の順序は保持する
 
+**非 JSON 型の扱い（確定）**
+
+Canonical JSON 化の対象に JSON 非互換型（`datetime`、`bytes`、カスタムオブジェクト等）が含まれていた場合、BaseNode は **TypeError を raise し、当該 Node の status を fatal とする**。
+
+暗黙の型変換（`str()`、`repr()` 等）は **禁止**する。暗黙変換を許可すると、変換結果が処理系・バージョン依存になり、revision の決定性が破壊される。
+
+Node 実装者は run() の戻り値が JSON 互換型のみで構成されることを保証する責任を負う。
+
 ### 5.9.2 浮動小数点の扱い
 
 浮動小数点の正規化は **RFC 8785** に従う。**NaN / Infinity は禁止**（fatal）。その他の細則は RFC 8785 および §5.9.1 に委ねる。
@@ -1032,7 +1071,23 @@ revision 計算に使用する **Canonical JSON** は以下を満たす。**Cano
 
 ### 5.9.4 _meta の扱い
 
-revision 計算時、**`_meta` フィールドは除外する**。_meta 内の他フィールド（将来拡張）も revision 計算には含めない。
+revision 計算時、**すべての階層における `_meta` フィールドは除外する**（再帰的除外）。これは出力 JSON のいかなるネスト深度においても `_meta` キーを持つオブジェクトから `_meta` を取り除いた上でハッシュ計算を行うことを意味する。
+
+形式的には：
+
+```
+strip_meta(value):
+  if value is object:
+    return { k: strip_meta(v) for k, v in value.items() if k != "_meta" }
+  if value is array:
+    return [ strip_meta(v) for v in value ]
+  return value
+
+canonical = CanonicalJSON(strip_meta(port_value))
+revision  = SHA256(canonical)
+```
+
+**理由**：ネスト内の `_meta.revision` は別ノードの出力が埋め込まれた場合に発生し得る。それを revision 計算に含めると、内容が変わっていないのに参照先の revision 変更によって自身の revision が変わるという「revision の連鎖伝播」が発生し、決定性が損なわれる。_meta 内の他フィールド（将来拡張）も revision 計算には含めない。
 
 ---
 
@@ -1261,6 +1316,24 @@ if status == "done":
 return None
 ```
 
+**status 更新タイミングの規則（確定）**
+
+StructuralNode は以下のタイミングで `self.status` を集約結果で更新しなければならない。
+
+1. **各子 Node の execute() 完了直後、終了判定の評価前**（同期・非同期いずれも。MUST be updated immediately after each child execute completes, before termination checks are evaluated).
+2. **resume() 完了後**
+
+「while ループ末尾でまとめて更新する」実装は許可しない。これにより、外部から read_status() を呼んだ時点での値は「直近の子 execute 完了時点での集約結果」を反映する。
+
+形式的には：
+
+```
+after each child_node.execute() returns:
+    self.status = argmax_priority([c.read_status() for c in children])
+```
+
+ただし、実行中（executing 中の子が存在する）は `argmax_priority` の結果が executing を返すため、`self.status` は executing のままになる（意図的）。
+
 **注意**：上記疑似コードのとおり、StructuralNode は全子ノードの status を **fatal > limit > pause > executing > done > ready** の優先順位で集約し、その結果で自身の status を決定する。例：final ノードが done でも他の子ノードが fatal なら StructuralNode は fatal。いずれかの子が executing なら StructuralNode は executing のまま（done とはならない）。
 
 **StructuralNode.execute の戻り値**：§2.1 の契約に従う。**done 時は final ノードの出力をそのまま返す**（revision 含め §6.7 に従う）。停止系では下表のとおり。
@@ -1386,6 +1459,14 @@ Runner は：
 
 **Runner は status が ready または done のノードのみ execute する。** executing / pause / limit / fatal のノードは実行しない。（async ノードが内部で await している間も status は executing のため、Runner は当該ノードを再度 execute しない。）**pause 状態のノードへの execute は、StructuralNode の `resume()` 経由でのみ行われる（§6.7）。** Runner は pause ノードを自発的にスケジュールしない。子ノードの status を読んで制御するのは StructuralNode の責務（§6.7。§2.3.3 参照）。
 
+**Atomicity requirement for parallel execution**  
+When parallel execution is enabled (§7.6), the Runner MUST ensure that the check of a Node's status and the invocation of execute() are performed atomically with respect to other Runner threads or coroutines operating on the same Node. Concretely:
+
+* A Node whose status transitions to `executing` MUST NOT be scheduled for execution again until its status leaves `executing`.
+* The mechanism for ensuring this atomicity (lock, async guard, etc.) is implementation-defined, but the invariant MUST be preserved.
+
+Violation of this invariant results in undefined behavior of Node.state.
+
 ---
 
 ## 7.4 終了判定・graceful stop
@@ -1462,6 +1543,32 @@ BaseNode.execute 内で例外を捕捉し、status を fatal にする。execute
 * PipelineNode は read_status() で status を読み、fatal なら制御する
 * Retry は通常 Node で実装する
 
+### Node の fatal 情報アクセス
+
+BaseNode は fatal 発生時、その原因例外を **state** として保持しなければならない（MUST）。state の定義および「診断目的の実行結果情報」の扱いは §3.9.1 に従う。
+
+```python
+def read_error(self) -> Exception | None:
+    """
+    status == fatal のとき、原因例外を返す。
+    fatal でない場合は None を返す。
+    """
+```
+
+**仕様**
+
+* status が fatal のときのみ例外オブジェクトを返す
+* fatal でない場合は None を返す
+* read_error() は read-only である（Node 外部からの変更は禁止）
+* StructuralNode は子 Node の read_error() を集約して上位に伝達してよい
+* Runner は read_error() を参照しない（Runner is dumb を維持）
+
+**PauseSignal / LimitSignal**  
+PauseSignal・LimitSignal は fatal ではないため read_error() は None を返す。
+
+**StructuralNode の read_error()**  
+StructuralNode は配下の**全子孫** Node の fatal 原因を集約し、`read_error()` で**すべて**の例外を返さなければならない（MUST）。返却形式は配下の全子孫の fatal 例外のリスト（`list[Exception]`）とする。自身が fatal の場合は自身の原因も含める。
+
 ---
 
 # 10. スコープルール
@@ -1516,6 +1623,50 @@ params:
 **実行時検証（v1.2）**：node 存在チェック、port 存在チェックを必須とする。shape 検証は将来拡張。
 
 PipelineNode の定義ファイル（node_pipeline.yaml）は §12.2.1.2 に記述する。
+
+---
+
+## 11.3 Node Type Registry
+
+YAML の `type` フィールドは **Node Type Registry** を通じて具体クラスに解決される。
+
+**Built-in Type（予約済み）**
+
+| type 文字列 | マッピング先クラス |
+|-------------|-------------------|
+| `"pipeline"` | PipelineNode |
+| `"loop"` | LoopNode |
+
+これらの type 文字列はユーザー定義 Node に使用してはならない（MUST NOT）。使用した場合の挙動は undefined である。
+
+**User-defined Type**
+
+ユーザー定義 Node は Registry に登録することで YAML の type フィールドから参照できる。登録方式（デコレータ・設定ファイル等）は実装定義とする。
+
+**Version との関係**  
+Registry は version（§11.4）と独立している。type 解決は version チェック（§11.4）の後に行う。
+
+---
+
+## 11.4 Version Compatibility
+
+node.yaml および node_pipeline.yaml の `version` フィールドは必須である（MUST）。
+
+**ロード時の検証**
+
+エンジンは YAML ロード時に version フィールドを検証しなければならない（MUST）。
+
+```
+if yaml.version != engine.supported_version:
+    raise VersionMismatchError(
+        f"Unsupported version: {yaml.version}. "
+        f"Engine supports: {engine.supported_version}"
+    )
+```
+
+* version フィールドが存在しない場合は **VersionMismatchError** とする
+* マイナーバージョンの後方互換性ポリシー（例：1.2 エンジンが 1.1 を読めるか）はエンジン実装者が定義する。ただしデフォルトは **厳格一致（exact match）** とする
+* version の比較は文字列完全一致とする（`"1.2"` と `"1.20"` は別物）
 
 ---
 
@@ -1902,6 +2053,8 @@ params:
 
 **`max_idle_sec`（推奨）**：**実行可能ノードが 0 かつ executing ノードが存在しない**状態が `max_idle_sec` 秒続いた場合、PipelineNode は status = limit にして graceful stop する。idle 判定は「実行可能ノードが 0」だけでは不十分で、executing 中のノードが残っていないことを条件とする。§7.5 のとおり deadlock は構造的には検出しないが、進捗がない状態は本 limit で停止できる。保存ルールは §3.3 参照。`max_idle_sec` を指定しない場合、停止保証はない。運用者の責任において limit を設定すること。
 
+**時計の基準**：max_idle_sec の経過時間は **monotonic clock（単調増加時計）** で計測しなければならない（MUST）。壁時計（wall-clock）は NTP やシステム時刻変更の影響を受けるため、idle 判定には使用しない。分散実行・非同期実装でも同一の意味論を保つため、実装は monotonic 基準で idle 継続時間を計測すること。
+
 **形式定義**：
 
 ```text
@@ -2008,7 +2161,7 @@ def run(self, inputs, params):
 
 **condition の評価対象は final ノードの「保存された最新出力」とする。** condition は **必ず Runner（StructuralNode）が保持している latest_output（Context 上の保存済み出力）** を参照して評価する。**final_node.execute() の戻り値で評価してはならない。** 出力が更新されない iteration が存在し得ることに注意する。
 
-**condition 評価の前提（形式仕様）**：condition の評価は **final_node.status == done のときのみ** 行う。`final_node.status != done` のとき（例：limit post で `{}` を返した直後、subgraph 未完了、pause / fatal / limit 伝播時）は condition を評価せず、LoopNode は停止状態を伝播する。これにより、final ノードが `{}` を返した場合に path 解決不能で誤って fatal に陥ることを防ぐ。
+**condition 評価の前提（形式仕様）**：condition の評価は **final_node.status == done のときのみ** 行う。`final_node.status != done` のとき（例：limit post で `{}` を返した直後、subgraph 未完了、pause / fatal / limit 伝播時）は condition を評価せず、LoopNode は停止状態を伝播する。これにより、final ノードが `{}` を返した場合に path 解決不能で誤って fatal に陥ることを防ぐ。**同一 iteration で limit チェックと condition の両方に該当する場合は、limit を優先し、status = limit で終了する**（§6.7 の優先順位）。
 
 **Loop condition 評価の定義域**：反復 n の終了時点における final_node の保存済み最新出力を O_n とする。condition は O_n 上で評価される。**condition が O_n 上で評価されるのは、subgraph 実行終了時に final_node.status == done である場合に限る。**
 
@@ -2246,6 +2399,10 @@ nodes/
 13. **StructuralNode は revision を再生成してはならない**（final ノードの出力をそのまま返す。§6.7）
 14. **LoopNode は同一 Execution Scope 内の iteration 間で、子 Node の同一インスタンスを再利用しなければならない**（iteration ごとに子を再生成してはならない。§12.2.2.3）
 15. **StructuralNode の status 集約は §6.7 に従う**
+16. **並列実行において、status の読み取りと execute() の呼び出しはアトミックに行われなければならない**（§7.3 Atomicity requirement）
+17. **node_calls は BaseNode.execute() の呼び出し回数として定義される**（§3.8）
+18. **revision 計算において非 JSON 型は TypeError（fatal）とする。暗黙型変換は禁止する**（§5.9）
+19. **BaseNode は fatal 発生時に原因例外を内部保持し、read_error() で公開しなければならない**（§9）
 
 ---
 
