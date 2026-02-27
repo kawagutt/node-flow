@@ -1,4 +1,4 @@
-# NodeFlow v1.2 仕様（Core / Execution 二層構造版）
+# NodeFlow v1.30 仕様
 
 ---
 
@@ -34,6 +34,13 @@ Core Model は以下のみを定義する：
 * revision
 * 実装クラス
 * Runner
+
+Core Model はさらに以下を定義しない：
+
+* invalidation（無効化・部分再評価の状態リセット）
+* 部分再評価（partial re-evaluation）
+* execution cursor（実行カーソル）
+* pause / resume（停止・再開制御）
 
 Core は純粋な計算モデルである。
 
@@ -361,9 +368,9 @@ StructuralNode MUST return `{}` if the final node returns `{}`. No implicit subs
 * **Part I — Core Model**：構文・意味論（Node / Graph / ⟦·⟧ / Loop）。実行戦略・Scheduler は定義しない。
 * **Part II — NodeFlow Execution Layer v1.2**：設計原則、Node（Execution）、入出力、Param、Revision、BaseNode、Runner、循環、例外、スコープ、定義ファイル（§1〜§11）
 * **Part III — Concrete Nodes**：各種 DataNode・StructuralNode（§12）
-* **Part IV — Invariants**：不変条件（§14）
+* **Part IV — Invariants**：不変条件（§19）
 
-まず Part I で Core を把握し、Part II で Execution Layer の詳細に進む。**不変条件は §14 にまとめる。先に §14 を一読することを推奨する。**
+まず Part I で Core を把握し、Part II で Execution Layer の詳細に進む。**不変条件は §19 にまとめる。先に §19 を一読することを推奨する。**
 
 ---
 
@@ -1958,7 +1965,7 @@ PipelineNode は graph 定義に従い、子ノード実行時にこの param �
 
 #### 12.2.1.5 pause 再開モデル（確定）
 
-**resume は §6.7 に完全に従う。** API・動作・戻り値・制約はすべて §6.7 の「resume の共通仕様」に記載する。PipelineNode 固有の補足：resume 後は termination 判定を再評価する（§6.7）。
+**resume は §6.7 に完全に従う。** API・動作・戻り値・制約はすべて §6.7 の「resume の共通仕様」に記載する。PipelineNode 固有の補足：resume 後は termination 判定を再評価する（§6.7）。複数 pause ノードが存在する場合の resume 順序および実行開始位置（execution_cursor）は §17 に従う。
 
 **LLMNode の run 設計（仕様上の参考実装）**
 
@@ -2378,7 +2385,249 @@ nodes/
 
 ---
 
-# 14. 不変条件（Invariants）
+# 14. Execution Philosophy（v1.30 追加）
+
+NodeFlow Execution Layer は：
+
+> 評価系（evaluator）ではなく、
+> 再評価制御系（controlled re-evaluation system）である。
+
+これにより：
+
+* human-in-the-loop
+* partial recomputation
+* dynamic parameter adjustment
+
+が可能になる。
+
+---
+
+# 15. Re-execution and Invalidation Model（v1.30 追加）
+
+## 15.1 Motivation
+
+Execution Layer は単なる 1-shot 実行機構ではない。
+
+NodeFlow は：
+
+> **制御付き再評価（controlled re-evaluation）モデル**
+
+である。
+
+本節では、再実行（re-execution）および invalidate の正式定義を与える。
+
+---
+
+## 15.2 Resume と Re-execution の統一
+
+### 定義
+
+```
+resume := 再評価開始位置を変更せずに再実行
+re-execution := invalidate + resume
+```
+
+両者の違いは：
+
+| 操作           | invalidate | start_index |
+| ------------ | ---------- | ----------- |
+| resume       | なし         | 現在の停止位置     |
+| re-execution | あり         | 指定位置        |
+
+---
+
+## 15.3 Invalidation の定義（確定）
+
+PipelineNode は内部に：
+
+```
+node_states: dict[node_id → status]
+execution_cursor: node_id
+```
+
+を持つ。
+
+### invalidate(node_k) の意味
+
+```
+for all nodes n reachable from node_k (including itself):
+    node_states[n] = ready
+execution_cursor = node_k
+```
+
+* 子孫ノードの DONE / PAUSE / LIMIT / FATAL を破棄
+* Node インスタンスは再生成しない
+* Node 内部 state は保持される（仕様上リセットしない）
+
+**重要**
+
+invalidate は：
+
+* state 巻き戻しではない
+* snapshot 復元ではない
+* 過去の出力履歴も保持しない
+
+単なる：
+
+> 部分再評価のための状態リセット
+
+である。
+
+---
+
+## 15.4 再実行の正式 API（v1.30 追加）
+
+```python
+PipelineNode.re_execute(start_node_id: str) -> dict
+```
+
+内部動作：
+
+```
+invalidate(start_node_id)
+resume({})
+```
+
+* resume_inputs は空 dict
+* 必要な変更は params または Context 更新による
+
+---
+
+## 15.5 再実行と revision の関係
+
+revision は I/O 契約であり、
+
+* invalidate は revision を操作しない
+* revision の比較は Node 内部責務
+* Execution Layer は revision による再実行抑制を行わない
+
+---
+
+# 16. Unified Stop Model（v1.30 追加）
+
+## 16.1 停止状態の統一
+
+Node の停止状態は：
+
+```
+pause
+limit
+fatal
+```
+
+の 3 種。
+
+これらはすべて：
+
+> 実行の中断状態
+
+である。
+
+---
+
+## 16.2 pause と limit の関係
+
+limit は：
+
+```
+pause の特殊形
+trigger = limit detection
+```
+
+である。
+
+違いは：
+
+| 状態    | trigger  | 再開条件                |
+| ----- | -------- | ------------------- |
+| pause | Node 内部  | resume 呼び出し         |
+| limit | limit 判定 | limit 条件解除 + resume |
+
+---
+
+## 16.3 limit clear
+
+新 API：
+
+```python
+PipelineNode.clear_limit()
+```
+
+動作：
+
+* limit 状態を ready に戻す
+* node_calls / idle timer 等は reset しない（TBD）
+* その後 resume 可能
+
+※ 詳細は TBD とする（branch C で詰める）
+
+---
+
+# 17. Resume Semantics Clarification（v1.30 追加）
+
+### 複数 pause ノードが存在する場合
+
+StructuralNode は：
+
+```
+graph.nodes 記述順
+```
+
+に従って pause ノードを resume する。
+
+これは §7.1.1 の determinism と整合する。
+
+---
+
+### 実行開始位置
+
+resume 後の実行は：
+
+```
+execution_cursor
+```
+
+から開始する。
+
+execution_cursor は：
+
+* pause 発生位置
+* invalidate により設定された位置
+
+---
+
+# 18. Execution Cursor（v1.30 追加）
+
+PipelineNode は内部に：
+
+```
+execution_cursor: node_id
+```
+
+を持つ。
+
+意味：
+
+> 次に実行可能判定を開始するノード
+
+ルール：
+
+1. execute 開始時は graph.nodes[0]
+2. pause 発生時は当該ノード
+3. re_execute(start_node_id) 時は start_node_id
+4. resume 時は execution_cursor から継続
+
+これにより：
+
+* resume
+* 再実行
+* 部分再評価
+
+が統一される。
+
+---
+
+# 19. 不変条件（Invariants）
 
 # Part IV — Invariants
 
@@ -2403,6 +2652,11 @@ nodes/
 17. **node_calls は BaseNode.execute() の呼び出し回数として定義される**（§3.8）
 18. **revision 計算において非 JSON 型は TypeError（fatal）とする。暗黙型変換は禁止する**（§5.9）
 19. **BaseNode は fatal 発生時に原因例外を内部保持し、read_error() で公開しなければならない**（§9）
+20. **invalidate は Node インスタンスを再生成してはならない**（§15.3）
+21. **re_execute は invalidate + resume で定義される**（§15.4）
+22. **limit は pause の特殊形である**（§16.2）
+23. **StructuralNode は execution_cursor を保持する**（§18）
+24. **resume と re-execution は execution_cursor によって統一される**（§15.2, §18）
 
 ---
 
