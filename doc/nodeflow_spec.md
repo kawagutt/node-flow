@@ -1,61 +1,47 @@
-# NodeFlow v1.30 仕様
+# NodeFlow v1.31 仕様
 
 ---
 
-# Part I — Core Model（Strict Version）
+# Part I — Core Model
 
-本章は NodeFlow の抽象計算モデルを定義する。
-構文と意味論を分離し、Execution 概念は含めない。
-
----
-
-# 0. Scope
-
-## 0.1 Core Principles
-
-Nodes do not have access to graph topology. They only receive resolved input ports. Connection information is exclusively managed by StructuralNode.
+本章は NodeFlow の抽象計算モデルを定義する。構文と意味論を分離し、Execution 概念は含めない。
 
 ---
 
-Core Model は以下のみを定義する：
+## 0. Scope
 
-* 構文（Node, Graph）
-* 意味論（Graph の評価）
-* Loop 演算子
+### 0.1 Core Principles
 
-以下は定義しない：
+Node は Graph トポロジーにアクセスしない。解決済みの input port のみを受け取る。接続情報は StructuralNode が排他的に管理する。
 
-* 実行順序
-* スケジューリング
-* 並列性
-* 制限（limit）
-* 停止制御
-* pause / status
-* revision
-* 実装クラス
-* Runner
+Core Model が定義するもの：
 
-Core Model はさらに以下を定義しない：
+- 構文（Node, Graph）
+- 意味論（Graph の評価）
+- Loop 演算子
 
-* invalidation（無効化・部分再評価の状態リセット）
-* 部分再評価（partial re-evaluation）
-* execution cursor（実行カーソル）
-* pause / resume（停止・再開制御）
+Core Model が定義しないもの：
+
+- 実行順序・スケジューリング・並列性
+- 制限（limit）・停止制御・pause / status
+- revision・実装クラス・Runner
+- invalidation（部分再評価の状態リセット）
+- 部分再評価・execution cursor・pause / resume
 
 Core は純粋な計算モデルである。
 
 ---
 
-# 1. Node
+## 1. Node
 
-## 1.1 Syntax
+### 1.1 Syntax
 
 ```
 Node = (S, f)
 ```
 
-* S : 状態空間
-* f : 遷移関数
+- S：状態空間
+- f：遷移関数
 
 入力空間を X、出力空間を Y とすると：
 
@@ -65,41 +51,35 @@ f : (X × S) → (Y × S)
 
 Node は状態付き遷移器である。
 
----
+### 1.2 Properties
 
-## 1.2 Properties
-
-* Node は black-box
-* 他 Node の存在を知らない
-* Graph 構造を知らない
-* 自身の state と inputs のみ参照可能
+- Node は black-box
+- 他 Node の存在を知らない
+- Graph 構造を知らない
+- 自身の state と inputs のみ参照可能
 
 Core は Node の内部構造を規定しない。
 
----
+### 1.3 Port structure（Core 契約）
 
-## 1.3 Port structure（Core 契約）
+**各 output port は必ず dictionary でなければならない（MUST）。**
 
-**Each output port MUST be a dictionary.**
+Core は port の具象構造を規定しない。具象的な port 構造（`_meta`、`revision` 等）は Execution Layer で定義する（Part II §5 等）。
 
-Core は port の具象構造を規定しない。具象的な port 構造（`_meta`、`revision` 等）は Execution 層で定義する（Part II §5 等）。
-
-If a Node returns a non-dict port value, the behavior is undefined and treated as fatal.
+Node が非 dict の port 値を返した場合、その振る舞いは未定義であり fatal として扱う。
 
 ---
 
-# 2. Graph
+## 2. Graph
 
-## 2.1 Syntax
+### 2.1 Syntax
 
 ```
 Graph = (Nodes, Edges)
 ```
 
-* Nodes : Node の有限集合
-* Edges : Node の出力ポートから入力ポートへの有向接続集合
-
-Edges は次の形を持つ：
+- Nodes：Node の有限集合
+- Edges：Node の出力ポートから入力ポートへの有向接続集合
 
 ```
 u.output_port → v.input_port
@@ -107,27 +87,22 @@ u.output_port → v.input_port
 
 循環は許可される。
 
----
-
-## 2.2 Boundary
+### 2.2 Boundary
 
 Graph は外部との入出力境界を持つ。
 
-* Graph 入力空間を X_G
-* Graph 出力空間を Y_G
+- Graph 入力空間：X_G
+- Graph 出力空間：Y_G
 
 境界は Graph 構造によって定まる。
 
 ---
 
-# 3. Graph Semantics
+## 3. Graph Semantics
 
-Graph は構造であり、遷移器ではない。
-Graph を遷移器として解釈するために評価意味論を定義する。
+Graph は構造であり、遷移器ではない。Graph を遷移器として解釈するために評価意味論を定義する。
 
----
-
-## 3.1 Evaluation Function
+### 3.1 Evaluation Function
 
 ```
 ⟦ · ⟧ : Graph → Node
@@ -139,71 +114,52 @@ Graph を遷移器として解釈するために評価意味論を定義する�
 ⟦G⟧ = (S_G, f_G)
 ```
 
-が定義される。
-
----
-
-## 3.2 Induced State Space
+### 3.2 Induced State Space
 
 ```
 S_G = ∏_{n ∈ Nodes} S_n
 ```
 
-各 Node の状態の直積である。
-
----
-
-## 3.3 Induced Transition
+### 3.3 Induced Transition
 
 ```
 f_G : (X_G × S_G) → (Y_G × S_G)
 ```
 
-f_G は Graph 構造 (Nodes, Edges) と整合的な遷移関数として定義される。
+**戦略独立性**：Core は戦略独立な意味論を前提とする。この前提は Node の遷移関数が決定的であることに依存する。
 
-評価順序や適用戦略は規定しない。**Core は戦略独立な意味論を前提とする。** ただしこの前提は Node の遷移関数が決定的であることに依存する。すなわち Graph の意味論 ⟦G⟧ は評価戦略に依存しない。戦略独立とは、Graph 構造と Node の遷移関数が決定的である限り、評価順序の違いが f_G の結果に影響しないことを意味する。戦略独立性は、各 Node の遷移関数が決定的であり、Graph 構造が評価順序に依存しない設計であることを前提とする。
+戦略独立性の適用範囲：well-formed な非循環 Graph に対して成立する。循環を含む Graph では評価戦略によって意味論が異なる場合がある。循環グラフの意味論は部分的にのみ定義され、Execution Layer がスケジューリングポリシー（§7.1.1）と初期値注入（§8）により決定的な振る舞いを保証する責任を持つ。
 
-**Scope of strategy independence**  
-The strategy independence property stated above holds for well-formed acyclic Graphs. For Graphs containing cycles, the semantics ⟦G⟧ may depend on the evaluation strategy (i.e., the fixed point reached may vary). In such cases, the semantics is defined only partially, and the Execution Layer is responsible for ensuring deterministic behavior through scheduling policy (§7.1.1) and initial value injection (§8).
+意味論 ⟦G⟧ は：
 
-ただし意味論 ⟦G⟧ は：
+- Graph 構造のみに依存する
+- 外部状態や時間に依存しない
+- 同一の Graph に対して同一に定まる
 
-* Graph 構造のみに依存する
-* 外部状態や時間に依存しない
-* 同一の Graph に対して同一に定まる
+### 3.4 Determinism
 
-ものとする。
+Graph G が well-formed であるとは、構造と Node の遷移関数が決定的であり、かつ G が非循環である（または循環に対して初期値が明示的に与えられている）とき、意味論 ⟦G⟧ = (S_G, f_G) が一意に定まることをいう。
 
----
-
-## 3.4 Determinism
-
-Graph G が well-formed であるとは、構造と Node の遷移関数が決定的であり、かつ G が **非循環** である（または循環に対して初期値が明示的に与えられている）とき、意味論 ⟦G⟧ = (S_G, f_G) が一意に定まることをいう。循環グラフの意味論は部分的にのみ定義される。Execution Layer における循環の扱いは §8 に従う。
-
-Core Model は決定的意味論を前提とする。**Core の determinism は、Node の遷移関数 f が決定的である場合に限り成り立つ。**
+**Core の determinism は Node の遷移関数 f が決定的である場合に限り成り立つ。**
 
 ---
 
-# 4. Loop
+## 4. Loop
 
 Loop は Graph 上に定義される高階演算子である。
 
----
-
-## 4.1 Definition
+### 4.1 Definition
 
 ```
 Loop = (G, P)
 ```
 
-* G : Graph
-* P : Y_G → Bool
+- G：Graph
+- P：Y_G → Bool
 
-ただし ⟦G⟧ = (S_G, f_G) とする。
+ただし ⟦G⟧ = (S_G, f_G)。
 
----
-
-## 4.2 Well-formedness Condition
+### 4.2 Well-formedness Condition
 
 Loop が定義可能であるためには：
 
@@ -211,19 +167,13 @@ Loop が定義可能であるためには：
 X_G = Y_G
 ```
 
-でなければならない。
-
-すなわち：
+でなければならない。すなわち：
 
 ```
 f_G : (X_G × S_G) → (X_G × S_G)
 ```
 
-である。
-
----
-
-## 4.3 Semantics
+### 4.3 Semantics
 
 初期入力 (x₀, s₀) ∈ X_G × S_G に対し：
 
@@ -241,161 +191,107 @@ Loop は収束を保証しない。
 
 ---
 
-# 5. Core Invariants
+## 5. Core Invariants
 
-* Node は状態付き遷移器である
-* Graph は Node の接続構造である
-* 任意の well-formed Graph G に対し、意味論 ⟦G⟧ は一意に定まる
-* Loop は Graph の意味論上で定義される
+- Node は状態付き遷移器である
+- Graph は Node の接続構造である
+- 任意の well-formed Graph G に対し、意味論 ⟦G⟧ は一意に定まる
+- Loop は Graph の意味論上で定義される
 
-Core は：
-
-* 実行順序
-* 時間
-* 制限
-* 実装構造
-
-を規定しない。
+Core は実行順序・時間・制限・実装構造を規定しない。
 
 ---
 
-# 6. Structural Closure
+## 6. Structural Closure
 
-Graph の意味論 ⟦G⟧ は Node である。
-
-したがって、Graph はその意味論を通じて Node として扱うことができる。
-
-この意味で、Node と Graph の構造は再帰的に閉じている。
-
-Core はこの構造的閉包性を前提とする。
+Graph の意味論 ⟦G⟧ は Node である。したがって Graph はその意味論を通じて Node として扱うことができる。Node と Graph の構造は再帰的に閉じている。
 
 ---
 
-# 7. What Is Not Defined
+## 7. Core と Implementation
 
-Core は以下を定義しない：
-
-* 実行順序
-* 時間
-* 並列性
-* 実行過程の決定性（評価順序や時間依存性）
-* 停止保証
-* 制限
-* エラー処理
-* 実装モデル
-
-意味論 ⟦G⟧ の一意性のみを前提とする。
-
+Core Model は抽象計算モデルである。実装層は Node を具体的に実装し、Graph の意味論 ⟦·⟧ を具体的実行機構として実現する。Core は実装形式を制限しない。
 ---
 
-# 8. Core と Implementation
+# Part II — NodeFlow Execution Layer v1.3
 
-Core Model は抽象計算モデルである。
-
-実装層は：
-
-* Node を具体的に実装する
-* Graph の意味論 ⟦·⟧ を具体的実行機構として実現する
-
-Core は実装形式を制限しない。
-
----
-
-# Part II — NodeFlow Execution Layer v1.2
-
-本章は Core Model の具体実装仕様である。BaseNode、execute/run、status 種類、pause、limit、revision、usage、Runner、YAML、resume 等はすべて Core の上に積んだ制御層として定義する。
+本章は Core Model の具体実装仕様である。BaseNode・execute/run・status・pause・limit・revision・usage・Runner・YAML・resume 等はすべて Core の上に積んだ制御層として定義する。
 
 ---
 
 ## 0. Execution Scope（形式定義）
 
-**Execution Scope** とは、**トップレベル StructuralNode の execute の 1 回の呼び出しのライフタイム**（通常は PipelineNode；LoopNode をトップレベルとして kick することも可能である；その呼び出しに含まれるすべてのネストした StructuralNode の実行を含む）を指す。
+**Execution Scope** とは、**トップレベル StructuralNode の execute の 1 回の呼び出しのライフタイム**（通常は PipelineNode。LoopNode をトップレベルとして kick することも可能）を指す。当該呼び出しに含まれるすべてのネストした StructuralNode の実行を含む。
 
 ```
 Execution Scope :=
-    the lifetime of a single top-level StructuralNode.execute call
-    (typically PipelineNode), including all nested StructuralNodes.
+    the lifetime of a single top-level StructuralNode.execute call,
+    including all nested StructuralNodes.
 
 Within one Execution Scope:
-- Node instances are reused
-- Context is preserved
-- revision comparison is valid
+  - Node instances are reused
+  - Context is preserved
+  - revision comparison is valid
 
 Outside this scope:
-- revision comparison is undefined
-- Node state is discarded
+  - revision comparison is undefined
+  - Node state is discarded
 ```
 
 分散実行設計では、Execution Scope を超えた revision の比較を想定しないこと。
 
-**空 dict `{}` の扱い（保存しない）**
-
-If `execute()` returns an empty dictionary (`{}`), the Runner MUST NOT update latest_output for that node.
-
-StructuralNode MUST return `{}` if the final node returns `{}`. No implicit substitution or fallback is allowed.
+**空 dict `{}` の扱い**：`execute()` が空 dict を返した場合、Runner は当該ノードの latest_output を更新してはならない（MUST NOT）。StructuralNode は final ノードが `{}` を返した場合そのまま `{}` を返す。暗黙の代替・フォールバックは禁止する。
 
 ---
 
-# 1. 設計原則
+## 1. 設計原則
 
-## 1.1 基本思想
-
-本仕様は **2 層構造**を採用する：(1) **Core Model**（Part I）(2) **Execution Layer v1.2**（Part II）。以下は Execution Layer の設計原則である。
+### 1.1 基本思想
 
 **Execution Layer では、実際の Node 実装が決定的である保証はない。**（LLMNode 等は非決定的でもよい。Core の determinism は抽象モデルの前提であり、実装層の契約ではない。）
 
-* Everything is a Node
-* PipelineNode は Graph を 1-shot 実行する Node。LoopNode は Graph を反復実行する Node。
-* **Loop も Node**（LoopNode として表現）
-* Runner is dumb
-* グローバル Context は廃止
-* データは input / output のみで流れる
-* 循環は許可
-* 終了は final ノード（graph で明示指定）による
-* 例外は Node が吸収する
-* Retry / 分岐 / Loop も通常 Node で表現する
-* **revision は I/O 契約**（Node 間の契約であり、Runner は解釈しない）
-* **状態は Node 内部に持つ**
-* **graceful stop を基本とする**
-* **kill / interrupt は持たない**
+- Everything is a Node
+- PipelineNode は Graph を 1-shot 実行する Node。LoopNode は Graph を反復実行する Node。Loop も Node（LoopNode として表現）
+- Runner is dumb
+- グローバル Context は廃止
+- データは input / output のみで流れる
+- 循環は許可
+- 終了は final ノード（graph で明示指定）による
+- 例外は Node が吸収する
+- Retry / 分岐 / Loop も通常 Node で表現する
+- **revision は I/O 契約**（Node 間の契約であり、Runner は解釈しない）
+- **状態は Node 内部に持つ**
+- **graceful stop を基本とする**
+- **kill / interrupt は持たない**
 
----
+### 1.2 全体像
 
-## 1.2 全体像
+本仕様の構成：
 
-本仕様の構成は次の順序とする。
+- **Part I — Core Model**：構文・意味論（Node / Graph / ⟦·⟧ / Loop）
+- **Part II — Execution Layer v1.3**：設計原則、Node、入出力、Param、Revision、BaseNode、Runner、循環、例外、スコープ、定義ファイル、再評価・停止・再開モデル（§1〜§12）
+- **Part III — Concrete Nodes**：各種 DataNode・StructuralNode（§13）
+- **Part IV — Invariants**：不変条件（§14）
 
-* **Part I — Core Model**：構文・意味論（Node / Graph / ⟦·⟧ / Loop）。実行戦略・Scheduler は定義しない。
-* **Part II — NodeFlow Execution Layer v1.2**：設計原則、Node（Execution）、入出力、Param、Revision、BaseNode、Runner、循環、例外、スコープ、定義ファイル（§1〜§11）
-* **Part III — Concrete Nodes**：各種 DataNode・StructuralNode（§12）
-* **Part IV — Invariants**：不変条件（§19）
+**不変条件は §14 にまとめる。先に §14 を一読することを推奨する。**
 
-まず Part I で Core を把握し、Part II で Execution Layer の詳細に進む。**不変条件は §19 にまとめる。先に §19 を一読することを推奨する。**
+### 1.3 Node 分類とクラス階層
 
----
-
-## 1.3 Node 分類とクラス階層
-
-Node は **DataNode** と **StructuralNode** に分類する。曖昧さの排除・実装ブレ防止・将来拡張のため、クラス階層を明示する。
-
-```text
+```
 Node (abstract)
  ├── DataNode (abstract)
  │       ├── LLMNode
  │       ├── ScriptNode
  │       └── ...
- │
  └── StructuralNode (abstract)
          ├── PipelineNode
          └── LoopNode
 ```
 
-| 分類 | 役割 | 詳細 |
-|------|------|------|
-| **DataNode** | run() 実装、usage 更新、limit pre/post、status 設定（revision は BaseNode が content-hash で付与） | §2, §6, §12 の「BaseNode を継承する単体 Node」に相当。LLMNode、ScriptNode など |
-| **StructuralNode** | children 管理、usage 集約、status 集約、termination 判定 | PipelineNode、LoopNode。子グラフを持ち、子の状態を集約する |
-
-共通の execute モデル・status・入出力は §2〜§4 に、DataNode 固有は §6 と §12.1 各種 Leaf Node に、StructuralNode 固有は §12.2 各種 StructuralNode（§12.2.1 PipelineNode、§12.2.2 LoopNode）に記述する。
+| 分類 | 役割 |
+|------|------|
+| **DataNode** | run() 実装、usage 更新、limit pre/post、status 設定（revision は BaseNode が content-hash で付与） |
+| **StructuralNode** | children 管理、usage 集約、status 集約、termination 判定 |
 
 ---
 
@@ -409,162 +305,95 @@ Node (abstract)
 execute(inputs: dict, params: dict) -> dict
 ```
 
-* inputs: 他ノードから渡された JSON データ
-* params: 静的実行設定（immutable）
-* return: 必ず dict（JSON）
+- inputs：他ノードから渡された JSON データ
+- params：静的実行設定（immutable）
+- return：必ず dict（JSON）
 
-**execute の戻り値契約は本節に集約する。** 他節では「§2.1 参照」とし、重複説明を避ける。
+**execute は常に dict を返さなければならない。** None や非 dict 型は仕様違反とする。成功時は output port を持つ dict、停止系では `{}` 可（詳細は §2.2）。
 
-**execute は常に dict を返さなければならない。** None や非 dict 型は仕様違反とする。この制約によりエンジンの安定性が上がる。成功時は output port を持つ dict、停止系では `{}` 可（詳細は §2.2, §6.4）。
+### 2.2 execute / run 分離
 
-**重要**：成功時は output port を持つ dict を返す。停止系（limit pre / PauseSignal / fatal、および limit post で run が成功していない場合）では、execute は空 dict `{}` を返してよい（§2.2.1, §2.2.2）。limit post で run が成功している場合は、その出力を返す（§2.2.2）。
-
----
-
-## 2.2 execute / run 分離
-
-### 2.2.1 成功時
+#### 2.2.1 成功時
 
 run が正常終了した場合：
 
-* dict を返す（各 output port を持つ）
-* 各 output port に `_meta.revision` を付与（BaseNode が自動補完）
-* status = done
+- dict を返す（各 output port を持つ）
+- 各 output port に `_meta.revision` を付与（BaseNode が自動補完）
+- status = done
 
-### 2.2.2 停止系
+#### 2.2.2 停止系
 
 以下のケースでは **execute は空 dict `{}` を返してよい**：
 
-* limit（limit post 以外。limit post の扱いは次項）
-* PauseSignal
-* fatal
-* limit post（**run が成功していない場合のみ** `{}`。run が成功している場合はその出力を返す）
+- limit pre
+- PauseSignal
+- fatal
+- limit post（run が成功していない場合のみ `{}`。run が成功している場合はその出力を返す）
 
-**limit post の明確化**：limit post には (1) run 成功後の limit 超過 と (2) run 未実行での limit 超過 がある。run が成功している場合は、その出力を返す。run が成功していない場合のみ `{}` を返してよい。**StructuralNode における「run が成功した」の定義は §6.7 に記載する。**
+**limit post の明確化**：limit post には (1) run 成功後の limit 超過 と (2) run 未実行での limit 超過 がある。run が成功している場合は、その出力を返す。run が成功していない場合のみ `{}` を返してよい。
 
-```python
-return {}
+```
+例外 → status 変換:
+  PauseSignal       → pause
+  LimitSignal       → limit
+  その他 Exception  → fatal
 ```
 
-status はそれぞれ：
+**実行の流れ（フロー図）**
 
-* limit
-* pause
-* fatal
+```
+execute(inputs, params)
+  ├ params = _freeze(params)
+  ├ status = executing
+  ├ limit pre          → 超過なら status = limit, return {} 可
+  ├ run(inputs, params)
+  │   ├ PauseSignal   → status = pause, return {} 可
+  │   ├ LimitSignal   → status = limit, return {} 可
+  │   ├ その他例外    → status = fatal, return {} 可
+  │   └ dict 返却    → 正常継続
+  ├ revision 補完
+  ├ limit post         → 超過なら status = limit
+  │                      run 成功時は revision 補完済み dict を返却
+  │                      run 未成功時は return {} 可
+  ├ status = done
+  └ return dict
+```
 
-に設定される。いずれの停止系でも execute の返り値は `{}` でよい。
-
-**execute 共通仕様**：execute は **ready または done のときに通常経路で呼べる**（done の Node は再実行可能。pause は resume 経由のみ。§2.3.2）。共通処理の流れは「ready → executing → _execute_impl() 相当（run 呼び出し＋limit pre/post）→ 例外を status に変換 → dict を返す」。
-
-**例外 → status 変換**（run 内の例外および BaseNode の limit 検出）：
-
-| 原因 | status |
-|------|--------|
-| PauseSignal | pause |
-| LimitSignal（run 内から raise）または limit pre/post 検出 | limit |
-| その他 Exception | fatal |
-
-execute は常に dict を返す。LimitSignal は BaseNode が提供する組み込み例外。run 内から raise することで limit を宣言できる（limit pre/post で検出する従来方式と併用可能）。詳細は §6.3。
-
----
-
-BaseNode は execute を共通実装し、サブクラスは run のみ実装する（詳細は §6）。**execute の流れ・フロー図は本節（§2.2）に完全に集約する。** §6.3 は BaseNode 実装上の補足のみとする。
-
-**実行の流れ**
-
-1. 最初に **status = executing** にする。
-2. **実行中**、次のいずれかで終了する：
-   * **問題（例外）** → status を **fatal** にして終了（返り値は `{}` 可）
-   * **limit pre でひっかかった** → status を **limit** にして終了（返り値は `{}` 可）
-   * **limit post でひっかかった** → status を **limit** にして終了（run 成功時はその dict を返す、run 未成功時は `{}` 可）
-   * **run が PauseSignal を raise した** → status を **pause** にして終了（返り値は `{}` 可）
-   * **run が LimitSignal を raise した** → status を **limit** にして終了（返り値は `{}` 可）
-   * **最後まで問題なく動いた** → status を **done** にして終了（dict を返す）
-3. status は **read_status()** で読むだけ（制御ではない）。execute の返り値には含めない。
-
-**PauseSignal**：BaseNode が提供する組み込み例外。run 内から raise することで pause を宣言する。PauseSignal 以外の例外はすべて fatal として扱う。run の戻り値による pause 表現は採用しない（戻り値は常に dict）。
-
-**pause の性質**
-
-* Node は内部状態（LLM セッション履歴など）を保持したまま停止する。pause は「実行未完了」ではなく**中断状態で安定している**状態である。
-* execute の返り値は `{}`
-* Runner はそのノードを再スケジュールしない
-* 再開は外部から PipelineNode の `resume()` を呼ぶことでのみ行う（§12.2.1.5）。resume_inputs_schema は外部に「何を渡せばよいか」を伝える参考情報であり、エンジンは解釈しない。
+**BaseNode が提供する組み込み例外：**
 
 ```python
-# BaseNode が提供する組み込み例外
 class PauseSignal(Exception):
-    """
-    run() 内から raise することで pause を宣言する。
-    Node は内部状態を保持したまま停止する。
-    resume_inputs_schema は外部に「何を渡せばよいか」を伝える参考情報。
-    エンジンはこれを解釈しない。
-    """
+    """run() 内から raise することで pause を宣言する。"""
     def __init__(self, reason: str = "", resume_inputs_schema: dict = None):
         self.reason = reason
         self.resume_inputs_schema = resume_inputs_schema or {}
 
 class LimitSignal(Exception):
-    """run() 内から raise することで limit を宣言する。limit pre/post による検出と併用可能。"""
+    """run() 内から raise することで limit を宣言する。"""
     def __init__(self, reason: str = ""):
         self.reason = reason
 ```
 
-```
-execute(inputs, params)
-  ├ params = _freeze(params)   # shallow freeze（§4.4）
-  ├ status = executing
-  ├ limit pre          → 超過なら status = limit, return {} 可
-  ├ run(inputs, params)
-  │   ├ PauseSignal   → status = pause, return {} 可
-  │   ├ LimitSignal   → status = limit, return {} 可（revision 補完・limit post をスキップ。§6.3 ②）
-  │   ├ その他例外    → status = fatal, return {} 可
-  │   └ dict 返却    → 正常継続
-  ├ revision 補完
-  ├ limit post         → 超過なら status = limit; run 成功時は revision 補完済み dict を返却, run 未成功時は return {} 可
-  ├ status = done
-  └ return dict
-```
+### 2.3 Node 状態モデル
 
-* limit pre: 実行前の limit チェック。超過時は run を呼ばず status = limit、return `{}` 可。
-* limit post: 実行後の limit チェック。詳細は §6.3 ④ 参照。
-* run: ノード固有処理。PauseSignal を raise すれば status = pause。LimitSignal を raise すれば status = limit（revision 補完・limit post はスキップ）。その他の例外は execute が吸収し status = fatal。
-* revision 補完: 欠落時は BaseNode が自動付与。
+#### 2.3.1 Node が持つ状態
 
-Runner は execute のみ呼ぶ。
-
----
-
-## 2.3 Node 状態モデル（確定）
-
-### 2.3.1 Node が持つ状態
-
-Node は内部に **status**（予約フィールドではない。内部状態）を持つ。状態集合は **ready, executing, done, pause, limit, fatal** の 6 値とする。**内部実装では Enum を使用することを推奨する。** 外部 API（read_status() の戻り値など）は string とし、"done" / "Done" / "completed" などの表記ゆれを防ぐ。
+Node は内部に **status** を持つ。状態集合は **ready, executing, done, pause, limit, fatal** の 6 値とする。外部 API（read_status() の戻り値）は string とする。
 
 **状態遷移（FSM）**
 
-**DataNode**（単体 Node）：
-
-```
-ready → executing
-executing → done
-executing → pause
-executing → limit
-executing → fatal
-pause → executing（resume 経由のみ。§12.2.1.5）
-```
-
-**StructuralNode**：同様だが、done は子の状態集約で決定する（§6.7）。
+DataNode：
 
 ```
 ready → executing → done
-                     ↘ fatal
-                     ↘ pause → executing（resume 経由。§12.2.1.5）
-                     ↘ limit
+                 ↘ pause → executing（resume 経由のみ）
+                 ↘ limit
+                 ↘ fatal
 ```
 
-| status    | 意味                   |
-| --------- | ---------------------- |
+StructuralNode：同様だが、done は子の状態集約で決定する（§6.7）。
+
+| status | 意味 |
 | ready     | 実行待ち               |
 | executing | 実行中                 |
 | done      | 実行完了（再実行可能） |
@@ -581,7 +410,7 @@ ready → executing → done
 
 ### 2.3.2 重要な性質
 
-* **done は終端状態ではない** — execute は **ready・done・pause（resume 経由のみ。§12.2.1.5）** のときに呼べる。**通常スケジューリングでは ready / done のみが execute される。pause は resume 経由のみ。**
+* **done は終端状態ではない** — execute は **ready・done・pause（resume 経由のみ。§12.5）** のときに呼べる。**通常スケジューリングでは ready / done のみが execute される。pause は resume 経由のみ。**
 * execute 呼び出し時に status は executing になる
 * **reset は不要**
 * **execution_id は不要**
@@ -614,7 +443,7 @@ inputs:
 
 * `${node_id.port}` — 他ノードの output port を参照
 * `${inputs.port}` — 親 StructuralNode（または外部から渡された）inputs の port を参照（§10.2）
-* `${params.<param_name>}` — 親 StructuralNode（PipelineNode / LoopNode）の params を参照（§4, §12.2.1.2）
+* `${params.<param_name>}` — 親 StructuralNode（PipelineNode / LoopNode）の params を参照（§4, §13.2.1.2）
 
 制約：
 
@@ -637,17 +466,17 @@ Node は必ず dict を返す（§2.1）。
 ```json
 {
   "artifact": {
-    "_meta": { "revision": 1 },
-    "data": {...}
+    "_meta": { "revision": "e3b0c44298fc1c149afbf4c8996fb924..." },
+    "data": {}
   }
 }
 ```
 
 仕様：
 
-* すべての output port は `_meta.revision` を持つ（BaseNode が content-hash で自動付与。§5.7）
+* すべての output port は `_meta.revision` を持つ（BaseNode が content-hash で自動付与。§5.5）
 * `_meta` は予約キー
-* `_meta.revision` は content-hash（SHA-256 の hex 文字列、64 文字。§5.10）
+* `_meta.revision` は content-hash（SHA-256 の hex 文字列、64 文字。§5.9）
 * revision は同一内容→同一値（順序・単調増加は表さない。§5.1.1）
 
 ---
@@ -774,7 +603,7 @@ node_calls := number of times BaseNode.execute() is invoked,
 
 StructuralNode は配下の全 Node（自身を含む）の node_calls を集約する。集約は `child.read_node_calls()` により行う。Runner は node_calls を管理しない。
 
-**`max_total_node_calls`**（§12.2.1.9）は、当該 Execution Scope 内の集約 node_calls がこの値に達した時点で status = limit とする。
+**`max_total_node_calls`**（§13.2.1.9）は、当該 Execution Scope 内の集約 node_calls がこの値に達した時点で status = limit とする。
 
 ---
 
@@ -934,13 +763,13 @@ revision = HASH( CanonicalJSON(output_without_meta) )
 * **revision は port に属する** — `_meta.revision` に格納
 * Node 間の I/O 契約
 * Runner は解釈しない
-* **BaseNode が自動生成する**（§5.7）。Node 実装者は revision を生成してはならない
+* **BaseNode が自動生成する**（§5.5）。Node 実装者は revision を生成してはならない
 
 ### 5.1.1 性質
 
 ✔ revision は opaque identifier  
 ✔ revision は deterministic  
-✔ 同一内容 → 同一 revision（ただし `_meta.hash_skip: true` が指定された場合はこの限りではない。§12.4.3）  
+✔ 同一内容 → 同一 revision（ただし `_meta.hash_skip: true` が指定された場合はこの限りではない。§13.4.3）  
 ✔ 異なる内容 → 異なる revision（ハッシュ衝突が発生した場合の挙動は未定義。Execution Layer は SHA-256 の衝突耐性を前提とする）  
 ✔ revision は Node state ではない  
 ✔ revision は BaseNode が自動生成する  
@@ -961,10 +790,10 @@ revision は **順序や回数を表さない**。
 
 **Node は revision を生成しない。** Node は単に output port の内容を返す。
 
-BaseNode が以下を行う（§5.7）：
+BaseNode が以下を行う（§5.5）：
 
-1. `_meta` を除いた出力を canonical 化（§5.9）
-2. ハッシュを計算（§5.10）
+1. `_meta` を除いた出力を canonical 化（§5.8）
+2. ハッシュを計算（§5.9）
 3. `_meta.revision` に格納
 
 ---
@@ -985,25 +814,13 @@ if current_revision == last_revision:
 | 前回と revision が同じなら no-op 可能 | 常に実行される前提で設計する |
 | 不要な再実行を減らせる | 実装がシンプルになる |
 
-**Loop の終了は revision に依存しない。** Loop は condition のみで終了判定する（§12.2）。
+**Loop の終了は revision に依存しない。** Loop は condition のみで終了判定する（§13.2.2）。
 
 **no-op を実装する Node は、前回処理した revision を内部状態として保持する責務を負う。** Runner はこの保持を管理しない。
 
 ---
 
-## 5.4 動作例（revision の流れ）
-
-implement → review の例：implement が出力 A を返す → BaseNode が content-hash を計算し `_meta.revision` に格納 → review が処理。implement の出力が同じ内容なら同一 revision、内容が変われば異なる revision となる。review が revision を確認する場合、同一 revision なら no-op 可能。revision は Node 間の I/O 契約であり、**Loop 制御とは無関係**（§12.2）。
-
----
-
-## 5.5 Revision と循環
-
-revision は再実行最適化のための I/O 契約（content-hash により同一出力は同一 revision）。循環グラフ内では、変化が伝播したときのみ再実行が発生し、不必要な再実行が減る。**Loop の終了条件には関与しない**（§12.2）。
-
----
-
-## 5.6 revision の設計原則
+## 5.4 revision の設計原則
 
 ✔ revision は port 単位  
 ✔ すべての Node（output port）が revision を持つ  
@@ -1011,17 +828,18 @@ revision は再実行最適化のための I/O 契約（content-hash により�
 ✔ Runner は解釈しない  
 ✔ revision は実行制御の補助情報（等価比較のみ）  
 ✔ revision は Node 間の契約  
-✔ revision は内容から決定的に計算される（content-hash）  
+
+**動作例（revision の流れ）**：implement → review の例では、implement が出力 A を返す → BaseNode が content-hash を計算し `_meta.revision` に格納 → review が処理。同一内容なら同一 revision。revision は Node 間の I/O 契約であり、**Loop 制御とは無関係**（§13.2.2）。
 
 ---
 
-## 5.7 revision 自動生成
+## 5.5 revision 自動生成
 
 **BaseNode.execute** は run() の戻り値に対し、各 output port ごとに以下を実行する：
 
 1. 当該 port の値から `_meta` を除く
-2. Canonical JSON に正規化する（§5.9）
-3. SHA-256 でハッシュを計算する（§5.10）
+2. Canonical JSON に正規化する（§5.8）
+3. SHA-256 でハッシュを計算する（§5.9）
 4. `port_value["_meta"]["revision"]` に格納する
 
 ```text
@@ -1030,13 +848,13 @@ revision = SHA256(canonical)
 port_value["_meta"]["revision"] = revision  # hex string, 64 chars
 ```
 
-**注意**：status は output ではないので revision を付与しない。revision は output port のみ。`{}` を返した場合は revision は存在しない（§5.8）。
+**注意**：status は output ではないので revision を付与しない。revision は output port のみ。`{}` を返した場合は revision は存在しない（§5.6）。
 
-**hash_skip**：巨大出力等の例外的ケースでは `_meta.hash_skip: true` を指定し、revision を UUID 等で代替できる（§12.4.3）。
+**hash_skip**：巨大出力等の例外的ケースでは `_meta.hash_skip: true` を指定し、revision を UUID 等で代替できる（§13.4.3）。
 
 ---
 
-## 5.8 revision 契約と停止時の整合
+## 5.6 revision 契約と停止時の整合
 
 * revision は output port のみに存在する
 * execute が `{}` を返した場合、revision は存在しない（出力がないため）
@@ -1045,13 +863,19 @@ port_value["_meta"]["revision"] = revision  # hex string, 64 chars
 
 ---
 
-## 5.9 Canonical JSON（revision 計算用）
+## 5.7 revision と循環
+
+revision は再実行最適化のための I/O 契約（content-hash により同一出力は同一 revision）。循環グラフ内では、変化が伝播したときのみ再実行が発生し、不必要な再実行が減る。**Loop の終了条件には関与しない**（§13.2.2）。
+
+---
+
+## 5.8 Canonical JSON（revision 計算用）
 
 revision 計算に使用する **Canonical JSON** は以下を満たす。**Canonical JSON は JSON 互換型（object, array, string, number, boolean, null）のみを対象とする。**
 
 **RFC 8785 準拠**：Canonical JSON は **RFC 8785 (JSON Canonicalization Scheme)** に準拠しなければならない（MUST）。実装は RFC 8785 準拠ライブラリを使用すること。分散環境での revision 一致を保証するため、独自実装する場合は同一出力が cross-language で同一ハッシュになることを保証しなければならない。
 
-### 5.9.1 基本規則
+### 5.8.1 基本規則
 
 1. UTF-8 エンコード
 2. キーは辞書順（sort_keys=True）
@@ -1068,15 +892,15 @@ Canonical JSON 化の対象に JSON 非互換型（`datetime`、`bytes`、カス
 
 Node 実装者は run() の戻り値が JSON 互換型のみで構成されることを保証する責任を負う。
 
-### 5.9.2 浮動小数点の扱い
+### 5.8.2 浮動小数点の扱い
 
-浮動小数点の正規化は **RFC 8785** に従う。**NaN / Infinity は禁止**（fatal）。その他の細則は RFC 8785 および §5.9.1 に委ねる。
+浮動小数点の正規化は **RFC 8785** に従う。**NaN / Infinity は禁止**（fatal）。その他の細則は RFC 8785 および §5.8.1 に委ねる。
 
-### 5.9.3 null / boolean / int
+### 5.8.3 null / boolean / int
 
 標準 JSON 表現に従う。
 
-### 5.9.4 _meta の扱い
+### 5.8.4 _meta の扱い
 
 revision 計算時、**すべての階層における `_meta` フィールドは除外する**（再帰的除外）。これは出力 JSON のいかなるネスト深度においても `_meta` キーを持つオブジェクトから `_meta` を取り除いた上でハッシュ計算を行うことを意味する。
 
@@ -1098,7 +922,7 @@ revision  = SHA256(canonical)
 
 ---
 
-## 5.10 ハッシュアルゴリズム
+## 5.9 ハッシュアルゴリズム
 
 使用するハッシュ関数：**SHA-256**。
 
@@ -1120,7 +944,7 @@ BaseNode は：
 
 BaseNode は NodeFlow の実行契約を強制する。**外部 I/O を含む Node は timeout を実装しなければならない（MUST）。** これに違反すると executing 中のノードが永久待機となり、max_idle_sec 等の limit が機能しない（§7.4）。
 
-**Runner は通常のスケジューリングで `node.execute()` のみを呼ぶ。** pause 再開時は StructuralNode が直接 execute を呼ぶ（§12.2.1.5）。
+**Runner は通常のスケジューリングで `node.execute()` のみを呼ぶ。** pause 再開時は StructuralNode が直接 execute を呼ぶ（§12.5）。
 
 ---
 
@@ -1169,11 +993,11 @@ def run(self, inputs, params) -> dict:
 
 run の戻り値に対して、各 output port ごとに：
 
-* `_meta` を除いた port 値を Canonical JSON 化（§5.9）
-* SHA-256 でハッシュを計算し `_meta.revision` に格納（§5.7, §5.10）
+* `_meta` を除いた port 値を Canonical JSON 化（§5.8）
+* SHA-256 でハッシュを計算し `_meta.revision` に格納（§5.5, §5.9）
 * status（read_status() で読むもの）には付与しない
 
-`_meta.hash_skip` が true の場合は UUID 等の一意値を用いる（§12.4.3）。これにより revision 契約を保証する（§5.7）。
+`_meta.hash_skip` が true の場合は UUID 等の一意値を用いる（§13.4.3）。これにより revision 契約を保証する（§5.5）。
 
 ---
 
@@ -1202,7 +1026,7 @@ BaseNode は以下を保証する（戻り値契約は §2.1 参照）：
 
 * 必ず dict を返す（成功時は output port を持つ dict、停止系では `{}` を返してよい）
 * execute の返り値は output port の dict のみ。status は含まない。
-* **成功時**の output port には `_meta.revision` が存在する（`{}` を返した場合は revision は存在しない。§5.8）
+* **成功時**の output port には `_meta.revision` が存在する（`{}` を返した場合は revision は存在しない。§5.6）
 
 ---
 
@@ -1226,7 +1050,7 @@ DataNode（LLMNode、ScriptNode など、単体で run を実装する Node）�
 * limit pre / limit post の扱い（§6.3 ①④）
 * status の設定（done / limit / pause / fatal）
 
-**revision**：DataNode は revision を生成しない。BaseNode が content-hash で自動付与する（§5.7）。StructuralNode の revision 扱いは §6.7 に従う。
+**revision**：DataNode は revision を生成しない。BaseNode が content-hash で自動付与する（§5.5）。StructuralNode の revision 扱いは §6.7 に従う。
 
 ---
 
@@ -1254,7 +1078,7 @@ def run(self, inputs, params):
     return self._get_final_output()
 ```
 
-**LoopNode.run の疑似コード**（§12.2.2 の実体）：
+**LoopNode.run の疑似コード**（§13.2.2 の実体）：
 
 ```python
 def run(self, inputs, params):
@@ -1264,7 +1088,7 @@ def run(self, inputs, params):
             raise LimitSignal()
         if final_node.status != "done":
             break  # pause / fatal / limit 等を伝播
-        if self._evaluate_condition():  # final_node.status == done のときのみ評価（§12.2.2.5）
+        if self._evaluate_condition():  # final_node.status == done のときのみ評価（§13.2.2.5）
             break
     return self._get_final_output()
 ```
@@ -1279,7 +1103,7 @@ StructuralNode（PipelineNode、LoopNode）の責任は以下とする。
 * scope limit（params.limit の解釈）
 * termination 判定（final ノードの done 確定条件）
 
-**終了判定**：StructuralNode は必ず 1 つの **final ノード**を持つ。graph で明示的に指定する（§12.2.1.2, §12.2.2.2）。
+**終了判定**：StructuralNode は必ず 1 つの **final ノード**を持つ。graph で明示的に指定する（§13.2.1.2, §13.2.2.2）。
 
 終了条件は次のとおりである。
 
@@ -1365,21 +1189,9 @@ after each child_node.execute() returns:
 
 **revision**：StructuralNode は revision を変更しない。final ノードの出力をそのまま返し、revision は final ノードが生成した値を保持する。StructuralNode はデータを生成・変換しない制御ノードであり、revision 契約には関与しない。（本段落が StructuralNode の revision の正の定義。）
 
-**resume の共通仕様**：**API** は `resume(resume_inputs: dict) -> dict`。PipelineNode と LoopNode で同一である。**node_id の方針**：resume の**呼び出し引数**（どの node を resume するかの指定）には node_id を使わない。内部構造を API に漏らさないという意味では「対象指定に node_id を用いない」である。戻り値に node_id を含めることは許容し、実装・監視の便宜に供する。
+**resume の共通仕様**：詳細は §12.5 に従う。
 
-**呼び出し条件**：StructuralNode の status が `pause` のときのみ呼べる。pause ノードが 1 つ以上存在すること。違反時は **InvalidStateError** を raise する。StructuralNode が pause になるのは、子ノードのいずれかが pause になった場合のみである（§6.7 子の status 集約）。したがって StructuralNode.status == pause の場合、常に 1 つ以上の pause 子ノードが存在する。
-
-**動作**：(1) pause 状態のノードをすべて列挙する。列挙順は graph.nodes の記述順に従う（§7.1.1 と同一の決定性ルール）。(2) 各ノードに `execute(resume_inputs, params)` を呼ぶ（params は通常スケジューリング時と同一。StructuralNode が graph 定義から解決する）。(3) 出力が `{}` でなければ保存する（§3.3）。(4) **resume 呼び出し中に fatal が発生した場合は、それ以降の resume は実行せず即座に停止する。** (5) すべての resume 呼び出し完了後、通常スケジューリングに戻り、termination 判定を再評価する。StructuralNode は一時的に status を executing に戻し、終了判定に従って最終 status を再設定する。
-
-**resume 時の入力**：resume 時には **resume_inputs のみ**が pause ノードに渡される。通常の inputs は再解決しない。必要な状態は Node が内部で保持する責任がある。
-
-**ネスト構造での resume**：StructuralNode 内の子ノードが StructuralNode（PipelineNode / LoopNode）である場合、その子 StructuralNode が pause 状態であれば、親は子 StructuralNode の `resume()` を呼ぶ。親が孫ノード以下を直接 resume することは禁止する。resume はネストの外側から順に呼び出される。例：外側 PipelineNode → 内側 LoopNode が pause の場合、`outer_pipeline.resume(inputs)` において outer は `inner_loop.resume(inputs)` を呼び、inner_loop は pause 中の子ノードに execute を呼ぶ。外側から直接 inner_loop 内の子ノードを resume することはない。
-
-**戻り値**：`{"resumed": [node_id, ...], "statuses": { node_id: "done" | "pause" | "limit" | "fatal" }}`。resume したノード ID のリストと、各ノードの resume 後の status を返す（node_id は戻り値には含めてよい。上記「node_id の方針」参照）。呼び出し元が後続処理を判断できる。戻り値は resume 呼び出し中の各 Node の直後状態を示すものであり、最終的な StructuralNode.status は別途 read_status() により確認すること。
-
-**resume_inputs**：単一の dict を全 pause ノードに渡す。各 Node は自分が必要なキーだけ読む（他は無視）。Node は black-box であり、内部構造を API に漏らさない。resume_inputs_schema は外部に「何を渡せばよいか」を伝える参考情報であり、エンジンは解釈しない。**resume_inputs のキー衝突は未定義動作であり、パイプライン設計者の責任とする。** 静的診断ツールは、同一 Graph 内で複数 Node が pause になり得る場合に resume_inputs_schema のキーが衝突していないかを警告することが推奨される（SHOULD warn）。
-
-**実行不能状態**：§7.5 に従う。**状態保持**：StructuralNode も内部状態を持ってよい。**limit の例**：params.limit で max_total_node_calls / max_idle_sec / max_iterations 等を指定する。詳細は各 Node（§12.2.1.9, §12.2.2.10）参照。
+**実行不能状態**：§7.5 に従う。**状態保持**：StructuralNode も内部状態を持ってよい。**limit の例**：params.limit で max_total_node_calls / max_idle_sec / max_iterations 等を指定する。詳細は各 Node（§13.2.1.9, §13.2.2.10）参照。
 
 **StructuralNode.run の責務境界（MUST / MUST NOT）**
 
@@ -1415,7 +1227,7 @@ StructuralNode.run **MUST**：
 
 **Input port requirements**：Input port の required は **node.yaml** に定義される。`required` を省略した場合は **true** とする。Runner は実行可能性を、required な port がすべて解決可能かどうかのみで判定する。未解決の input は fatal にはならない。
 
-**実行可能条件**：ノードは **required:true の input port がすべて解決できた場合**に実行可能である。この条件を形式定義では **RequiredInputsResolved(n, t)** と表す（§12.2.1.9 の max_idle_sec 形式定義参照）。§7.1 の本項と同義であり、実装時に独自に拡張解釈してはならない。
+**実行可能条件**：ノードは **required:true の input port がすべて解決できた場合**に実行可能である。この条件を形式定義では **RequiredInputsResolved(n, t)** と表す（§13.2.1.9 の max_idle_sec 形式定義参照）。§7.1 の本項と同義であり、実装時に独自に拡張解釈してはならない。
 
 **「解決できた」とは**、バインディング先ノードの latest_output に当該 port の値が存在することを指す。バインディング先ノードの status は問わない。fatal / limit ノードの出力が latest_output に存在する場合、それを有効な入力として扱う。これは意図的な設計であり、停止した Node の出力を後続 Node が参照できることを保証する。
 
@@ -1488,7 +1300,7 @@ Violation of this invariant results in undefined behavior of Node.state.
 
 ## 7.5 実行不能状態（deadlock）
 
-**deadlock を構造的には検出しない。** 静的診断ツールで扱う。**ただし進捗がない状態は limit（max_idle_sec 等）によって停止できる。**（§12.2.1.9）
+**deadlock を構造的には検出しない。** 静的診断ツールで扱う。**ただし進捗がない状態は limit（max_idle_sec 等）によって停止できる。**（§13.2.1.9）
 
 * deadlock は **fatal にならない**（StructuralNode が runtime で fatal として扱うことはない）
 * 検出は limit や静的診断ツールに委ねる
@@ -1527,7 +1339,7 @@ Violation of this invariant results in undefined behavior of Node.state.
 # 8. 循環グラフ
 
 * 循環は許可
-* **初期値のない循環**：Runner が inputs を解決しようとした際、循環依存により参照先の出力が存在しない場合、該当ノードは「実行不能」として扱う。**初期値のない循環は runtime では fatal にしない。** 該当ノードは実行不能となり、結果として進捗のない状態になる。この状態は `max_idle_sec` により停止可能である（§12.2.1.9）。**静的診断ツールで事前検出することを強く推奨する。**
+* **初期値のない循環**：Runner が inputs を解決しようとした際、循環依存により参照先の出力が存在しない場合、該当ノードは「実行不能」として扱う。**初期値のない循環は runtime では fatal にしない。** 該当ノードは実行不能となり、結果として進捗のない状態になる。この状態は `max_idle_sec` により停止可能である（§13.2.1.9）。**静的診断ツールで事前検出することを強く推奨する。**
 * **初期値の与え方**：(1) Flow の inputs として外部から注入する (2) 循環上のいずれかのノードが params から初期値を生成し、inputs なしで実行できるよう設計する（`required: false` の port を持つ）。どちらも行われない循環は静的診断ツールが検出すべきエラーとする。
 * 収束は final ノード（graph で指定）の done または limit による
 
@@ -1597,7 +1409,7 @@ Graph 定義（node_pipeline.yaml）で、あるノードの `inputs` に **バ�
 
 * **同一 Graph 内の他ノードの出力** — `${node_id.port}` で参照
 * **親 StructuralNode の inputs** — ネストした Graph 内のノードに対して、親が受け取った inputs を渡す場合（例：`${inputs.port}` など）
-* **親 StructuralNode の params** — `${params.<param_name>}` で参照（§4, §12.2.1.2）
+* **親 StructuralNode の params** — `${params.<param_name>}` で参照（§4, §13.2.1.2）
 
 Runner がこれらのソースから値を取り、該当ノードの `inputs` に詰めてから `execute(inputs, params)` を呼ぶ。したがって Node から見れば、常に「自身の inputs と params だけ」である。
 
@@ -1610,7 +1422,7 @@ Runner がこれらのソースから値を取り、該当ノードの `inputs` 
 Node 型定義。
 
 ```yaml
-version: "1.2"
+version: "1.3"
 
 name: string
 description: string
@@ -1627,9 +1439,9 @@ params:
 
 **Schema 最小サブセット**：type, description, required, properties, items, additionalProperties, default を許可。
 
-**実行時検証（v1.2）**：node 存在チェック、port 存在チェックを必須とする。shape 検証は将来拡張。
+**実行時検証（v1.3）**：node 存在チェック、port 存在チェックを必須とする。shape 検証は将来拡張。
 
-PipelineNode の定義ファイル（node_pipeline.yaml）は §12.2.1.2 に記述する。
+PipelineNode の定義ファイル（node_pipeline.yaml）は §13.2.1.2 に記述する。
 
 ---
 
@@ -1673,43 +1485,340 @@ if yaml.version != engine.supported_version:
 
 * version フィールドが存在しない場合は **VersionMismatchError** とする
 * マイナーバージョンの後方互換性ポリシー（例：1.2 エンジンが 1.1 を読めるか）はエンジン実装者が定義する。ただしデフォルトは **厳格一致（exact match）** とする
-* version の比較は文字列完全一致とする（`"1.2"` と `"1.20"` は別物）
+* version の比較は文字列完全一致とする（`"1.3"` と `"1.30"` は別物）
 
 ---
 
-# 12. 各種 Node
+## 12. 再評価・停止・再開モデル
+
+本節は NodeFlow の **停止・再開・部分再評価** に関するすべての概念を集約する。v1.3 で以下を統一的に定義する。
+
+### 12.1 停止状態の統一定義
+
+Node の停止状態は 3 種類：
+
+| 停止状態 | trigger | 復帰可能性 |
+|----------|---------|-----------|
+| **pause** | Node 内部（PauseSignal）または外部（§12.1.1） | resume によって復帰可能 |
+| **limit** | limit 検出（LimitSignal または BaseNode の limit pre/post） | clear_limit() + resume によって復帰可能 |
+| **fatal** | その他の例外 | 復帰不可 |
+
+これらはすべて「実行の中断状態」である。
+
+#### 12.1.1 pause trigger の種別
+
+v1.3 では pause trigger を明確に 2 種類に区別する。
+
+| trigger 種別 | 機構 | 例 |
+|---|---|---|
+| **Node 内部 trigger** | run() 内で PauseSignal を raise | LLM が人間確認が必要と判断 |
+| **外部 trigger（v1.3 TBD）** | 外部から StructuralNode に pause 要求を送る | UI からの一時停止ボタン |
+
+v1.3 では Node 内部 trigger のみを正式定義する。外部 trigger は API 設計を v1.4 で確定する。
+
+#### 12.1.2 pause の 2 つの実装パターン
+
+pause には実装上 2 つのパターンがある。仕様としてはどちらも PauseSignal を使うが、意味が異なる。
+
+| パターン | 実態 | PauseSignal の要否 |
+|---|---|---|
+| **セッション継続型** | LLM と人間がリアルタイムでやり取り中 Node は executing のまま（外部からは executing に見える） | **不要**（executing で待機するだけ） |
+| **非同期中断型** | Node が中断状態で安定し、後から外部 input を受けて再開 | **必要**（PauseSignal を raise して pause 状態に遷移） |
+
+設計推奨：非同期中断型（PauseSignal パターン）を採用すること。これにより Node インスタンスが内部状態を保持したまま中断し、後から `resume()` で再開できる。セッション継続型は timeout 実装（§6.1）と組み合わせて使う。
+
+### 12.2 pause と limit の関係
+
+```
+limit は pause の特殊形
+  trigger = limit detection（LimitSignal または BaseNode の limit pre/post 検出）
+```
+
+| 状態 | trigger | 再開条件 |
+|------|---------|---------|
+| pause | Node 内部 PauseSignal | resume() 呼び出し |
+| limit | limit 判定 | clear_limit() + resume() |
+
+### 12.3 execution_cursor
+
+PipelineNode は内部に execution_cursor を保持する。
+
+```
+execution_cursor: node_id
+```
+
+**意味**：次に実行可能判定を開始するノード。
+
+**ルール：**
+
+1. execute 開始時は `graph.nodes[0]`
+2. pause 発生時は当該ノード
+3. re_execute(start_node_id) 時は start_node_id
+4. resume 時は execution_cursor から継続
+
+これにより resume・再実行・部分再評価が統一される。
+
+### 12.4 invalidate
+
+#### 12.4.1 定義
+
+PipelineNode は内部に以下を保持する：
+
+```
+node_states: dict[node_id → status]
+execution_cursor: node_id
+```
+
+**`invalidate(node_k)` の意味：**
+
+```
+for all nodes n reachable from node_k (including itself):
+    node_states[n] = ready
+    latest_output[n] を削除する  ← v1.3 追加
+execution_cursor = node_k
+```
+
+- Node インスタンスは再生成しない（§14 不変条件 20）
+- Node 内部 state は保持する（仕様上リセットしない）
+- latest_output（Context 上の保存済み出力）を削除する（node_k 以降の古い出力が後続ノードの input として誤解決されることを防ぐ）
+
+#### 12.4.2 invalidate の性質
+
+invalidate は：
+
+- state 巻き戻しではない
+- snapshot 復元ではない
+- 過去の出力履歴も保持しない
+
+単なる「部分再評価のための状態・出力リセット」である。
+
+#### 12.4.3 invalidate と revision の関係
+
+- invalidate は revision を操作しない
+- revision の比較は Node 内部責務
+- Execution Layer は revision による再実行抑制を行わない
+
+### 12.5 resume と re_execute の定義
+
+#### 12.5.1 resume と re_execute の統一
+
+```
+resume     := execution_cursor 位置から再実行。invalidate なし
+re_execute := invalidate(start_node_id) + resume
+```
+
+| 操作 | invalidate | latest_output 削除 | 開始位置 |
+|---|---|---|---|
+| resume | なし | なし | 現在の execution_cursor |
+| re_execute | あり | あり（start_node_id 以降） | start_node_id |
+
+#### 12.5.2 resume API
+
+**API**：`resume(resume_inputs: dict) -> dict`
+
+PipelineNode と LoopNode で同一。
+
+**呼び出し条件**：StructuralNode の status が `pause` のときのみ呼べる。違反時は **InvalidStateError** を raise する。
+
+**動作：**
+
+1. pause 状態のノードを graph.nodes の記述順（execution_cursor 以降）で列挙する
+2. 各ノードに `execute(resume_inputs, params)` を呼ぶ（params は通常スケジューリング時と同一）
+3. 出力が `{}` でなければ保存する（§3.3）
+4. resume 呼び出し中に fatal が発生したら、それ以降の resume は実行せず即座に停止する
+5. すべての resume 完了後、通常スケジューリングに戻り、termination 判定を再評価する
+
+**resume 時の入力**：resume 時には **resume_inputs のみ**が pause ノードに渡される。通常の inputs は再解決しない。必要な状態は Node が内部で保持する責任がある。
+
+**ネスト構造での resume**：子 StructuralNode が pause の場合、親は子の `resume()` を呼ぶ。親が孫ノード以下を直接 resume することは禁止する。
+
+**戻り値**：
+
+```json
+{
+  "resumed": ["node_id_a", "node_id_b"],
+  "statuses": {
+    "node_id_a": "done",
+    "node_id_b": "pause"
+  }
+}
+```
+
+**resume_inputs のキー衝突**：複数の pause ノードが存在する場合、各 Node は自分が必要なキーだけ読む（他は無視）。キー衝突は未定義動作であり、パイプライン設計者の責任とする。静的診断ツールは衝突を警告することを推奨する（SHOULD warn）。
+
+#### 12.5.3 re_execute API
+
+```python
+PipelineNode.re_execute(
+    start_node_id: str,
+    node_params_override: dict[str, dict] = {}
+) -> dict
+```
+
+**内部動作：**
+
+```
+invalidate(start_node_id)          # node_states = ready, latest_output 削除
+params を node_params_override で更新  # v1.3 追加
+resume({})                         # resume_inputs は空 dict
+```
+
+**node_params_override**：`{node_id: {param_key: value, ...}}` の形式で、指定したノードの params を上書きする。re_execute の duration 内のみ有効。元の params には影響しない。上書きは shallow merge とする。
+
+**用例**：node1 完了後、node2 に新しい設定を入れて node2 以降を再実行する：
+
+```python
+pipeline.re_execute(
+    start_node_id="node2",
+    node_params_override={
+        "node2": {"temperature": 0.3, "model": "gpt-4o"}
+    }
+)
+```
+
+この呼び出しにより：
+
+- node2 以降の node_states が ready にリセットされる
+- node2 以降の latest_output が削除される
+- node1 の出力は保持される（node2 の inputs として使用可能）
+- node2 の params が上書きされた状態で re_execute が実行される
+
+### 12.6 複数 pause ノード時の resume 順序
+
+StructuralNode が pause の場合、常に 1 つ以上の pause 子ノードが存在する。
+
+**resume の走査順序**：graph.nodes の記述順（§7.1.1 と同一の determinism ルール）に従い、**execution_cursor 以降**の pause ノードを列挙する。
+
+```
+resume 走査 := graph.nodes の記述順に走査し
+               execution_cursor 以降の node のうち
+               status == pause のものを列挙して実行する
+```
+
+**resume_inputs の node_id スコープ（v1.3 暫定）**：v1.3 では resume_inputs は単一の dict を全 pause Node に渡す。各 Node は自分が必要なキーだけ読む。
+
+v1.4 では以下の形式を検討する：
+
+```python
+resume_inputs = {
+    "node_a": {"human_input": "承認します"},
+    "node_b": {"score_override": 0.3}
+}
+```
+
+各 Node は自身の node_id に対応するサブ dict のみを受け取る。これにより複数 pause Node が同時発生する場合のキー衝突を構造的に解消できる。「Node は black-box であり内部構造を API に漏らさない」原則（§6.7）とのトレードオフがあるため、v1.4 で設計を確定する。
+
+### 12.7 limit clear
+
+```python
+PipelineNode.clear_limit() -> None
+```
+
+**動作：**
+
+- limit 状態のノードを ready に戻す
+- node_calls / idle timer 等のカウンタは **reset しない**（蓄積値は保持する）
+- clear_limit() 後は resume() を呼ぶことで継続可能
+
+**呼び出し条件**：StructuralNode の status が `limit` のときのみ呼べる。違反時は **InvalidStateError** を raise する。
+
+**典型的な使い方：**
+
+```python
+# limit に達したら外部から limit 条件を変更して再開する
+pipeline.execute(inputs, params)  # → status = limit
+
+# limit 条件を緩和する（例：params を更新する）
+new_params = {**params, "limit": {"max_calls": 100}}  # 上限を引き上げ
+
+# limit をクリアして resume
+pipeline.clear_limit()
+pipeline.resume({})
+```
+
+**ネスト構造での clear_limit**：子 StructuralNode が limit の場合、親は子の `clear_limit()` を呼ぶ。親が孫ノード以下を直接 clear することは禁止する。
+
+### 12.8 LLMNode の pause 実装例（参考）
+
+PauseSignal を使った非同期中断型の標準的な実装パターン：
+
+```python
+class LLMNode(BaseNode):
+    def __init__(self):
+        self._session = []
+        self._waiting_for_human = False
+
+    def run(self, inputs: dict, params: dict) -> dict:
+        if not self._waiting_for_human:
+            response = llm.chat(self._session, inputs["prompt"])
+            self._session.append(response)
+            if needs_human_review(response):
+                self._waiting_for_human = True
+                raise PauseSignal(
+                    reason="human review required",
+                    resume_inputs_schema={"human_input": "string"}
+                )
+            return {"result": response}
+        else:
+            self._waiting_for_human = False
+            response = llm.chat(self._session, inputs["human_input"])
+            self._session.append(response)
+            return {"result": response}
+```
+
+| 観点 | 内容 |
+|------|------|
+| LLM セッション | `self._session` に保持。resume 後も同じ履歴で継続 |
+| resume_inputs | `human_input` として run に渡る |
+| 状態管理 | `_waiting_for_human` フラグで分岐。Node 内部に完結 |
+| revision | resume 後に run が成功すれば BaseNode が自動付与 |
+
+**将来の WebUI 統合**：`POST /pipeline/{id}/resume` に `{"resume_inputs": {"human_input": "承認します"}}` を送り、`pipeline.resume(resume_inputs)` をそのままエンドポイントにマッピングできる。
+
+### 12.9 Execution Philosophy
+
+NodeFlow Execution Layer は：
+
+> 評価系（evaluator）ではなく、再評価制御系（controlled re-evaluation system）である。
+
+これにより human-in-the-loop・partial recomputation・dynamic parameter adjustment が可能になる。
+
+
+---
 
 # Part III — Concrete Nodes
 
-Node そのものとまわりの仕組みを述べたあとで、具象の Node 種別を定義する。12.1 では各種 Leaf Node（DataNode）、12.2 では各種 StructuralNode に分けて記述する。
+Node そのものとまわりの仕組みを述べたあとで、具象の Node 種別を定義する。§13.1 では各種 Leaf Node（DataNode）、§13.2 では各種 StructuralNode に分けて記述する。
 
-**記述構造の統一**：各 Node は以下の章立てに揃える。DataNode と StructuralNode で番号の意味は同一とする。
+**記述構造の統一**：各 Node は以下の章立てに揃える。
 
 | 節 | 内容 |
 |----|------|
-| 12.x.x.1 | 役割 |
-| 12.x.x.2 | node.yaml または node_pipeline.yaml |
-| 12.x.x.3 | run() の責務 または 実行モデル・終了判定 |
-| 12.x.x.4 | status の扱い |
-| 12.x.x.5 | limit の例 |
-| 12.x.x.6 以降 | 特記事項（pause 再開、condition、final_graph など） |
+| 13.x.x.1 | 役割 |
+| 13.x.x.2 | node.yaml または node_pipeline.yaml |
+| 13.x.x.3 | run() の責務 または 実行モデル・終了判定 |
+| 13.x.x.4 | status の扱い |
+| 13.x.x.5 | limit の例 |
+| 13.x.x.6 以降 | 特記事項 |
 
 ---
 
-## 12.1 各種 Leaf Node（DataNode）
+## 13.1 各種 Leaf Node（DataNode）
 
-DataNode は run() を実装する単体 Node。revision は BaseNode が content-hash で付与する（§5.7）。usage 更新・status 設定は §6.6 の責務に従う。以下は代表的な具象の概要である。詳細は各 Node の仕様に委ねる。
+DataNode は run() を実装する単体 Node。revision は BaseNode が content-hash で付与する（§5.5）。usage 更新・status 設定は §6.6 の責務に従う。
+
+### 13.1.1 LLMNode
 
 ### 12.1.1 LLMNode
 
-#### 12.1.1.1 役割
+#### 13.1.1.1 役割
 
-LLM を呼び出す Node。入出力は port で定義する。pause（human-in-the-loop）の参考実装は §12.2.1.5 に記載する。
+LLM を呼び出す Node。入出力は port で定義する。pause（human-in-the-loop）の参考実装は §12.8 参照。
 
-#### 12.1.1.2 node.yaml
+#### 13.1.1.2 node.yaml
 
 ```yaml
-version: "1.2"
+version: "1.3"
 name: llm_chat
 description: LLM チャット Node
 
@@ -1728,7 +1837,7 @@ params:
 
 形式は §11.1 参照。
 
-#### 12.1.1.3 run() の責務
+#### 13.1.1.3 run() の責務
 
 run() は LLM API 呼び出し、usage 更新（prompt_tokens / completion_tokens）、応答の output port 格納、必要に応じて PauseSignal の raise を行う。BaseNode が revision 自動補完・limit pre/post・status 設定を行う（§6.3）。
 
@@ -1744,7 +1853,7 @@ def run(self, inputs, params):
     return {"response": response.text}
 ```
 
-#### 12.1.1.4 status の扱い
+#### 13.1.1.4 status の扱い
 
 | 状態   | 意味               |
 |--------|--------------------|
@@ -1753,7 +1862,7 @@ def run(self, inputs, params):
 | limit  | トークン制限超過   |
 | fatal  | API 例外等         |
 
-#### 12.1.1.5 limit の例
+#### 13.1.1.5 limit の例
 
 ```yaml
 params:
@@ -1762,23 +1871,23 @@ params:
     max_calls: 5
 ```
 
-#### 12.1.1.6 特記事項
+#### 13.1.1.6 特記事項
 
-* LLM セッション履歴は Node 内部 state に保持する。pause/resume の参考実装は §12.2.1.5 参照。
+* LLM セッション履歴は Node 内部 state に保持する。pause/resume の参考実装は §12.5 参照。
 * revision は response port に BaseNode が自動付与。resume は §6.7 に従う。
 
 ---
 
-### 12.1.2 GitScriptNode
+### 13.1.2 GitScriptNode
 
-#### 12.1.2.1 役割
+#### 13.1.2.1 役割
 
 Git 操作をスクリプトで行う Node。clone / fetch / commit 等を run() 内で実行する。
 
-#### 12.1.2.2 node.yaml
+#### 13.1.2.2 node.yaml
 
 ```yaml
-version: "1.2"
+version: "1.3"
 name: git_script
 description: Git 操作スクリプト Node
 
@@ -1796,7 +1905,7 @@ params:
 
 形式は §11.1 参照。
 
-#### 12.1.2.3 run() の責務
+#### 13.1.2.3 run() の責務
 
 clone / fetch / commit / push 等を run() 内で実行する。BaseNode が revision 自動補完・limit・status を扱う（§6.3）。
 
@@ -1811,11 +1920,11 @@ def run(self, inputs, params):
     return {"result": result.stdout}
 ```
 
-#### 12.1.2.4 status の扱い
+#### 13.1.2.4 status の扱い
 
 例外時は fatal。limit 超過時は status = limit（§6.3）。
 
-#### 12.1.2.5 limit の例
+#### 13.1.2.5 limit の例
 
 ```yaml
 params:
@@ -1823,23 +1932,23 @@ params:
     max_calls: 10
 ```
 
-#### 12.1.2.6 特記事項
+#### 13.1.2.6 特記事項
 
 * 外部 I/O を含むため、timeout の実装は MUST である（§6.1）。timeout_sec は params.limit で指定する（§12.1.2.5 参照）。
 * revision は BaseNode が付与。
 
 ---
 
-### 12.1.3 PythonScriptNode
+### 13.1.3 PythonScriptNode
 
-#### 12.1.3.1 役割
+#### 13.1.3.1 役割
 
 任意の Python スクリプトを実行する Node。inputs / params を渡し、outputs を返す。DataNode の責務（revision・usage・status）を満たす。
 
-#### 12.1.3.2 node.yaml
+#### 13.1.3.2 node.yaml
 
 ```yaml
-version: "1.2"
+version: "1.3"
 name: python_script
 description: Python スクリプト実行 Node
 
@@ -1857,7 +1966,7 @@ params:
 
 形式は §11.1 参照。
 
-#### 12.1.3.3 run() の責務
+#### 13.1.3.3 run() の責務
 
 指定 script_path の Python スクリプトを実行し、inputs を渡して result を返す。DataNode の責務（revision・usage・status）は §6.6 に従う。
 
@@ -1867,11 +1976,11 @@ def run(self, inputs, params):
     return {"result": result}
 ```
 
-#### 12.1.3.4 status の扱い
+#### 13.1.3.4 status の扱い
 
 例外時は fatal。timeout 等は limit で制御する場合 status = limit。
 
-#### 12.1.3.5 limit の例
+#### 13.1.3.5 limit の例
 
 ```yaml
 params:
@@ -1879,43 +1988,39 @@ params:
     timeout_sec: 60
 ```
 
-#### 12.1.3.6 特記事項
+#### 13.1.3.6 特記事項
 
-* 外部 I/O を含むため、timeout の実装は MUST である（§6.1）。timeout_sec は params.limit で指定する（§12.1.3.5 参照）。
+* 外部 I/O を含むため、timeout の実装は MUST である（§6.1）。timeout_sec は params.limit で指定する（§13.1.3.5 参照）。
 * revision は BaseNode が付与。
 
 ---
 
-## 12.2 各種 StructuralNode
+## 13.2 各種 StructuralNode
 
 StructuralNode は Core Model における Graph の意味論 ⟦G⟧ を Execution Layer で具体実装するための Node である。Graph は抽象構造であり、Execution Layer では StructuralNode がその具体実現を担う。
 
-### 12.2.1 PipelineNode
+### 13.2.1 PipelineNode
 
-#### 12.2.1.1 役割
+#### 13.2.1.1 役割
 
-PipelineNode は **Graph を 1-shot 実行する StructuralNode** である。内部に graph を持ち、StructuralNode を継承する（§1.3, §6）。**Runner と制御層を兼ねる**：Runner を保有し、status 集約・終了判定・limit 解釈・resume 管理を行う。読み手は PipelineNode を「Runner + 制御層」として把握するとよい。
+PipelineNode は **Graph を 1-shot 実行する StructuralNode** である。Runner を保有し、status 集約・終了判定・limit 解釈・resume 管理・re_execute・execution_cursor 管理を行う。
 
-PipelineNode は Runner を内部に保持するが、**Runner は抽象インターフェースを通じて利用される**。
+**Runner Interface Contract**：PipelineNode が依存する抽象インターフェース：
 
-**Runner Interface Contract**：PipelineNode が依存するのは次の抽象インターフェースのみである。
+- `resolve_inputs(node_id) -> dict`
+- `is_executable(node_id) -> bool`
+- `execute_node(node_id) -> dict`
+- `save_output(node_id, output)`
+- `get_latest_output(node_id) -> dict | None`
 
-* `resolve_inputs(node_id) -> dict`
-* `is_executable(node_id) -> bool`
-* `execute_node(node_id) -> dict`
-* `save_output(node_id, output)`
-* `get_latest_output(node_id) -> dict | None`
-
-Runner の実装はこのインターフェースを満たさなければならない。内部スケジューリングアルゴリズムは Execution Layer では規定しない。実装は差し替え可能である（分散 Runner・Streaming Runner・外部 Executor 等を想定）。
-
-#### 12.2.1.2 node_pipeline.yaml
+#### 13.2.1.2 node_pipeline.yaml
 
 PipelineNode の内部構造は **node_pipeline.yaml** により定義される。`graph` セクションの `graph.nodes` を記述順に走査する（§7.1.1）。**final ノード**を graph 内に必ず 1 つ指定しなければならない。`graph.final` に node_id を記述する。final は `graph.nodes` に存在する node_id であること。複数指定は禁止。
 
 **定義ファイルの形式（node_pipeline.yaml）**
 
 ```yaml
-version: "1.2"
+version: "1.3"
 name: hello_pipeline
 inputs: ...
 outputs: ...
@@ -1953,66 +2058,38 @@ PipelineNode は graph 定義に従い、子ノード実行時にこの param �
 * **直列**：`A → B → C`（C を final に指定）。Runner は A → B → C の順に実行可能になり、**final ノード C が done** になった時点で当該 PipelineNode の実行が終了する。出力は C の出力をそのまま返す（§6.7）。
 * **並列**：`A → B` と `A → C`（C を final に指定）。A の後 B と C が同時に実行可能になる。**final ノード C が done** になり、かつ C が executing でなくなった時点で終了する。出力は C の出力をそのまま返す（§6.7）。
 
-#### 12.2.1.3 終了条件
+#### 13.2.1.3 終了条件
 
 **終了判定は §6.7 に完全に従う。** PipelineNode は Graph を 1-shot 実行するため、**final ノードが done** になった時点で当該 PipelineNode の実行が終了する。出力・revision は §6.7 に従う。
 
 **final が `{}` を返す場合**：final ノードが `{}` を返したとき、PipelineNode は `{}` を返す。以前の出力へのフォールバックは行わない（strict）。
 
-#### 12.2.1.4 execute の挙動
+#### 13.2.1.4 execute の挙動
 
-`PipelineNode.execute(inputs, params) -> dict`。**PipelineNode.execute 開始時、status は executing になる（BaseNode.execute による）。** 内部に Runner を持つ。Runner は execute 初回に生成し、同一 PipelineNode インスタンスの再実行時（LoopNode からの再 execute 等）は同一 Runner を再利用する。Runner の再利用に際して、latest_output（Context）は LoopNode の iteration 間で引き継がれる（§12.2.2.3 の iteration 間の Node 状態参照）。PipelineNode が独立した 1-shot として実行される場合（LoopNode 外）は、Context は execute 開始時に初期化される。実行フロー：graph 初期化 → Runner 生成（または再利用）→ Pull 型ループ → **final ノードの done 判定（§6.7）** → read_status() で status を読み制御判定 → 出力返却。limit チェック・graceful stop・戻り値はすべて §6.7 に従う。
+`PipelineNode.execute(inputs, params) -> dict`。**PipelineNode.execute 開始時、status は executing になる（BaseNode.execute による）。** 内部に Runner を持つ。Runner は execute 初回に生成し、同一 PipelineNode インスタンスの再実行時（LoopNode からの再 execute 等）は同一 Runner を再利用する。Runner の再利用に際して、latest_output（Context）は LoopNode の iteration 間で引き継がれる（§13.2.2.3 の iteration 間の Node 状態参照）。PipelineNode が独立した 1-shot として実行される場合（LoopNode 外）は、Context は execute 開始時に初期化される。実行フロー：graph 初期化 → Runner 生成（または再利用）→ Pull 型ループ → **final ノードの done 判定（§6.7）** → read_status() で status を読み制御判定 → 出力返却。limit チェック・graceful stop・戻り値はすべて §6.7 に従う。
 
-#### 12.2.1.5 pause 再開モデル（確定）
+#### 13.2.1.5 re_execute と resume
 
-**resume は §6.7 に完全に従う。** API・動作・戻り値・制約はすべて §6.7 の「resume の共通仕様」に記載する。PipelineNode 固有の補足：resume 後は termination 判定を再評価する（§6.7）。複数 pause ノードが存在する場合の resume 順序および実行開始位置（execution_cursor）は §17 に従う。
+§12.5 に完全に従う。PipelineNode は execution_cursor（§12.3）を保持し、re_execute・resume の両方を提供する。
 
-**LLMNode の run 設計（仕様上の参考実装）**
-
-LLM セッション継続型 pause の標準的な実装パターン：
+**典型的な用法（node1 完了後に node2 を新設定で再スタート）**：
 
 ```python
-class LLMNode(BaseNode):
-    def __init__(self):
-        self._session = []            # LLM セッション履歴（内部状態）
-        self._waiting_for_human = False
+# 通常実行
+result = pipeline.execute(inputs, params)
 
-    def run(self, inputs: dict, params: dict) -> dict:
-        if not self._waiting_for_human:
-            # 通常実行フェーズ
-            response = llm.chat(self._session, inputs["prompt"])
-            self._session.append(response)
-
-            if needs_human_review(response):
-                self._waiting_for_human = True
-                raise PauseSignal(
-                    reason="human review required",
-                    resume_inputs_schema={"human_input": "string"}
-                )
-            return {"result": response}
-
-        else:
-            # resume フェーズ（同じセッションで続行）
-            self._waiting_for_human = False
-            response = llm.chat(self._session, inputs["human_input"])
-            self._session.append(response)
-            return {"result": response}
+# node2 を新しい設定で再実行（node1 の出力は保持される）
+result = pipeline.re_execute(
+    start_node_id="node2",
+    node_params_override={"node2": {"model": "gpt-4o", "temperature": 0.2}}
+)
 ```
 
-| 観点 | 内容 |
-|------|------|
-| LLM セッション | `self._session` に保持。resume 後も同じ履歴で継続 |
-| resume_inputs | `human_input` として run に渡る |
-| 状態管理 | `_waiting_for_human` フラグで分岐。Node 内部に完結 |
-| revision | resume 後に run が成功すれば BaseNode が自動付与 |
-
-**将来の WebUI 統合**：このモデルは REST API と相性が良い。例：`POST /pipeline/{id}/resume` に `{"resume_inputs": {"human_input": "承認します"}}` を送り、`pipeline.resume(resume_inputs)` をそのままエンドポイントにマッピングできる。PipelineNode と LoopNode で同一 API（内部構造を漏らさない）。
-
-**ネストした StructuralNode での注意**：Graph 内に LoopNode 等の StructuralNode が含まれており、それが pause になっている場合、外側 PipelineNode の `resume()` は内側 StructuralNode の `resume()` を呼ぶことで再開する（§6.7 ネスト構造での resume）。呼び出し元は外側 PipelineNode の `resume()` のみを呼べばよく、内側の構造を知る必要はない。
+LLMNode の pause 実装例は §12.8 参照。
 
 ---
 
-#### 12.2.1.6 status の扱い
+#### 13.2.1.6 status の扱い
 
 **§6.7 の「子の status に対する挙動」に従う。** 当該 PipelineNode では、final ノードが done になったときに実行が終了する。下表は子ノードの status に対する挙動の補足である。status の定義は §2.3 参照。
 
@@ -2029,13 +2106,13 @@ Runner の status 利用は §7.3 に従う。
 
 ---
 
-#### 12.2.1.7 実行不能状態（deadlock）
+#### 13.2.1.7 実行不能状態（deadlock）
 
 **§6.7 に従う。** §7.5 のとおり runtime では検出せず、deadlock を fatal として扱わない。
 
 ---
 
-#### 12.2.1.8 状態保持
+#### 13.2.1.8 状態保持
 
 **§6.7 に従う。** PipelineNode も内部状態を持ってよい。
 
@@ -2046,7 +2123,7 @@ Runner の status 利用は §7.3 に従う。
 
 これらは `params.limit` に従って制御する。
 
-#### 12.2.1.9 PipelineNode の limit の例（deadlock 実行時保護）
+#### 13.2.1.9 PipelineNode の limit の例（deadlock 実行時保護）
 
 **§6.7 に従う。** PipelineNode の `params.limit` の例として、進捗のタイムアウトを指定できる。
 
@@ -2075,9 +2152,9 @@ RequiredInputsResolved(n, t) は §7.1 の「required:true の input port がす
 
 ---
 
-### 12.2.2 LoopNode
+### 13.2.2 LoopNode
 
-#### 12.2.2.1 役割
+#### 13.2.2.1 役割
 
 `type: loop`。**StructuralNode の一種**（§1.3）。**Graph を条件付きで反復実行する StructuralNode** である。内部に Runner を持ち、外部からは 1-shot Node として振る舞う。
 
@@ -2088,13 +2165,13 @@ RequiredInputsResolved(n, t) は §7.1 の「required:true の input port がす
 3. **revision は I/O 契約（再実行最適化の補助情報）であり、Loop 制御とは無関係である**
 4. **LoopNode は子 Node の内部状態（no-op 判定含む）を解釈しない**
 
-**LoopNode 仕様の要約**：条件は declarative（§12.2.2.5）。終了は condition のみ。出力・revision は §6.7 に従う。Loop の condition では revision を参照しない。iteration ごとに Node を再生成しない（同一インスタンスを再利用。§12.2.2.3）。
+**LoopNode 仕様の要約**：条件は declarative（§13.2.2.5）。終了は condition のみ。出力・revision は §6.7 に従う。Loop の condition では revision を参照しない。iteration ごとに Node を再生成しない（同一インスタンスを再利用。§13.2.2.3）。
 
-#### 12.2.2.2 node_pipeline.yaml
+#### 13.2.2.2 node_pipeline.yaml
 
-graph 記述は PipelineNode と同じ。node_pipeline.yaml の形式・graph セクションは §12.2.1.2 参照。**final ノードを必ず 1 つ指定する**（`graph.final`）。`type: loop` で LoopNode として解釈する。
+graph 記述は PipelineNode と同じ。node_pipeline.yaml の形式・graph セクションは §13.2.1.2 参照。**final ノードを必ず 1 つ指定する**（`graph.final`）。`type: loop` で LoopNode として解釈する。
 
-#### 12.2.2.3 実行モデル
+#### 13.2.2.3 実行モデル
 
 `while True:` で subgraph を 1-shot 実行し、**final ノード**が done になったら condition を判定。true なら break、false なら次 iteration。limit 到達時は status が limit になる。
 
@@ -2112,7 +2189,7 @@ LoopNode は各 iteration で**同じ Node インスタンスを再利用する*
 
 **Node の内部 state と latest_output の整合性は Node 実装者の責務である。Execution Layer は整合を保証しない。**
 
-**LoopNode は Node の内部状態や no-op 判定を解釈しない。** Node が no-op を実装していても、LoopNode の iteration は進む。Loop の終了は **condition** に依存する。意図的なリセットが必要な場合は Node 実装側で run の冒頭に書く。LoopNode はリセットを強制しない（§12.2.2.10 limit の例）。
+**LoopNode は Node の内部状態や no-op 判定を解釈しない。** Node が no-op を実装していても、LoopNode の iteration は進む。Loop の終了は **condition** に依存する。意図的なリセットが必要な場合は Node 実装側で run の冒頭に書く。LoopNode はリセットを強制しない（§13.2.2.10 limit の例）。
 
 **Node 実装者のための iteration 境界ガイドライン**
 
@@ -2158,13 +2235,13 @@ def run(self, inputs, params):
     return {"result": result}
 ```
 
-いずれのパターンでも、**LoopNode は Node の内部 state を感知しない**。iteration の継続・終了は condition のみで決まる。Node が no-op を返しても iteration は進む（§12.2.2.3）。
+いずれのパターンでも、**LoopNode は Node の内部 state を感知しない**。iteration の継続・終了は condition のみで決まる。Node が no-op を返しても iteration は進む（§13.2.2.3）。
 
-#### 12.2.2.4 execute の挙動
+#### 13.2.2.4 execute の挙動
 
 **§6.7 に従う。** 反復は .3 のとおり while + condition 判定。limit チェックのタイミングは §6.7。
 
-#### 12.2.2.5 condition（標準）
+#### 13.2.2.5 condition（標準）
 
 **condition の評価対象は final ノードの「保存された最新出力」とする。** condition は **必ず Runner（StructuralNode）が保持している latest_output（Context 上の保存済み出力）** を参照して評価する。**final_node.execute() の戻り値で評価してはならない。** 出力が更新されない iteration が存在し得ることに注意する。
 
@@ -2224,7 +2301,7 @@ type=string
 
 **Condition evaluation is not input binding.** It is a semantic termination check and MUST be strict. §3.1 の「未定義参照は例外を投げず当該ノードを実行不能とする」は **input バインディング** の話であり、condition には適用しない。condition の path 解決失敗・型不一致は fatal とする。実装者が「未定義参照は fatal じゃない」と解釈して condition エラーを無視してはならない。condition が解決できない状態は Loop 設計上のバグであり、実行継続することに意味がないため fatal とする。subgraph の途中ノードの出力を condition で参照したい場合は、final ノードがその値を pass-through して出力するよう設計すること。
 
-**LoopNode 完全具体例（§12.2.2.5 の補足）**
+**LoopNode 完全具体例（§13.2.2.5 の補足）**
 
 **例：スコアが 0.5 未満になるまで改善する**
 
@@ -2238,25 +2315,25 @@ type=string
 
 **pause を含む場合**：ある iteration で improve が PauseSignal を raise した場合、LoopNode.status = pause、graceful stop。resume() 呼び出しで同じ Node インスタンスで再開し、condition 判定へ戻る（§6.7）。
 
-**limit の場合**：`max_iterations: 10` 等を指定しているとき、10 回実行しても condition が満たされない場合は status = limit、`{}` を返す。既存の最後の有効出力は保存済み（§3.3）。永久ループ防止のため max_iterations の指定を強く推奨（§12.2.2.10）。
+**limit の場合**：`max_iterations: 10` 等を指定しているとき、10 回実行しても condition が満たされない場合は status = limit、`{}` を返す。既存の最後の有効出力は保存済み（§3.3）。永久ループ防止のため max_iterations の指定を強く推奨（§13.2.2.10）。
 
-#### 12.2.2.6 pause 再開モデル
+#### 13.2.2.6 pause 再開モデル
 
-**§6.7 の resume 共通仕様に従う。** PipelineNode と同一 API・同一動作。resume 後は通常の iteration フローに戻る。
+**§12.5 の resume 共通仕様に従う。** PipelineNode と同一 API・同一動作。resume 後は通常の iteration フローに戻る。
 
-#### 12.2.2.7 status の扱い
+#### 13.2.2.7 status の扱い
 
 **§6.7 の「子の status に対する挙動」に従う。** 子ノードの status を集約し、pause / limit / fatal の場合は伝播して停止する。
 
-#### 12.2.2.8 実行不能状態（deadlock）
+#### 13.2.2.8 実行不能状態（deadlock）
 
 **§6.7 に従う。** §7.5 のとおり runtime では検出せず、deadlock を fatal として扱わない。
 
-#### 12.2.2.9 状態保持
+#### 13.2.2.9 状態保持
 
 **§6.7 に従う。** LoopNode も内部状態を持ってよい。
 
-#### 12.2.2.10 LoopNode の limit の例
+#### 13.2.2.10 LoopNode の limit の例
 
 **§6.7 に従う。** Loop に本質的な上限として `max_iterations` を指定する（永久ループ防止のため強く推奨）。PipelineNode の max_idle_sec 等と併用してよい。詳細は §6.7。
 
@@ -2266,21 +2343,32 @@ params:
     max_iterations: 100
 ```
 
-#### 12.2.2.11 final_graph（LoopNode のみ）
+#### 13.2.2.11 LoopNode 完全具体例
 
-loop を抜けた直後に 1 回だけ実行可能な graph を定義できる。**v1.2 では未定義とする。** 将来拡張で仕様化する。
+**例：スコアが 0.5 未満になるまで改善する**
+
+subgraph：`improve`（LLM で改善案生成）→ `evaluate`（Python でスコア算出）。evaluate を final ノードに指定。condition：`path: "$.score"`, `less_than: 0.5`。
+
+- Iteration 1：improve → evaluate → `{"score": 0.72}` → 0.72 < 0.5 → False → 継続
+- Iteration 2：improve → evaluate → `{"score": 0.48}` → 0.48 < 0.5 → True → break
+
+LoopNode の最終出力は final ノード（evaluate）の出力をそのまま返す（§6.7）。
+
+#### 13.2.2.12 final_graph（将来拡張）
+
+loop を抜けた直後に 1 回だけ実行可能な graph を定義できる。v1.3 では未定義とする。v1.4 で仕様化する。
 
 ---
 
-## 12.3 その他（将来拡張）
+## 13.3 その他（将来拡張）
 
-今回の仕様では 12.1 各種 Leaf Node（LLMNode、GitScriptNode、PythonScriptNode 等）、12.2 各種 StructuralNode（PipelineNode、LoopNode）を定義する。12.3 その他は将来拡張とする。
+v1.3 では §13.1 各種 Leaf Node・§13.2 各種 StructuralNode を定義する。§13.3 その他は将来拡張とする。
 
-### 12.3.1 resume_inputs の node_id スコープ（v1.3 予約）
+### 13.3.1 resume_inputs の node_id スコープ（v1.4 検討）
 
-v1.2 では resume_inputs は単一 dict を全 pause Node に渡す（§6.7）。キー衝突は未定義動作である。
+v1.3 では resume_inputs は単一 dict を全 pause Node に渡す（§12.5）。各 Node は自分が必要なキーだけ読む。
 
-v1.3 では以下の形式を検討する：
+v1.4 では以下の形式を検討する：
 
 ```text
 resume_inputs = {
@@ -2289,17 +2377,15 @@ resume_inputs = {
 }
 ```
 
-各 Node は自身の node_id に対応するサブ dict のみを受け取る。これにより複数 pause Node が同時発生する場合のキー衝突を構造的に解消できる。
-
-ただし「Node は black-box であり内部構造を API に漏らさない」原則（§6.7）とのトレードオフがあるため、v1.3 で設計を確定する。
+各 Node は自身の node_id に対応するサブ dict のみを受け取る。これにより複数 pause Node が同時発生する場合のキー衝突を構造的に解消できる。「Node は black-box であり内部構造を API に漏らさない」原則（§6.7）とのトレードオフがあるため、v1.4 で設計を確定する。
 
 ---
 
-## 12.4 大規模データポリシー（Large Output Policy）
+## 13.4 大規模データポリシー（Large Output Policy）
 
 NodeFlow は JSON I/O モデルである。revision は content-hash のため、出力の正規化・ハッシュ計算が可能な範囲で運用する。
 
-### 12.4.1 巨大バイナリの扱い
+### 13.4.1 巨大バイナリの扱い
 
 以下は output port に**直接含めない**ことを推奨する：
 
@@ -2309,7 +2395,7 @@ NodeFlow は JSON I/O モデルである。revision は content-hash のため�
 
 巨大データを直接含めると、Canonical JSON 化・ハッシュ計算のコストが増大する。**大規模データを直接含めた場合、Canonical JSON 化および SHA-256 計算コストは Node の責任である。エンジンは最適化を保証しない。**
 
-### 12.4.2 推奨方式
+### 13.4.2 推奨方式
 
 巨大データは **参照識別子を返す** 方式とする。
 
@@ -2329,7 +2415,7 @@ NodeFlow は JSON I/O モデルである。revision は content-hash のため�
 
 revision はその識別子を含む JSON から content-hash として計算される。
 
-### 12.4.3 hash_skip（例外的オプション）
+### 13.4.3 hash_skip（例外的オプション）
 
 特殊なケースで巨大出力を直接扱う必要がある場合、**hash_skip** を指定できる。
 
@@ -2353,9 +2439,18 @@ else:
 
 ---
 
-# 13. 実装構造
+## 13.5 実装構造
 
-### クラス階層（§1.3 との対応）
+```
+nodes/
+  node_name/
+    node.yaml
+    node.py
+```
+
+node.yaml = 宣言、node.py = 実装
+
+**クラス階層（§1.3 との対応）**
 
 ```
 Node (abstract)
@@ -2371,334 +2466,77 @@ Node (abstract)
 
 従来表記との対応：BaseNode は DataNode・StructuralNode 共通の基底クラス。DataNode はその上に run() 実装を追加した抽象クラスである。PipelineNodeBase / LLMNodeBase 等は上記の具象にマッピングする。
 
-### ノード実体構成
-
-```
-nodes/
-  node_name/
-    node.yaml
-    node.py
-```
-
-* node.yaml = 宣言
-* node.py = 実装
-
 ---
-
-# 14. Execution Philosophy（v1.30 追加）
-
-NodeFlow Execution Layer は：
-
-> 評価系（evaluator）ではなく、
-> 再評価制御系（controlled re-evaluation system）である。
-
-これにより：
-
-* human-in-the-loop
-* partial recomputation
-* dynamic parameter adjustment
-
-が可能になる。
-
----
-
-# 15. Re-execution and Invalidation Model（v1.30 追加）
-
-## 15.1 Motivation
-
-Execution Layer は単なる 1-shot 実行機構ではない。
-
-NodeFlow は：
-
-> **制御付き再評価（controlled re-evaluation）モデル**
-
-である。
-
-本節では、再実行（re-execution）および invalidate の正式定義を与える。
-
----
-
-## 15.2 Resume と Re-execution の統一
-
-### 定義
-
-```
-resume := 再評価開始位置を変更せずに再実行
-re-execution := invalidate + resume
-```
-
-両者の違いは：
-
-| 操作           | invalidate | start_index |
-| ------------ | ---------- | ----------- |
-| resume       | なし         | 現在の停止位置     |
-| re-execution | あり         | 指定位置        |
-
----
-
-## 15.3 Invalidation の定義（確定）
-
-PipelineNode は内部に：
-
-```
-node_states: dict[node_id → status]
-execution_cursor: node_id
-```
-
-を持つ。
-
-### invalidate(node_k) の意味
-
-```
-for all nodes n reachable from node_k (including itself):
-    node_states[n] = ready
-execution_cursor = node_k
-```
-
-* 子孫ノードの DONE / PAUSE / LIMIT / FATAL を破棄
-* Node インスタンスは再生成しない
-* Node 内部 state は保持される（仕様上リセットしない）
-
-**重要**
-
-invalidate は：
-
-* state 巻き戻しではない
-* snapshot 復元ではない
-* 過去の出力履歴も保持しない
-
-単なる：
-
-> 部分再評価のための状態リセット
-
-である。
-
----
-
-## 15.4 再実行の正式 API（v1.30 追加）
-
-```python
-PipelineNode.re_execute(start_node_id: str) -> dict
-```
-
-内部動作：
-
-```
-invalidate(start_node_id)
-resume({})
-```
-
-* resume_inputs は空 dict
-* 必要な変更は params または Context 更新による
-
----
-
-## 15.5 再実行と revision の関係
-
-revision は I/O 契約であり、
-
-* invalidate は revision を操作しない
-* revision の比較は Node 内部責務
-* Execution Layer は revision による再実行抑制を行わない
-
----
-
-# 16. Unified Stop Model（v1.30 追加）
-
-## 16.1 停止状態の統一
-
-Node の停止状態は：
-
-```
-pause
-limit
-fatal
-```
-
-の 3 種。
-
-これらはすべて：
-
-> 実行の中断状態
-
-である。
-
----
-
-## 16.2 pause と limit の関係
-
-limit は：
-
-```
-pause の特殊形
-trigger = limit detection
-```
-
-である。
-
-違いは：
-
-| 状態    | trigger  | 再開条件                |
-| ----- | -------- | ------------------- |
-| pause | Node 内部  | resume 呼び出し         |
-| limit | limit 判定 | limit 条件解除 + resume |
-
----
-
-## 16.3 limit clear
-
-新 API：
-
-```python
-PipelineNode.clear_limit()
-```
-
-動作：
-
-* limit 状態を ready に戻す
-* node_calls / idle timer 等は reset しない（TBD）
-* その後 resume 可能
-
-※ 詳細は TBD とする（branch C で詰める）
-
----
-
-# 17. Resume Semantics Clarification（v1.30 追加）
-
-### 複数 pause ノードが存在する場合
-
-StructuralNode は：
-
-```
-graph.nodes 記述順
-```
-
-に従って pause ノードを resume する。
-
-これは §7.1.1 の determinism と整合する。
-
----
-
-### 実行開始位置
-
-resume 後の実行は：
-
-```
-execution_cursor
-```
-
-から開始する。
-
-execution_cursor は：
-
-* pause 発生位置
-* invalidate により設定された位置
-
----
-
-# 18. Execution Cursor（v1.30 追加）
-
-PipelineNode は内部に：
-
-```
-execution_cursor: node_id
-```
-
-を持つ。
-
-意味：
-
-> 次に実行可能判定を開始するノード
-
-ルール：
-
-1. execute 開始時は graph.nodes[0]
-2. pause 発生時は当該ノード
-3. re_execute(start_node_id) 時は start_node_id
-4. resume 時は execution_cursor から継続
-
-これにより：
-
-* resume
-* 再実行
-* 部分再評価
-
-が統一される。
-
----
-
-# 19. 不変条件（Invariants）
 
 # Part IV — Invariants
 
-以下の不変条件を満たすことで、曖昧さの排除・実装ブレ防止・将来拡張可能性を保つ。
+## 14. 不変条件（Invariants）
 
-1. **Node の内部状態は Node のみが変更可能**（§2.3.1 制約。state / usage / Context の分離原則は §3.9.4）
-2. **StructuralNode は子を black-box として扱う**（子の status を直接変更しない）
-3. **usage は累積**（reset しない。§3.7, §3.9.2）
-4. **revision は BaseNode が content-hash により自動生成する。StructuralNode は revision を変更しない。**（§5.7, §6.6, §6.7）
+以下の不変条件を常に満たすこと。
+
+1. **Node の内部状態は Node のみが変更可能。** 外部からの読み取りは `read_status()` および `read_error()` に限る（§3.9.1, §3.9.4）
+2. **StructuralNode は子を black-box として扱う。** 子の status を直接変更しない（§6.7）
+3. **usage は累積する。** reset しない（§3.7, §3.9.2）
+4. **revision は BaseNode が content-hash により自動生成する。StructuralNode は revision を変更しない。**（§5.5, §6.6, §6.7）
 5. **execute は ready または done のときに通常経路で呼べる。pause のときは resume 経由でのみ呼べる**（§2.2, §7.3）
-6. **Node インスタンスは同一 Execution Scope で再利用する**（execute のたびに再生成しない）。LoopNode は iteration 間で子 Node の同一インスタンスを再利用する。PipelineNode についても、同一 Execution Scope 内では同一インスタンスを使用する。
-7. **revision は output 内容のみに依存する**（content-hash。§5.1, §5.7）
-8. **Node 実装は revision を直接生成してはならない**（BaseNode が付与。§5.2, §5.7）
-9. **revision 計算時に _meta は除外する**（§5.9.4）
-10. **hash_skip が指定された場合、revision は content-hash である保証を失う**（§12.4.3）
-11. **hash_skip は例外的用途であり、通常使用してはならない**（§12.4.3）
-12. **StructuralNode は子ノードの出力内容を変更してはならない**
-13. **StructuralNode は revision を再生成してはならない**（final ノードの出力をそのまま返す。§6.7）
-14. **LoopNode は同一 Execution Scope 内の iteration 間で、子 Node の同一インスタンスを再利用しなければならない**（iteration ごとに子を再生成してはならない。§12.2.2.3）
+6. **Node インスタンスは同一 Execution Scope で再利用する。** execute のたびに再生成しない（§6.5）
+7. **LoopNode は iteration 間で子 Node の同一インスタンスを再利用しなければならない**（§13.2.2.3）
+8. **revision は output 内容のみに依存する**（content-hash。§5.1, §5.5）
+9. **Node 実装は revision を直接生成してはならない**（BaseNode が付与。§5.2, §5.5）
+10. **revision 計算時に _meta は再帰的に除外する**（§5.8）
+11. **hash_skip が指定された場合、revision は content-hash である保証を失う**（§13.4.3）
+12. **hash_skip は例外的用途であり、通常使用してはならない**（§13.4.3）
+13. **StructuralNode は子ノードの出力内容を変更してはならない**（§6.7）
+14. **StructuralNode は revision を再生成してはならない。** final ノードの出力をそのまま返す（§6.7）
 15. **StructuralNode の status 集約は §6.7 に従う**
-16. **並列実行において、status の読み取りと execute() の呼び出しはアトミックに行われなければならない**（§7.3 Atomicity requirement）
-17. **node_calls は BaseNode.execute() の呼び出し回数として定義される**（§3.8）
-18. **revision 計算において非 JSON 型は TypeError（fatal）とする。暗黙型変換は禁止する**（§5.9）
-19. **BaseNode は fatal 発生時に原因例外を内部保持し、read_error() で公開しなければならない**（§9）
-20. **invalidate は Node インスタンスを再生成してはならない**（§15.3）
-21. **re_execute は invalidate + resume で定義される**（§15.4）
-22. **limit は pause の特殊形である**（§16.2）
-23. **StructuralNode は execution_cursor を保持する**（§18）
-24. **resume と re-execution は execution_cursor によって統一される**（§15.2, §18）
+16. **並列実行において、status の読み取りと execute() の呼び出しはアトミックに行われなければならない**（§7.3）
+17. **node_calls は BaseNode.execute() の呼び出し回数として定義される。** execute 入場時にカウントする（§3.8）
+18. **revision 計算において非 JSON 型は TypeError（fatal）とする。暗黙型変換は禁止する**（§5.8）
+19. **BaseNode は fatal 発生時に原因例外を内部保持し、read_error() で公開しなければならない**（§9.1）
+20. **invalidate は Node インスタンスを再生成してはならない**（§12.4.1）
+21. **invalidate は node_k 以降の latest_output を削除する**（§12.4.1）
+22. **re_execute は invalidate + resume で定義される**（§12.5.3）
+23. **limit は pause の特殊形である**（§12.2）
+24. **StructuralNode は execution_cursor を保持する**（§12.3）
+25. **resume と re_execute は execution_cursor によって統一される**（§12.3, §12.5）
+26. **re_execute の node_params_override は当該 re_execute の duration 内のみ有効。元の params には影響しない**（§12.5.3）
+27. **clear_limit() は limit 状態のときのみ呼べる。カウンタはリセットしない**（§12.7）
+28. **pause trigger は Node 内部 trigger（PauseSignal）と外部 trigger（v1.4 TBD）の 2 種類に分類される**（§12.1.1）
 
 ---
 
-# NodeFlow v1.2（二層構造版）の意味
+# 用語ポリシー
 
-この再構成により：
-
-* NodeFlow は計算モデル（Part I）を持つ
-* 実装仕様と理論が分離された
-* 将来 v1.3 で Execution Layer を差し替え可能
-* 分散 Runner 実装・Streaming 実装も設計しやすい
-
----
-
-# NodeFlow v1.2 の特徴
-
-* 完全 I/O ベース
-* Context 廃止
-* version 廃止 → port 単位 revision
-* status — 内部状態（予約フィールドではない）。read_status() で読む。制御は StructuralNode（§2.3, §6.7）
-* **実行順序は nodes 配列順で決定**（§7.1.1）
-* **revision は BaseNode が content-hash で自動生成**（§5.7）
-* Pull 型実行
-* revision は content-hash（同一出力→同一 revision）
-* 明示終了
-* 循環許可
-* 最新出力のみ保持
-* Param 明示
-* limit は params 内
-* 例外時は status = fatal（返り値ではない）
-* Runner は dumb（status の意味は解釈しない。実行可能判定に参照する。§7.3）
-* **状態は Node 内部**（read_status() で読む）
-* **graceful stop 基本**（kill / interrupt なし）
-* **Loop も Node**（LoopNode）
+1. Flow は Core の抽象構造であり、Execution Layer のクラスではない
+2. Graph の意味論 ⟦G⟧ は Execution Layer では StructuralNode.execute により実現される
+3. PipelineNode は Graph を 1-shot 実行する StructuralNode の一種である
+4. LoopNode は Graph を反復実行する StructuralNode の一種である
+5. Runner は StructuralNode の内部補助機構であり、Graph の実行主体ではない
+6. 「Flow 実行」という語は使用せず、「StructuralNode の execute 呼び出し」と記述する
 
 ---
 
-# 用語ポリシー（改訂）
+# NodeFlow v1.3 の特徴
 
-1. **Flow は Core の抽象構造であり、Execution Layer のクラスではない。**
-2. **Graph の意味論 ⟦G⟧ は Execution Layer では StructuralNode.execute により実現される。**
-3. **PipelineNode は Graph を 1-shot 実行する StructuralNode の一種である。**
-4. **LoopNode は Graph を反復実行する StructuralNode の一種である。**
-5. **Runner は StructuralNode の内部補助機構であり、Graph の実行主体ではない。**
-6. **「Flow 実行」という語は使用せず、「StructuralNode の execute 呼び出し」と記述する。**
+- 完全 I/O ベース
+- グローバル Context 廃止
+- revision = content-hash（port 単位）
+- status = 内部状態（read_status() で読む）
+- **実行順序は nodes 配列順で決定**（§7.1.1）
+- **revision は BaseNode が content-hash で自動生成**（§5.5）
+- Pull 型実行
+- 明示終了（final ノード）
+- 循環許可
+- 最新出力のみ保持
+- Param 明示（暗黙継承禁止）
+- limit は params 内
+- 例外時は status = fatal（返り値ではない）
+- Runner は dumb
+- 状態は Node 内部
+- graceful stop 基本（kill / interrupt なし）
+- Loop も Node（LoopNode）
+- **pause trigger = Node 内部（PauseSignal）**（外部 trigger は v1.4 TBD）
+- **limit = pause の特殊形（trigger = limit detection）**
+- **re_execute = invalidate + resume + node_params_override**
+- **execution_cursor による resume / re_execute の統一**
+- **clear_limit() による limit 解除と resume**
