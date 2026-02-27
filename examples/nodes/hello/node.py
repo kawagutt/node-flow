@@ -1,27 +1,17 @@
 """
-Hello Node - サンプル Node 実装
+Hello Node — v1.2. run(inputs, params) -> dict.
 """
+
+from typing import Any, Dict
+
 from nodeflow.node import BaseNode
-from nodeflow.context import Context
-from typing import Dict, Any
 
 
 class HelloNode(BaseNode):
-    """Hello World Node"""
-    
-    DEFAULT_CONFIG = {
-        "message": "Hello, World!"
-    }
-    
-    def run(self, context: Context) -> Dict[str, Any]:
-        message = self.config.get("message", "Hello, World!")
-        return {
-            "status": "success",
-            "updates": [
-                {
-                    "op": "set",
-                    "path": "artifacts.hello.message",
-                    "value": message
-                }
-            ]
-        }
+    def run(self, inputs: Dict[str, Any], params: Any) -> Dict[str, Any]:
+        message = (
+            params.get("message", "Hello, World!")
+            if hasattr(params, "get")
+            else "Hello, World!"
+        )
+        return {"message": {"data": message}}

@@ -1,6 +1,8 @@
 """
-設定管理モジュール（YAML読み込み、deep merge）
+設定管理モジュール（YAML読み込み、deep merge）。
+load_yaml / deep_merge は v1.2 でも使用。load_node_config / load_global_config は v1.11 互換・レガシー用（v1.2 Runner は loader を使用）。
 """
+
 import copy
 import yaml
 from pathlib import Path
@@ -9,21 +11,21 @@ from typing import Dict, Any, Optional
 
 def load_yaml(file_path: str) -> Dict[str, Any]:
     """YAML ファイルを読み込む"""
-    with open(file_path, 'r', encoding='utf-8') as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
 
 def deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
     """
     deep merge 実装
-    
+
     ルール:
     - dict: 再帰マージ
     - list: 上書き
     - scalar: 上書き
     """
     result = base.copy()
-    
+
     for key, value in override.items():
         if key in result and isinstance(result[key], dict) and isinstance(value, dict):
             # dict の場合は再帰マージ
@@ -31,7 +33,7 @@ def deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]
         else:
             # list や scalar の場合は上書き
             result[key] = value
-    
+
     return result
 
 

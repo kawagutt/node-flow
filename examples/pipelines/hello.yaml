@@ -1,7 +1,15 @@
-steps:
-  - id: hello
-    node: hello
-    config:
-      message: "Hello, NodeFlow!"
-    on:
-      success: STOP
+version: "1.2"
+name: hello_pipeline
+inputs: {}
+outputs: {}
+params:
+  limit:
+    max_total_node_calls: 100
+graph:
+  nodes:
+    - id: hello
+      type: hello
+      inputs: {}
+      params:
+        message: "Hello, NodeFlow!"
+  final: hello

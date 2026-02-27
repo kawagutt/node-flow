@@ -1,5 +1,5 @@
 """
-NodeFlow v1.11 - Everything is a Node workflow execution engine
+NodeFlow v1.2 - Everything is a Node workflow execution engine.
 """
 
-__version__ = "1.11.0"
+__version__ = "1.2.0"

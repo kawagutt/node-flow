@@ -1,223 +1,240 @@
 """
-PipelineNode 実装（Pipeline も Node）
+NodeFlow v1.2 — PipelineNode (StructuralNode). Graph 1-shot execution, final node, resume.
 """
-from typing import Dict, Any, Optional
-import importlib.util
-from pathlib import Path
-from .node import BaseNode
-from .context import Context
-from .config import load_node_config
+
+from __future__ import annotations
+
+import time
+from typing import Any, Dict
+
+from .loader import resolve_params
+from .node import BaseNode, LimitSignal
+from .runner import Runner, build_runner
+
+
+_STATUS_PRIORITY = ["fatal", "limit", "pause", "executing", "done", "ready"]
+
+
+def _aggregate_status(statuses: list[str]) -> str:
+    """§6.7: fatal > limit > pause > executing > done > ready."""
+    for s in _STATUS_PRIORITY:
+        if s in statuses:
+            return s
+    return "ready"
 
 
 class PipelineNode(BaseNode):
     """
-    PipelineNode - Pipeline も Node として実装
-    
-    PipelineNode も通常 Node と同じく BaseNode.execute() を使用
-    limit 評価は BaseNode.execute に完全固定（PipelineNode.run 内では呼ばない）
+    PipelineNode — Graph 1-shot execution. Holds graph (nodes + final), Runner, latest_outputs.
+    Reuses Runner and node instances within same Execution Scope.
     """
-    
-    def __init__(self, config: Dict[str, Any], system_info: Dict[str, Any], pipeline_data: Dict[str, Any]):
-        """
-        PipelineNode を初期化
-        
-        Args:
-            config: Runner が deep merge 済みの最終 config
-            system_info: workspace_dir, run_id, execution など
-            pipeline_data: Pipeline YAML のデータ
-        """
-        super().__init__(config, system_info)
+
+    def __init__(self, workspace_dir: str, pipeline_data: Dict[str, Any]) -> None:
+        super().__init__()
+        self.workspace_dir = workspace_dir
         self.pipeline_data = pipeline_data
-        self.steps = pipeline_data.get("steps", [])
-        self.workspace_dir = system_info.get("workspace_dir", ".")
-    
-    def run(self, context: Context) -> Dict[str, Any]:
-        """
-        Pipeline の実行（limit 評価は呼ばない）。
-        単一レベルの pipeline のみ。Nested pipeline / depth limit は Phase 2。
+        self.graph = (pipeline_data or {}).get("graph") or {}
+        self.nodes_list = self.graph.get("nodes") or []
+        self.final_id = self.graph.get("final") or ""
+        self._runner: Runner | None = None
+        self._latest_outputs: Dict[str, Dict[str, Any]] | None = None
+        self._node_instances: Dict[str, BaseNode] | None = None
+        self._idle_since: float | None = None
 
-        Args:
-            context: Context インスタンス
-        
-        Returns:
-            {
-                "status": "success" | "retry" | "escalate" | "abort" | "timeout",
-                "updates": []
-            }
-        """
-        # step loop
-        step_index = 0
-        while step_index < len(self.steps):
-            step = self.steps[step_index]
+    def read_status(self) -> str:
+        """§6.7: return self._status (aggregated from children when not executing)."""
+        return self._status
 
-            # Node を実行
-            result = self._execute_step(step, context)
-            
-            # abort / timeout / escalate は即伝播
-            status = result.get("status")
-            if status in ["abort", "timeout", "escalate"]:
-                return result
-            
-            # 状態遷移解決
-            next_step_id = self._resolve_transition(step, status)
-            
-            if next_step_id == "STOP":
-                break
-            
-            if next_step_id == "NEXT":
-                # success → 次の step
-                step_index += 1
+    def read_error(self) -> list:
+        """§9.1: Aggregate fatal cause from all descendants (including self if fatal). Returns list[Exception]."""
+        out: list = []
+        for node in (self._node_instances or {}).values():
+            e = node.read_error()
+            if e is None:
                 continue
-            
-            # 次の step を探す
-            next_index = self._find_step_index(next_step_id)
-            if next_index is None:
-                break
-            step_index = next_index
-        
-        return {"status": "success", "updates": []}
-    
-    def _execute_step(self, step: Dict[str, Any], context: Context) -> Dict[str, Any]:
-        """
-        単一 step を実行
-        
-        Args:
-            step: step 定義
-            context: Context インスタンス
-        
-        Returns:
-            Node の実行結果
-        """
-        step_id = step.get("id")
-        node_name = step.get("node")
-        
-        if not node_name:
-            return {"status": "abort", "updates": []}
-        
-        # Node クラスをロード
-        node_class = self._load_node_class(node_name)
-        if node_class is None:
-            return {"status": "abort", "updates": []}
-        
-        # Node config を deep merge（DEFAULT_CONFIG → config.yaml → step config）
-        pipeline_config = step.get("config", {})
-        default_config = getattr(node_class, "DEFAULT_CONFIG", {})
-        node_config = load_node_config(
-            node_name, self.workspace_dir, pipeline_config, default_config=default_config
-        )
-        
-        # Node インスタンス生成
-        node = node_class(node_config, self.system_info)
-        
-        # Node.execute を呼ぶ（limit 評価・node_calls 加算は BaseNode.execute 内で実施）
-        return node.execute(context, step_id=step_id)
-    
-    def _load_node_class(self, node_name: str):
-        """
-        Node クラスをロード
-        
-        Args:
-            node_name: Node 名
-        
-        Returns:
-            Node クラスまたは None
-        """
-        node_path = Path(self.workspace_dir) / "nodes" / node_name / "node.py"
-        
-        if not node_path.exists():
+            if isinstance(e, list):
+                out.extend(e)
+            else:
+                out.append(e)
+        if self._status == "fatal" and self._error is not None:
+            out.append(self._error)
+        return out
+
+    def read_node_calls(self) -> int:
+        """§3.8: Aggregate node_calls of self and all descendants."""
+        total = self._my_node_calls
+        for node in (self._node_instances or {}).values():
+            total += node.read_node_calls()
+        return total
+
+    def get_latest_output(self, node_id: str) -> Dict[str, Any] | None:
+        """§12.2.2.5: Return latest output from Context for node_id (for condition evaluation)."""
+        if self._runner is None:
             return None
-        
-        # モジュールを動的にロード
-        spec = importlib.util.spec_from_file_location(f"nodes.{node_name}.node", str(node_path))
-        if spec is None or spec.loader is None:
-            return None
-        
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        
-        # Node クラスを探す（BaseNode を継承しているクラス）
-        for name in dir(module):
-            obj = getattr(module, name)
-            if (isinstance(obj, type) and 
-                issubclass(obj, BaseNode) and 
-                obj is not BaseNode):
-                return obj
-        
-        return None
-    
-    def _resolve_transition(self, step: Dict[str, Any], status: str) -> str:
-        """
-        状態遷移を解決
-        
-        Args:
-            step: step 定義
-            status: Node の実行結果 status
-        
-        Returns:
-            次の step ID または "STOP"
-        """
-        on_config = step.get("on", {})
-        
-        # on: で定義されている場合はそれを使用
-        if status in on_config:
-            return on_config[status]
-        
-        # デフォルト遷移
-        if status == "success":
-            # success → 次Step（呼び出し側で処理）
-            return "NEXT"
-        else:
-            # retry / escalate / abort / timeout → STOP
-            return "STOP"
-    
-    def _find_step_index(self, step_id: str) -> Optional[int]:
-        """
-        step ID から step のインデックスを探す
-        
-        Args:
-            step_id: step ID
-        
-        Returns:
-            step のインデックスまたは None
-        """
-        for i, step in enumerate(self.steps):
-            if step.get("id") == step_id:
-                return i
-        return None
-    
-    def create_child_context(self, parent_context: Context) -> Context:
-        """
-        sub pipeline 用の context を作成
-        
-        Args:
-            parent_context: 親 context
-        
-        Returns:
-            新しい context
-        """
-        # sub_context を構築（usage は親と同一参照で共有＝単一累積）
-        sub_context = Context(
-            {
-                "inputs": {},
-                "artifacts": {},
-                "metrics": {},
-                "flags": parent_context.snapshot().get("flags", {}).copy(),
-            },
-            usage=parent_context.usage,
+        return self._runner.get_latest_output(node_id)
+
+    def get_final_output(self) -> Dict[str, Any]:
+        """Return final node output from Context (§6.7)."""
+        out = (self._latest_outputs or {}).get(self.final_id)
+        return out if isinstance(out, dict) else {}
+
+    def _init_context_if_needed(
+        self, pipeline_inputs: Dict[str, Any], pipeline_params: Dict[str, Any]
+    ) -> None:
+        if self._runner is not None:
+            self._runner.pipeline_inputs = pipeline_inputs
+            self._runner.pipeline_params = pipeline_params
+            return
+        self._latest_outputs = {}
+        self._runner, self._node_instances = build_runner(
+            self.workspace_dir,
+            self.graph,
+            pipeline_inputs,
+            pipeline_params,
+            self._latest_outputs,
         )
-        return sub_context
-    
-    def create_child_system_info(self, parent_system_info: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        sub pipeline 用の system_info を作成
-        
-        Args:
-            parent_system_info: 親 system_info
-        
-        Returns:
-            新しい system_info（execution はシャローコピー）
-        """
-        child_system_info = parent_system_info.copy()
-        if "execution" in child_system_info:
-            child_system_info["execution"] = dict(child_system_info["execution"])
-        return child_system_info
+
+    def _aggregate_children_status(self) -> str:
+        if not self._node_instances:
+            return "ready"
+        statuses = [n.read_status() for n in self._node_instances.values()]
+        return _aggregate_status(statuses)
+
+    def _check_limit(self, pipeline_params: Dict[str, Any]) -> bool:
+        limit_cfg = (pipeline_params or {}).get("limit") or {}
+        max_calls = limit_cfg.get("max_total_node_calls")
+        if max_calls is not None and self.read_node_calls() >= max_calls:
+            return True
+        max_idle = limit_cfg.get("max_idle_sec")
+        if max_idle is not None and self._idle_since is not None:
+            if time.monotonic() - self._idle_since >= max_idle:
+                return True
+        return False
+
+    def _should_terminate(self) -> bool:
+        agg = self._aggregate_children_status()
+        if agg in ("fatal", "limit", "pause"):
+            return True
+        if agg != "done":
+            return False
+        final_node = (self._node_instances or {}).get(self.final_id)
+        if final_node is None:
+            return False
+        return final_node.read_status() == "done"
+
+    def _is_idle(self) -> bool:
+        """Executable == 0 and Executing == 0 (§12.2.1.9). Uses monotonic clock for max_idle_sec (§12.2.1.9, C-05)."""
+        if not self._runner or not self._node_instances:
+            return True
+        any_executable = any(
+            self._runner.is_executable(nid)
+            for nd in self.nodes_list
+            for nid in [nd.get("id")]
+            if nid
+        )
+        if any_executable:
+            return False
+        any_executing = any(
+            n.read_status() == "executing" for n in self._node_instances.values()
+        )
+        return not any_executing
+
+    def run(self, inputs: Dict[str, Any], params: Dict[str, Any]) -> Dict[str, Any]:
+        """§6.7, §12.2.1. One-shot subgraph execution. Limit check at start and after each step."""
+        pipeline_params = params or {}
+        self._init_context_if_needed(inputs, pipeline_params)
+        runner = self._runner
+        if runner is None:
+            return {}
+
+        if self._check_limit(pipeline_params):
+            raise LimitSignal()
+
+        self._idle_since = None
+        while True:
+            progressed = runner.step()
+            self._status = self._aggregate_children_status()
+            if progressed:
+                self._idle_since = None
+            else:
+                if self._is_idle():
+                    if self._idle_since is None:
+                        self._idle_since = time.monotonic()
+                    if self._check_limit(pipeline_params):
+                        self._status = "limit"
+                        return self.get_final_output()
+                else:
+                    self._idle_since = None
+
+            if self._check_limit(pipeline_params):
+                self._status = "limit"
+                return self.get_final_output()
+
+            agg = self._aggregate_children_status()
+            if agg in ("fatal", "limit", "pause"):
+                self._status = agg
+                return {}
+
+            if self._should_terminate():
+                self._status = agg
+                return self.get_final_output()
+
+    def resume(self, resume_inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """§6.7. Call only when status == pause. Resume all pause nodes in graph order."""
+        if self._status != "pause":
+            raise InvalidStateError("resume() only when status is pause")
+        runner = self._runner
+        node_instances = self._node_instances
+        if not runner or not node_instances:
+            return {"resumed": [], "statuses": {}}
+        resumed = []
+        statuses = {}
+        for nd in self.nodes_list:
+            nid = nd.get("id")
+            if not nid:
+                continue
+            node = node_instances.get(nid)
+            if node is None or node.read_status() != "pause":
+                continue
+            # §6.7: StructuralNode子の場合はresume()を呼ぶ。DataNodeはexecute()を呼ぶ。
+            if hasattr(node, "resume") and callable(node.resume):
+                node.resume(resume_inputs)
+                resumed.append(nid)
+                statuses[nid] = node.read_status()
+                # §6.7: 子StructuralNodeがdoneになった場合、出力を保存する
+                if statuses[nid] == "done" and hasattr(node, "get_final_output"):
+                    final_out = node.get_final_output()
+                    if final_out:
+                        runner.save_output(nid, final_out)
+                if statuses[nid] == "fatal":
+                    break
+            else:
+                params_def = nd.get("params") or {}
+                params = resolve_params_for_node(
+                    params_def,
+                    runner.pipeline_params,
+                    self._latest_outputs or {},
+                    runner.pipeline_inputs,
+                )
+                out = node.execute(resume_inputs, params)
+                if out != {}:
+                    runner.save_output(nid, out)
+                resumed.append(nid)
+                statuses[nid] = node.read_status()
+                if statuses[nid] == "fatal":
+                    break
+        return {"resumed": resumed, "statuses": statuses}
+
+
+def resolve_params_for_node(
+    params_def: Dict[str, Any],
+    pipeline_params: Dict[str, Any],
+    latest_outputs: Dict[str, Dict[str, Any]],
+    pipeline_inputs: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Resolve ${params.xxx} in node params."""
+    return resolve_params(params_def, pipeline_params, latest_outputs, pipeline_inputs)
+
+
+class InvalidStateError(Exception):
+    """Raised when resume() is called and status is not pause."""

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nodeflow"
-version = "1.11.0"
-description = "NodeFlow v1.11 - Everything is a Node workflow execution engine"
+version = "1.2.0"
+description = "NodeFlow v1.2 - Everything is a Node workflow execution engine"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
@@ -27,6 +27,7 @@ dependencies = [
     "pyyaml>=6.0",
     "jinja2>=3.0",
     "click>=8.0",
+    "rfc8785>=0.1.4",
 ]
 
 [project.optional-dependencies]

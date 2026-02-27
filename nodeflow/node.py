@@ -1,122 +1,172 @@
 """
-BaseNode 基底クラス実装
+BaseNode, PauseSignal, LimitSignal — NodeFlow v1.2 Execution Layer.
 """
-from typing import Dict, Any, Optional
-from .context import Context
-from .updates import apply_updates
+
+from __future__ import annotations
+
+import hashlib
+import json
+import uuid
+from types import MappingProxyType
+from typing import Any, Dict
+
+# RFC 8785 for revision canonicalization (§5.9)
+try:
+    import rfc8785
+
+    def _canonical_bytes(obj: Any) -> bytes:
+        return rfc8785.dumps(obj)
+except ImportError:
+
+    def _canonical_bytes(obj: Any) -> bytes:
+        s = json.dumps(
+            obj,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        return s.encode("utf-8")
+
+
+class PauseSignal(Exception):
+    """
+    run() 内から raise することで pause を宣言する。
+    resume_inputs_schema は外部に「何を渡せばよいか」を伝える参考情報。エンジンは解釈しない。
+    """
+
+    def __init__(self, reason: str = "", resume_inputs_schema: dict | None = None):
+        super().__init__(reason)
+        self.reason = reason
+        self.resume_inputs_schema = resume_inputs_schema or {}
+
+
+class LimitSignal(Exception):
+    """run() 内から raise することで limit を宣言する。limit pre/post による検出と併用可能。"""
+
+    def __init__(self, reason: str = ""):
+        super().__init__(reason)
+        self.reason = reason
+
+
+def _freeze(params: dict) -> MappingProxyType:
+    """Shallow freeze for params (§4.4)."""
+    return MappingProxyType(params.copy() if params else {})
+
+
+def _strip_meta(value: Any) -> Any:
+    """Recursively remove _meta from all levels (§5.9.4)."""
+    if isinstance(value, dict):
+        return {k: _strip_meta(v) for k, v in value.items() if k != "_meta"}
+    if isinstance(value, list):
+        return [_strip_meta(v) for v in value]
+    return value
+
+
+def _apply_revision_to_output(output: Dict[str, Any]) -> None:
+    """
+    Apply _meta.revision (content-hash) to each output port. MUST run before limit post.
+    §5.7, §5.9, §5.10. Modifies output in place. Non-JSON types → TypeError (caller sets fatal).
+    """
+    for port_name, port_value in list(output.items()):
+        if not isinstance(port_value, dict):
+            raise TypeError(
+                f"Output port '{port_name}' must be a dict, got {type(port_value).__name__}"
+            )
+        if "_meta" not in port_value:
+            port_value["_meta"] = {}
+        if "revision" in port_value["_meta"]:
+            continue
+        if port_value.get("_meta", {}).get("hash_skip") is True:
+            port_value["_meta"]["revision"] = str(uuid.uuid4())
+            continue
+        payload = _strip_meta(port_value)
+        raw = _canonical_bytes(payload)
+        digest = hashlib.sha256(raw).hexdigest()
+        port_value["_meta"]["revision"] = digest
 
 
 class BaseNode:
     """
-    BaseNode 基底クラス
-
-    v1.11 の統一実行モデル:
-    1. check_limits_pre（「今から実行していいか？」を判定）
-    2. node_calls を 1 加算（attempt を数える。無限再帰防御のため run の前で必ず加算）
-    3. run（actual execution）
-    4. apply_updates（BaseNode.execute だけが呼ぶ。atomic）
-    5. check_limits_post（updates 適用後）
-
-    limit 判定は context.usage（wall_time_sec, cost_usd, token_used, node_calls）を参照する。
-    metrics は観測用であり、limit には使わない。
-
-    run() または apply_updates() が例外を投げた場合、execute() は捕捉せずそのまま伝播する。
+    BaseNode — NodeFlow v1.2. All nodes inherit this.
+    execute(inputs, params) -> dict. Subclasses implement run(inputs, params) -> dict.
     """
-    
+
+    # Reserved for future use (v1.1 had config/system_info; v1.2 uses params only).
     DEFAULT_CONFIG: Dict[str, Any] = {}
     SCHEMA: Dict[str, Any] = {}
-    
-    def __init__(self, config: Dict[str, Any], system_info: Dict[str, Any]):
-        """
-        Node を初期化
-        
-        Args:
-            config: Runner が deep merge 済みの最終 config
-            system_info: workspace_dir, run_id, execution など
-        """
-        self.config = config
-        self.system_info = system_info
-    
-    def run(self, context: Context) -> Dict[str, Any]:
-        """
-        Node の実行（Node が override する）
-        
-        Args:
-            context: Context インスタンス
-        
-        Returns:
-            {
-                "status": "success" | "retry" | "escalate" | "abort" | "timeout",
-                "updates": [
-                    {"op": "set", "path": "...", "value": ...},
-                    ...
-                ]
-            }
-        
-        Raises:
-            NotImplementedError: 未実装の場合
-        """
-        raise NotImplementedError("Subclass must implement run()")
-    
-    def check_limits_pre(self, context: Context) -> Optional[str]:
-        """
-        pre-limit 評価（Node が override、任意）
-        
-        updates 適用前に実行される
-        
-        Args:
-            context: Context インスタンス
-        
-        Returns:
-            status 文字列（limit 違反の場合）または None
-        """
-        return None
-    
-    def check_limits_post(self, context: Context) -> Optional[str]:
-        """
-        post-limit 評価（Node が override、任意）
-        
-        updates 適用後に実行される
-        
-        Args:
-            context: Context インスタンス
-        
-        Returns:
-            status 文字列（limit 違反の場合）または None
-        """
-        return None
-    
-    def execute(self, context: Context, step_id: str) -> Dict[str, Any]:
-        """
-        v1.11 の統一実行モデル。
 
-        limit 呼び出しは BaseNode.execute に完全固定。
-        例外: run() / apply_updates() の例外は捕捉せずそのまま伝播する。
+    def __init__(self) -> None:
+        self._status = "ready"
+        self._error: Exception | None = None
+        self._my_node_calls: int = 0
 
-        Args:
-            context: Context インスタンス
-            step_id: step ID（artifacts 書き込み制限に使用）
+    def read_status(self) -> str:
+        """Return current status. Control is caller's responsibility (§2.3.3)."""
+        return self._status
 
-        Returns:
-            {"status": "...", "updates": [...]}
+    def read_error(self) -> Exception | None:
+        """§9.1: Return cause exception when status is fatal; None otherwise."""
+        return self._error if self._status == "fatal" else None
+
+    def read_node_calls(self) -> int:
+        """§3.8: Return number of times this node's execute() was invoked (DataNode)."""
+        return self._my_node_calls
+
+    def run(self, inputs: Dict[str, Any], params: MappingProxyType) -> Dict[str, Any]:
+        """Override in subclass. Must return a dict (output ports)."""
+        raise NotImplementedError("Subclass must implement run(inputs, params)")
+
+    def _check_limit_pre(self, params: MappingProxyType) -> bool:
+        """True if limit exceeded (pre). Override to interpret params.get('limit')."""
+        return False
+
+    def _check_limit_post(self, params: MappingProxyType, run_succeeded: bool) -> bool:
+        """True if limit exceeded (post). Override to interpret params.get('limit')."""
+        return False
+
+    def execute(self, inputs: Dict[str, Any], params: Dict[str, Any]) -> Dict[str, Any]:
         """
-        # 1. pre-limit（「今から実行していいか？」を判定）
-        status = self.check_limits_pre(context)
-        if status:
-            return {"status": status, "updates": []}
+        §2.2, §6.3. Always returns a dict. Status is internal; use read_status().
+        §3.8: node_calls is incremented on entry (before limit pre).
+        Order: node_calls += 1 → freeze → executing → limit pre → run → revision complement → limit post → done → return.
+        """
+        self._my_node_calls += 1
+        frozen = _freeze(params)
+        self._status = "executing"
 
-        # 2. node_calls を 1 加算（attempt を数える。apply_updates の atomic rollback の対象外）
-        context.usage.add(node_calls=1)
+        if self._check_limit_pre(frozen):
+            self._status = "limit"
+            return {}
 
-        # 3. actual execution
-        result = self.run(context)
+        try:
+            result = self.run(inputs, frozen)
+        except PauseSignal:
+            self._status = "pause"
+            return {}
+        except LimitSignal:
+            self._status = "limit"
+            return {}
+        except Exception as e:
+            self._status = "fatal"
+            self._error = e
+            return {}
 
-        # 4. apply_updates（BaseNode.execute だけが呼ぶ。atomic。node_calls は rollback 対象外）
-        apply_updates(context, result.get("updates", []), step_id)
+        if not isinstance(result, dict):
+            self._status = "fatal"
+            self._error = TypeError("run() must return a dict")
+            return {}
 
-        # 5. post-limit（updates 適用後）
-        status = self.check_limits_post(context)
-        if status:
-            return {"status": status, "updates": []}
+        try:
+            _apply_revision_to_output(result)
+        except (TypeError, ValueError) as e:
+            self._status = "fatal"
+            self._error = e
+            return {}
 
+        if self._check_limit_post(frozen, run_succeeded=True):
+            self._status = "limit"
+            return result
+
+        if self._status == "executing":
+            self._status = "done"
         return result

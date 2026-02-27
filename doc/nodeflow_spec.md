@@ -846,7 +846,7 @@ Context とは、**Execution Scope 内のデータフロー状態管理情報**�
 
 以下を常に満たさなければならない。
 
-1. **state は Node のみが変更可能**
+1. **state は Node のみが変更可能。** 外部からの読み取りは `read_status()` および `read_error()` に限る（§3.9.1）。
 2. **usage は Node が記録し、StructuralNode が集約する**
 3. **Context は StructuralNode が管理し、Node は直接参照しない**
 4. state を Context に移してはならない
