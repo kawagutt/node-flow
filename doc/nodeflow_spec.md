@@ -1,6 +1,6 @@
-# NodeFlow v1.4-runtime-min 仕様
+# NodeFlow v1.41-runtime-min 仕様
 
-**ブランチ**: `v1.3-runtime-min`  
+**ブランチ**: `v14-runtime-min`
 **目的**: `ScriptNode → LLMNode → ScriptNode` が動くことを確認する最小構成  
 **ベース**: NodeFlow v1.3
 
@@ -26,7 +26,7 @@ v1.3 の全機能を実装しようとすると作業範囲が広すぎて「動
 | pause / PauseSignal / resume | 動作確認の本筋ではない | v1.5 |
 | re_execute / invalidate | pause 実装後に意味が出る | v1.5 |
 | execution_cursor | re_execute と一体 | v1.5 |
-| clear_limit() | limit 整理と一体 | v1.5 |
+| reset_limit_state(name) | 本版で BaseNode に実装 | — |
 | LoopNode | まず直列を動かす | v1.6 |
 | 循環グラフ | LoopNode と一体 | v1.6 |
 | 並列実行 | 同期直列で十分 | v1.6 |
@@ -35,6 +35,8 @@ v1.3 の全機能を実装しようとすると作業範囲が広すぎて「動
 | limit（複雑なもの） | max_calls のみ実装する | v1.5 で拡張 |
 | hash_skip | revision が仮実装なので不要 | v1.5 |
 | node_params_override | re_execute と一体 | v1.5 |
+
+**LoopNode（v1.6）での再実行：** iteration 開始前に StructuralNode が子ノードの `reset_status()` を呼ぶことで再実行を行う。本版では StructuralNode が `reset_status()` を自動呼び出しすることはない（§6.3 と整合）。
 
 ---
 
@@ -50,9 +52,7 @@ v1.3 から変更なし。本バージョンでは Loop 演算子は定義する
 
 ## 0. Execution Scope
 
-トップレベル `PipelineNode.execute()` の 1 回の呼び出しのライフタイムを指す。
-
-本バージョンでは Execution Scope は常に 1 つ（ネストなし）。
+トップレベル `PipelineNode.execute()` の 1 回の呼び出しのライフタイムを指す。本バージョンでは**概念定義のみ**であり、実質未使用である（ネストなし・常に 1 つ）。
 
 **空 dict `{}` の扱い**：`execute()` が `{}` を返した場合、Runner は当該ノードの `latest_output` を更新しない。
 
@@ -66,6 +66,32 @@ v1.3 から変更なし。本バージョンでは Loop 演算子は定義する
 - データは input / output のみで流れる
 - 終了は final ノード（graph で明示指定）による
 - 例外は Node が吸収する
+- **limit state は Node に持つ**（条件は params、消費量は Node）
+- **status は維持する**（観測用。制御は例外に委ねる）
+- **Node の内部状態は Node のみが変更できる**
+- **StructuralNode は子ノードの内部属性に直接アクセスしてはならない**。子に対する操作は `execute`, `read_status`, `read_error`, `reset_status`, `reset_limit_state` の呼び出しに限定する
+- **execute は status == "ready" のときのみ呼び出される**。それ以外で呼ばれた場合は BaseNode.execute が RuntimeError を raise する
+- **revision は本版ではダミー UUID 実装**（no-op 最適化は行わない）
+
+### 1.1.1 Node の本質
+
+Node は **「同期・原子的な状態遷移器」** である。
+
+* execute は atomic に完了する
+* 途中状態（executing 中）は外部から観測・操作できない（reset_status は呼べない）
+* 状態遷移は execute（および reset_status / reset_limit_state）のみが行う
+
+### 1.1.2 状態の三層構造
+
+Node は次の三層を持つ：
+
+| 種類 | 内容 | 永続性 |
+|------|------|--------|
+| 永続内部状態 | S, `_limit_state` | 持続 |
+| 観測状態 | `_status`, `_error` | 持続 |
+| 実行コンテキスト | ExecutionContext | execute 単位 |
+
+**ExecutionContext** は execute 呼び出し単位で生成され、永続化しない。reset の対象ではない。詳細は §2.4 を参照。
 
 **この版では採用しない原則**（将来版で復活）：
 
@@ -73,7 +99,7 @@ v1.3 から変更なし。本バージョンでは Loop 演算子は定義する
 - graceful stop（本版では fatal が発生したらそのまま停止）
 - revision は I/O 契約（本版では UUID ダミーで代替）
 
-### 1.1 Node 分類（この版）
+### 1.2 Node 分類（この版）
 
 ```
 Node (abstract)
@@ -102,15 +128,24 @@ execute(inputs: dict, params: dict) -> dict
 
 ### 2.2 execute の流れ（この版）
 
-pause / resume / limit post の複雑なケースはスコープ外のため、シンプルに定義する。
+**呼び出し前提条件：**  
+execute() は status == "ready" のときのみ通常経路で呼び出される。status が "ready" 以外のときに execute() が呼ばれた場合、BaseNode.execute は RuntimeError を raise する。
+
+**構造の固定（最終形）：** pre-limit → status=executing → ExecutionContext 生成 → run → usage 適用 → post-limit → revision → status=done。制御用例外は §2.2.1、ExecutionContext は §2.4 を参照。
 
 ```
 execute(inputs, params)
+  ├ pre-limit     → 超過なら status = limit, return {}
   ├ status = executing
-  ├ limit pre     → max_calls 超過なら status = limit, return {}
-  ├ run(inputs, params)
-  │   ├ その他例外 → status = fatal, return {}
-  │   └ dict 返却  → 正常継続
+  ├ ExecutionContext 生成・run に渡す
+  ├ run(inputs, params, context)
+  │   ├ NodeExecutionLimit   → status = limit, return {}
+  │   ├ NodeExecutionFailure → status = fatal, return {}
+  │   ├ その他例外           → status = fatal, return {}
+  │   └ dict 返却            → 正常継続
+  ├ finally: context 破棄
+  ├ _apply_usage(result)     → _usage を result から取り除く（本版では集計なし。v1.5 で usage 集計）
+  ├ post-limit    → 本版では常に False
   ├ revision 補完  → UUID4() をダミーとして付与（§5.1 参照）
   ├ status = done
   └ return dict
@@ -118,6 +153,34 @@ execute(inputs, params)
 
 **この版では PauseSignal・LimitSignal は定義するが、raise しても NotImplementedError を発生させる。**
 run 内でこれらを raise した場合の挙動は未定義とする（v1.5 で正式実装）。
+
+### 2.2.1 Execution Control Exceptions（この版）
+
+Node の実行制御専用の例外を定義する。RuntimeError は使わない。
+
+```python
+class NodeExecutionLimit(Exception):
+    """Node の実行制約（limit）到達を示す例外"""
+
+class NodeExecutionFailure(Exception):
+    """Node の実行失敗（fatal）を示す例外。reason で区別する（例: child fatal / invalid execution state）。"""
+
+    def __init__(self, reason: str = ""):
+        self.reason = reason
+        super().__init__(reason)
+```
+
+**意味の統一：**  
+**NodeExecutionLimit は run 内で発生する制御例外である。** pre-limit / post-limit 判定では例外を使わず、execute が直接 `status = "limit"` を設定する。
+
+**役割分離：**
+
+| 要素 | 役割 |
+|------|------|
+| 例外（run 内） | 制御フロー |
+| pre/post-limit | execute が status を直接変更 |
+| status | 実行状態の観測 |
+| limit_state | 制約消費量（Node が保持） |
 
 ### 2.3 Node 状態モデル（この版）
 
@@ -131,23 +194,34 @@ ready → executing → done
                  ↘ limit
 ```
 
-- `done` は再実行可能
-- `reset` は不要
+- 本バージョンでは `done` 状態の Node は自動再実行されない。再実行する場合は明示的に `reset_status()` を呼ぶ必要がある。
 - `pause` は v1.5 まで未対応
+
+**実行可能条件（この版）：**
+
+```
+実行可能 ⟺ status == "ready"
+```
 
 | status | 意味 |
 |--------|------|
-| ready | 実行待ち |
+| ready | 実行待ち（このときのみ実行可能） |
 | executing | 実行中 |
-| done | 実行完了（再実行可能） |
+| done | 実行完了（再実行されない） |
 | fatal | 異常終了 |
 | limit | limit 到達 |
 
+**重要原則：**
+
+* status は観測用の状態機械である
+* 例外は制御用である
+* 二重管理ではない（役割分離）
+
 **status の制約：**
 
-- status は Node 自身のみが変更可能
+- status は Node 自身の execute() または reset_status() によってのみ変更される。外部から `_status` を直接変更してはならない。
 - StructuralNode は子の status を直接変更してはならない
-- `done / fatal / limit → ready` の遷移は禁止
+- `done / fatal / limit → ready` の遷移は `reset_status()` による場合のみ許容する
 
 #### 2.3.1 read_status()
 
@@ -157,6 +231,83 @@ def read_status(self) -> str:
 ```
 
 status は execute の戻り値には含まれない。
+
+#### 2.3.2 reset_status()
+
+```python
+def reset_status(self) -> None:
+    """
+    Node の status を ready に戻す。
+    internal state S は変更しない。
+    executing 状態では呼び出してはならない。
+    """
+```
+
+**reset_status の動作：**
+
+* **executing 状態では呼べない。** 呼び出した場合は RuntimeError を raise する。
+* **limit / fatal / done からのみ ready へ遷移可能**（`reset_status()` による場合のみ許容）。
+* `_status = "ready"`、`_error = None`。**limit_state は変更しない。**
+
+#### 2.3.3 reset_limit_state()
+
+```python
+def reset_limit_state(self, name: str) -> None:
+    """
+    指定した limit state をリセットする。
+    status は変更しない。
+    """
+```
+
+**reset_limit_state の動作：**
+
+* 指定した name（例: `"calls"`）に対応する limit state を 0 にリセットする
+* status は変更しない
+* 未定義の limit state 名を指定した場合は KeyError を raise する
+
+**limit 状態から再実行する方法（この版）：**
+
+1. **方法1**：limit state をリセットしてから status を戻す — `reset_limit_state("calls")` → `reset_status()`
+2. **方法2**：limit 設定を緩和した params で再実行 — `reset_status()` → `execute(inputs, new_params)`（`new_params` の `max_calls` が現在の `calls` より大きい場合のみ有効。`reset_limit_state` は省略可能）
+
+### 2.4 ExecutionContext（この版）
+
+**スコープ：** Node ごと・execute 呼び出しごと。**永続化しない。**  
+ExecutionContext は execute 呼び出し単位で生成され、**reset_status や reset_limit_state の対象ではない。**
+
+**役割：** cooperative stop、経過時間取得、将来の pause 拡張基盤。本バージョンでは BaseNode が生成し run に渡すが、DataNode の run() は context を参照しなくてもよい。
+
+```python
+class ExecutionContext:
+    def __init__(self):
+        self._stop_requested = False
+        self._start_time = time.monotonic()
+
+    def request_stop(self) -> None:
+        self._stop_requested = True
+
+    def should_stop(self) -> bool:
+        return self._stop_requested
+
+    def elapsed_time(self) -> float:
+        return time.monotonic() - self._start_time
+```
+
+**Node の責務：** BaseNode が context を生成し run に渡す。実行終了時（finally）に破棄する。永続保存しない。
+
+**pause/resume 方針（v1.41）：** resume = 新しい execute 呼び出し。ExecutionContext は再利用しない（B 方針）。generator モデルは採用しない。
+
+**v1.5 への引継ぎ：** v1.5 では `context.request_stop()` による cooperative stop は採用しない。pause は `PauseSignal` の raise で宣言する（v1.3 の設計に戻す）。`context.should_stop()` は将来の外部 trigger pause（v1.4 TBD）のために予約する。
+
+### 2.5 run の契約（この版）
+
+責務分離のため、run は次の契約を満たす。
+
+* **run は必ず dict を返す。** None や非 dict は仕様違反。
+* **run は `_meta` および `_usage` をキーとする output port を返してはならない。** これらは BaseNode が使用する予約キーである。usage を返す場合は戻り値のトップレベルに `_usage` を含め、BaseNode の `_apply_usage` が取り除く。run は `_meta` を設定してはならない（§5.2）。
+* **run は `_status` を変更してはならない。** 状態遷移は execute のみが行う。
+* **run は `_limit_state` を直接変更してはならない。** 消費量の更新は execute の `_apply_usage` が行う。
+* **run が参照してよい外部状態は、inputs・params・ExecutionContext（context）のみである。** 自身の `_status` / `_limit_state` / `_error` への書き込みは禁止。
 
 ---
 
@@ -179,7 +330,7 @@ inputs:
 
 **この版での制約：**
 
-- 未定義参照は「実行不能」として扱う（fatal にしない）
+- 入力解決に失敗した場合、Runner は当該ノードの execute() を呼ばない。この場合、ノードの status は変更されない。
 - 循環参照はサポートしない（静的診断なし）
 - required / optional の区別はすべて required 扱い
 
@@ -228,7 +379,12 @@ Node の静的実行設定。実行中に変化しない。
 
 ### 4.2 limit（この版では max_calls のみ）
 
-この版で実装する limit は `max_calls` のみとする。
+この版で実装する limit は `max_calls` のみとする。**limit 判定は pre / post に分離される。**
+
+* **pre-limit**：実行前に判定。純粋関数。状態変更は execute が行う。本版では max_calls のみ。
+* **post-limit**：実行後に判定。本版では空実装（常に False）。将来 token / time / budget をここに追加する。
+
+run() 内で NodeExecutionLimit を raise した場合も limit として扱う。
 
 ```yaml
 params:
@@ -238,7 +394,23 @@ params:
 
 `max_calls` を超えた場合、`execute` は `{}` を返し `status = limit` とする。
 
+**call count の扱い：** `_limit_state["calls"]` は **run を開始する直前にのみ** 増加する（実行開始回数。pre_limit で止まった呼び出しはカウントしない）。これにより max_calls=3 のとき 3 回実行後に calls=3 となり、4 回目の execute で pre_limit が True になって status=limit で return する。limit 到達後は `reset_limit_state("calls")` を呼ばない限り再実行できない。
+
 **この版では実装しない limit 種別**：max_wall_time_sec / max_idle_sec / max_total_node_calls / max_iterations
+
+### 4.2.1 limit state の位置（この版）
+
+limit の**条件**（max_calls 等）は params 側に記述する。limit の**消費量**は Node が内部に保持する。
+
+Node は `_limit_state` を dict で持つ（将来拡張可能）：
+
+```python
+# この版
+self._limit_state = {"calls": 0}
+
+# 将来拡張例
+# {"calls": 0, "tokens": 0, "budget": 0}
+```
 
 ### 4.3 params は immutable
 
@@ -266,9 +438,8 @@ def _attach_revision(output: dict) -> dict:
 
 **この版での性質：**
 
-- revision は毎回異なる値になる（deterministic ではない）
-- 同一内容でも異なる revision が付与される
-- revision を比較しての no-op 最適化はこの版では動作しない（v1.5 で修正）
+- 本バージョンでは revision の値は実行ごとに異なる。
+- revision に基づく no-op 最適化は一切行わない。
 - `_meta` は予約キーである（この点は v1.5 以降と同じ）
 
 ### 5.2 Node 実装者への注意
@@ -281,42 +452,72 @@ Node の run() は `_meta` キーを直接設定してはならない。BaseNode
 
 ### 6.1 役割
 
-すべての Node が継承する基底クラス。
+すべての Node が継承する基底クラス。execute の構造は固定し、pre-limit / ExecutionContext / run / usage 適用 / post-limit / revision の順で行う。
 
 ```python
 class BaseNode:
     def __init__(self):
         self._status = "ready"
         self._error: Exception | None = None
-        self._call_count = 0
+        self._limit_state = {"calls": 0}  # limit 判定用（将来拡張可能）
+        self._current_context: ExecutionContext | None = None
 
     def execute(self, inputs: dict, params: dict) -> dict:
-        """共通実行テンプレート。サブクラスは run() のみ実装する。"""
-        self._status = "executing"
-        self._call_count += 1
+        """共通実行テンプレート。サブクラスは run() を実装する。"""
+        if self._status != "ready":
+            raise RuntimeError("execute called when status is not ready")
 
-        # limit pre（max_calls のみ）
-        max_calls = params.get("limit", {}).get("max_calls")
-        if max_calls is not None and self._call_count > max_calls:
+        if self._check_pre_limit(params):
             self._status = "limit"
             return {}
 
-        # run 呼び出し
+        self._status = "executing"
+        context = ExecutionContext()
+        self._current_context = context
+        self._limit_state["calls"] += 1  # run 開始前にのみ増加（pre_limit では増やさない）
+
         try:
             frozen_params = _freeze(params)
-            result = self.run(inputs, frozen_params)
+            result = self.run(inputs, frozen_params, context)
+        except NodeExecutionLimit:
+            self._status = "limit"
+            return {}
+        except NodeExecutionFailure as e:
+            self._status = "fatal"
+            self._error = e
+            return {}
         except Exception as e:
             self._status = "fatal"
             self._error = e
             return {}
+        finally:
+            self._current_context = None
 
-        # revision 付与（ダミー）
+        self._apply_usage(result)
+        if self._check_post_limit(result, params):
+            self._status = "limit"
+            return {}
+
         result = _attach_revision(result)
-
         self._status = "done"
         return result
 
-    def run(self, inputs: dict, params: dict) -> dict:
+    def _check_pre_limit(self, params: dict) -> bool:
+        """実行前の limit 判定。本版では max_calls のみ。"""
+        max_calls = params.get("limit", {}).get("max_calls")
+        if max_calls is None:
+            return False
+        return self._limit_state["calls"] >= max_calls
+
+    def _check_post_limit(self, result: dict, params: dict) -> bool:
+        """実行後の limit 判定。本版では空実装。"""
+        return False
+
+    def _apply_usage(self, result: dict) -> None:
+        """run の戻り値から _usage を取り除く（output port に残さない）。本版では集計は行わず pop のみ。v1.5 で limit_state への集計を追加する。"""
+        result.pop("_usage", None)
+
+    def run(self, inputs: dict, params: dict, context: ExecutionContext) -> dict:
         raise NotImplementedError
 
     def read_status(self) -> str:
@@ -324,43 +525,48 @@ class BaseNode:
 
     def read_error(self) -> Exception | None:
         return self._error
+
+    def reset_status(self) -> None:
+        """Node の status を ready に戻す。internal state S は変更しない。executing 状態では呼び出してはならない。"""
+        if self._status == "executing":
+            raise RuntimeError("cannot reset while executing")
+        self._status = "ready"
+        self._error = None
+
+    def reset_limit_state(self, name: str) -> None:
+        """指定した limit state をリセットする。status は変更しない。"""
+        if name not in self._limit_state:
+            raise KeyError(f"Unknown limit state: {name}")
+        self._limit_state[name] = 0
 ```
 
 ### 6.2 DataNode の責任（この版）
 
-- `run()` の実装
+- `run(inputs, params, context)` の実装。本版では context を参照しなくてもよい。
 - `execute()` は BaseNode の共通テンプレートを使う
 - revision 付与は BaseNode が行う（run 実装者は `_meta` を触らない）
-- usage は記録しない（v1.5 で追加）
+- **run は `_limit_state` を直接変更してはならない**。usage は戻り値の `_usage` に含め、BaseNode の `_apply_usage` が集計する（本版では no-op）
+- usage の記録は v1.5 で有効化
 
 ### 6.3 StructuralNode の責任（この版）
 
 - PipelineNode のみ実装する
 - 子ノードの execute を管理する
-- status の集約（§6.7 の简略版）
-- 終了判定（final ノードが done になったら終了）
+- status の集約（§13.3.4 参照）。**全子ノードの fatal / limit を検知したら即 raise。final が done で終了。進捗なしで終了していなければ fatal。**
+- 終了判定：いずれかの子が fatal → Pipeline fatal、いずれかの子が limit → Pipeline limit、final が done → Pipeline done、進捗なし → fatal（詳細は §13.3.3）
 
-**StructuralNode.run（この版）：**
+**操作境界：**  
+StructuralNode は子ノードの内部属性（`_status`, `_limit_state`, `_error`, internal state S）に直接アクセスしてはならない。
 
-```python
-def run(self, inputs, params):
-    self._init_context(inputs)
-    while True:
-        progressed = self._step()
-        if not progressed:
-            break  # 実行可能ノードなし → deadlock or 完了
-        if self._is_terminated():
-            break
-    return self._get_final_output()
-```
+StructuralNode が子ノードに対して行える操作は、次のメソッド呼び出しに限定される：
 
-**終了条件（この版）：**
+* `execute(inputs, params)`
+* `read_status()`
+* `read_error()`
+* `reset_status()`
+* `reset_limit_state(name)`
 
-- **done**：final ノードの status が done
-- **fatal**：いずれかの子ノードが fatal → StructuralNode も fatal
-- **limit**：いずれかの子ノードが limit → StructuralNode も limit
-
-status の優先順位：**fatal > limit > done > executing > ready**
+本バージョンでは StructuralNode は子ノードの `reset_status()` を自動的に呼ばない。
 
 **StructuralNode.execute の戻り値（この版）：**
 
@@ -383,7 +589,7 @@ def step(self) -> bool:
     """実行可能なノードを 1 つ見つけて execute する。実行した場合 True を返す。"""
     for node_id in self.graph_node_order:
         node = self.nodes[node_id]
-        if node.read_status() not in ("ready", "done"):
+        if node.read_status() != "ready":
             continue
         inputs = self._resolve_inputs(node_id)
         if inputs is None:
@@ -400,7 +606,7 @@ def step(self) -> bool:
 Runner が行うこと：
 
 - inputs 解決
-- 実行可能判定（status が ready または done かつ全 input が解決済み）
+- 実行可能判定（status が ready かつ全 input が解決済み）
 - node.execute 呼び出し
 - 最新出力保存
 
@@ -409,22 +615,18 @@ Runner が行わないこと（v1.3 と同じ）：
 - status の意味を解釈しない
 - limit / usage を評価しない
 - revision を解釈しない
-- 例外処理をしない
+- 例外を捕捉しない
 
 ### 7.3 実行可能判定（この版）
 
 ```
-実行可能 ⟺ status ∈ {ready, done}
+実行可能 ⟺ status == "ready"
            ∧ 全 input port の参照先が latest_output に存在する
 ```
 
 `required` の概念はこの版では省略し、全 input を required 扱いとする。
 
-### 7.4 deadlock の扱い（この版）
-
-step() が False を返し続ける（実行可能ノードが 0）かつ final ノードが done でない場合は、PipelineNode が `{}` を返して終了する（status = limit、理由 = "no progress"）。
-
-これは簡易的な deadlock 保護である。max_idle_sec 等の精緻な実装は v1.5 で行う。
+Runner は「ready なノードを 1 つ execute する。なければ False を返す」のみを行う。Runner は終了理由を解釈しない。
 
 ---
 
@@ -436,9 +638,14 @@ step() が False を返し続ける（実行可能ノードが 0）かつ final 
 
 ## 9. 例外処理モデル（この版）
 
-### 9.1 Node が吸収
+### 9.1 制御用例外と観測用 status の分離
 
-BaseNode.execute が例外を捕捉し status = fatal とする。
+BaseNode.execute は次のように例外を扱う：
+
+* **NodeExecutionLimit** → status = limit、return `{}`
+* **NodeExecutionFailure** およびその他 **Exception** → status = fatal、`_error` に保持、return `{}`
+
+例外は制御専用、status は観測専用である（§2.2.1 役割分離）。
 
 ```python
 def read_error(self) -> Exception | None:
@@ -561,7 +768,7 @@ params:
 
 ```python
 class PythonScriptNode(BaseNode):
-    def run(self, inputs: dict, params: dict) -> dict:
+    def run(self, inputs: dict, params: dict, context: ExecutionContext) -> dict:
         script_path = params["script"]
         # スクリプトを import して main(inputs) を呼ぶ
         spec = importlib.util.spec_from_file_location("script", script_path)
@@ -625,7 +832,7 @@ params:
 
 ```python
 class LLMNode(BaseNode):
-    def run(self, inputs: dict, params: dict) -> dict:
+    def run(self, inputs: dict, params: dict, context: ExecutionContext) -> dict:
         messages = []
         if params.get("system_prompt"):
             messages.append({"role": "system", "content": params["system_prompt"]})
@@ -668,23 +875,30 @@ Graph を直列 1-shot 実行する StructuralNode。
 
 ### 13.3.3 実行モデル
 
+step を繰り返し、**子ノードの fatal / limit を検知したら即 raise**。final が done で終了。進捗がなく終了していない場合は `NodeExecutionFailure("invalid execution state")` を raise する。final のみの監視は行わず、全子の状態を対象とする。
+
+**実行コンテキスト：** PipelineNode の `_context`（latest_output を含む）は execute 開始時に run 内で初期化される。§1.1.2 の三層構造において実行コンテキスト層に属し、永続状態ではない。
+
 ```python
 class PipelineNode(BaseNode):
-    def run(self, inputs: dict, params: dict) -> dict:
+    def run(self, inputs: dict, params: dict, context: ExecutionContext) -> dict:
         self._context = {"latest_output": {}, "pipeline_inputs": inputs}
         runner = Runner(self._graph, self._context)
 
         while True:
             progressed = runner.step()
+
+            statuses = [c.read_status() for c in self._get_children()]
+            if "fatal" in statuses:
+                raise NodeExecutionFailure("child fatal")
+            if "limit" in statuses:
+                raise NodeExecutionLimit("child limit")
+
+            if self._get_node(self._final_id).read_status() == "done":
+                break
+
             if not progressed:
-                # 進捗なし
-                break
-            # 終了判定
-            final_status = self._get_node(self._final_id).read_status()
-            if final_status == "done":
-                break
-            if final_status in ("fatal", "limit"):
-                break
+                raise NodeExecutionFailure("invalid execution state")
 
         return self._collect_output()
 
@@ -695,22 +909,31 @@ class PipelineNode(BaseNode):
         return self._context["latest_output"].get(self._final_id, {})
 ```
 
+BaseNode.execute が `NodeExecutionLimit` / `NodeExecutionFailure` を捕捉し、それぞれ status = limit / fatal として扱う。
+
 ### 13.3.4 status の集約（この版）
 
-| 子ノードの状態 | PipelineNode の status |
-|----------------|------------------------|
-| いずれかが fatal | fatal |
-| いずれかが limit | limit |
+| 条件 | PipelineNode の status |
+|------|------------------------|
+| いずれかの子が fatal | fatal |
+| いずれかの子が limit | limit |
 | final が done | done |
-| 進捗なし（deadlock） | limit（理由 = "no progress"） |
+| 進捗なしで終了していない | fatal（invalid execution state） |
 
-優先順位：**fatal > limit > done**
+**停止条件の優先順位（順序を厳守）：**  
+1. **fatal 優先** — いずれかの子が fatal → Pipeline fatal  
+2. **limit 次** — いずれかの子が limit → Pipeline limit  
+3. **final done** — final が done → Pipeline done  
+4. **no progress → fatal** — 上記のいずれでもないのに進捗なし → invalid execution state（fatal）
+
+final が done であっても、他の子に fatal または limit がある場合はそれを優先する。
 
 ### 13.3.5 特記事項
 
-- この版では `resume()` / `re_execute()` / `clear_limit()` は `NotImplementedError` を raise する
+- この版では `resume()` / `re_execute()` は `NotImplementedError` を raise する。`reset_status()` / `reset_limit_state(name)` は実装する。
 - execution_cursor は持たない（v1.5 で追加）
 - LoopNode のネストは未対応
+- **PipelineNode の `_limit_state["calls"]` は PipelineNode 自身の execute 呼び出し回数をカウントする。** 子ノードの呼び出し回数ではない。`max_calls` を PipelineNode に設定した場合、Pipeline 全体の実行回数を制限することになる（v1.6 LoopNode 実装時に意味が出る）。
 
 ---
 
@@ -721,14 +944,34 @@ class PipelineNode(BaseNode):
 v1.3 の全不変条件のうち、この版で意味を持つものを列挙する。
 
 1. **Node の内部状態は Node のみが変更可能**
-2. **StructuralNode は子を black-box として扱う**
-3. **execute は ready または done のときのみ通常経路で呼べる**
+2. **StructuralNode は子の内部属性に直接アクセスしてはならない。** 子に対する操作は execute / read_status / read_error / reset_status / reset_limit_state の呼び出しに限定する
+3. **execute は status == "ready" のときのみ呼び出される。** それ以外で呼ばれた場合は BaseNode.execute が RuntimeError を raise する
 4. **Node インスタンスは同一 Execution Scope で再利用する**
 5. **revision は BaseNode が付与する。Node 実装者は `_meta` を直接操作してはならない**（この版では UUID ダミー）
 6. **StructuralNode は子ノードの出力内容を変更してはならない**
 7. **BaseNode は fatal 発生時に原因例外を保持し、read_error() で公開する**
 8. **execute は常に dict を返す。None を返してはならない**
 9. **PauseSignal・LimitSignal を run() 内で raise した場合は NotImplementedError が発生する**（この版のみ）
+
+10. **reset_status() は status と error のみを変更する。** limit_state は変更しない。executing 状態の Node に対して呼び出してはならない。呼び出した場合は RuntimeError を raise する。
+
+11. **reset_limit_state(name) は指定した limit state のみを変更する。** status は変更しない。
+
+12. **done 状態の Node は自動再実行されない。** 再実行する場合は明示的に reset_status() を呼ぶ必要がある。
+
+13. **limit state は Node に保持される。**（消費量は Node、条件は params）
+
+14. **例外は制御専用であり、status は観測専用である。**
+
+15. **実行状態の変更は execute および reset_status / reset_limit_state のみが行う。** run は `_status`, `_limit_state`, `_error` を直接変更してはならない。
+
+16. **run は limit_state を直接変更してはならない。** usage は戻り値の `_usage` で返し、BaseNode の `_apply_usage` が集計する。
+
+17. **ExecutionContext は永続状態ではない。** execute 呼び出し単位で生成・破棄され、reset_status および reset_limit_state の対象ではない。
+
+18. **limit 判定は pre / post に分離される。** pre-limit は実行前、post-limit は実行後（本版では空実装）。
+
+19. **Node は同期・原子的に実行される。** execute は atomic に完了する。
 
 ---
 
@@ -744,7 +987,7 @@ v1.3 の全不変条件のうち、この版で意味を持つものを列挙す
 | 中 | limit 拡張 | max_wall_time_sec / max_idle_sec / max_total_node_calls |
 | 中 | re_execute + invalidate | node2 から再スタート + params_override |
 | 中 | execution_cursor | resume / re_execute の統一基盤 |
-| 中 | clear_limit() | limit 解除 + resume |
+| 中 | reset_limit_state の高度利用 | limit 解除 + resume |
 | 低 | LoopNode | 条件付き反復実行 |
 | 低 | 並列実行 | async 対応 |
 | 低 | 循環グラフ | LoopNode と一体 |
@@ -769,4 +1012,5 @@ v1.3 の全不変条件のうち、この版で意味を持つものを列挙す
 [ ] fatal 発生時に PipelineNode が {} を返す
 [ ] max_calls を超えた場合に status = limit になる
 [ ] read_error() で原因例外が取得できる
+[ ] ready 以外のノードを execute しようとした場合に RuntimeError が raise される（PipelineNode が fatal になる）
 ```
