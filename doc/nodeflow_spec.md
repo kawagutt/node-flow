@@ -683,7 +683,7 @@ StructuralNode は子の read_error() を集約して返す。
 ### 11.1 pipeline.yaml（この版）
 
 ```yaml
-version: "1.4-min"
+version: "1.4"
 name: my_pipeline
 
 inputs:
@@ -726,7 +726,7 @@ graph:
 
 ### 11.2 version フィールド
 
-`version: "1.4-min"` を必須とする。不一致時は `VersionMismatchError` を raise する。
+`version: "1.4"` を必須とする。不一致時は `VersionMismatchError` を raise する。
 
 ### 11.3 Node Type Registry（この版）
 

@@ -1,38 +1,34 @@
 """
-BaseNode, PauseSignal, LimitSignal — NodeFlow v1.2 Execution Layer.
+NodeFlow v1.41-runtime-min — Exceptions, ExecutionContext, BaseNode, utils.
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
+import time
 import uuid
 from types import MappingProxyType
 from typing import Any, Dict
 
-# RFC 8785 for revision canonicalization (§5.9)
-try:
-    import rfc8785
+# --- Execution control exceptions (§2.2.1) ---
 
-    def _canonical_bytes(obj: Any) -> bytes:
-        return rfc8785.dumps(obj)
-except ImportError:
 
-    def _canonical_bytes(obj: Any) -> bytes:
-        s = json.dumps(
-            obj,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        )
-        return s.encode("utf-8")
+class NodeExecutionLimit(Exception):
+    """Node の実行制約（limit）到達を示す例外"""
+
+
+class NodeExecutionFailure(Exception):
+    """Node の実行失敗（fatal）を示す例外。reason で区別する。"""
+
+    def __init__(self, reason: str = ""):
+        self.reason = reason
+        super().__init__(reason)
+
+
+# --- PauseSignal / LimitSignal: 定義のみ。raise 時は NotImplementedError（この版） ---
 
 
 class PauseSignal(Exception):
-    """
-    run() 内から raise することで pause を宣言する。
-    resume_inputs_schema は外部に「何を渡せばよいか」を伝える参考情報。エンジンは解釈しない。
-    """
+    """v1.5 で正式実装。本版では raise すると NotImplementedError。"""
 
     def __init__(self, reason: str = "", resume_inputs_schema: dict | None = None):
         super().__init__(reason)
@@ -41,132 +37,164 @@ class PauseSignal(Exception):
 
 
 class LimitSignal(Exception):
-    """run() 内から raise することで limit を宣言する。limit pre/post による検出と併用可能。"""
+    """v1.5 で正式実装。本版では raise すると NotImplementedError。"""
 
     def __init__(self, reason: str = ""):
         super().__init__(reason)
         self.reason = reason
 
 
+# --- ExecutionContext (§2.4) ---
+
+
+class ExecutionContext:
+    """execute 呼び出し単位で生成。永続化しない。"""
+
+    def __init__(self) -> None:
+        self._stop_requested = False
+        self._start_time = time.monotonic()
+
+    def request_stop(self) -> None:
+        self._stop_requested = True
+
+    def should_stop(self) -> bool:
+        return self._stop_requested
+
+    def elapsed_time(self) -> float:
+        return time.monotonic() - self._start_time
+
+
+# --- utils ---
+
+
 def _freeze(params: dict) -> MappingProxyType:
-    """Shallow freeze for params (§4.4)."""
+    """Shallow freeze for params (§4.3)."""
     return MappingProxyType(params.copy() if params else {})
 
 
-def _strip_meta(value: Any) -> Any:
-    """Recursively remove _meta from all levels (§5.9.4)."""
-    if isinstance(value, dict):
-        return {k: _strip_meta(v) for k, v in value.items() if k != "_meta"}
-    if isinstance(value, list):
-        return [_strip_meta(v) for v in value]
-    return value
+RESERVED_KEYS = frozenset({"_meta", "_usage"})
 
 
-def _apply_revision_to_output(output: Dict[str, Any]) -> None:
-    """
-    Apply _meta.revision (content-hash) to each output port. MUST run before limit post.
-    §5.7, §5.9, §5.10. Modifies output in place. Non-JSON types → TypeError (caller sets fatal).
-    """
-    for port_name, port_value in list(output.items()):
-        if not isinstance(port_value, dict):
-            raise TypeError(
-                f"Output port '{port_name}' must be a dict, got {type(port_value).__name__}"
-            )
-        if "_meta" not in port_value:
-            port_value["_meta"] = {}
-        if "revision" in port_value["_meta"]:
+def _attach_revision(output: dict) -> dict:
+    """各 output port に UUID4 のダミー revision を付与。予約キー _meta/_usage はスキップ（§5.1）。"""
+    for port_key, port_value in output.items():
+        if port_key in RESERVED_KEYS:
             continue
-        if port_value.get("_meta", {}).get("hash_skip") is True:
+        if isinstance(port_value, dict):
+            port_value.setdefault("_meta", {})
             port_value["_meta"]["revision"] = str(uuid.uuid4())
-            continue
-        payload = _strip_meta(port_value)
-        raw = _canonical_bytes(payload)
-        digest = hashlib.sha256(raw).hexdigest()
-        port_value["_meta"]["revision"] = digest
+    return output
+
+
+# --- BaseNode (§6) ---
 
 
 class BaseNode:
     """
-    BaseNode — NodeFlow v1.2. All nodes inherit this.
-    execute(inputs, params) -> dict. Subclasses implement run(inputs, params) -> dict.
+    NodeFlow v1.41. すべての Node が継承する基底クラス。
+    execute の構造は固定: pre-limit → executing → run → usage 適用 → post-limit → revision → done.
     """
-
-    # Reserved for future use (v1.1 had config/system_info; v1.2 uses params only).
-    DEFAULT_CONFIG: Dict[str, Any] = {}
-    SCHEMA: Dict[str, Any] = {}
 
     def __init__(self) -> None:
         self._status = "ready"
         self._error: Exception | None = None
-        self._my_node_calls: int = 0
-
-    def read_status(self) -> str:
-        """Return current status. Control is caller's responsibility (§2.3.3)."""
-        return self._status
-
-    def read_error(self) -> Exception | None:
-        """§9.1: Return cause exception when status is fatal; None otherwise."""
-        return self._error if self._status == "fatal" else None
-
-    def read_node_calls(self) -> int:
-        """§3.8: Return number of times this node's execute() was invoked (DataNode)."""
-        return self._my_node_calls
-
-    def run(self, inputs: Dict[str, Any], params: MappingProxyType) -> Dict[str, Any]:
-        """Override in subclass. Must return a dict (output ports)."""
-        raise NotImplementedError("Subclass must implement run(inputs, params)")
-
-    def _check_limit_pre(self, params: MappingProxyType) -> bool:
-        """True if limit exceeded (pre). Override to interpret params.get('limit')."""
-        return False
-
-    def _check_limit_post(self, params: MappingProxyType, run_succeeded: bool) -> bool:
-        """True if limit exceeded (post). Override to interpret params.get('limit')."""
-        return False
+        self._limit_state: Dict[str, int] = {"calls": 0}
+        self._current_context: ExecutionContext | None = None
 
     def execute(self, inputs: Dict[str, Any], params: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        §2.2, §6.3. Always returns a dict. Status is internal; use read_status().
-        §3.8: node_calls is incremented on entry (before limit pre).
-        Order: node_calls += 1 → freeze → executing → limit pre → run → revision complement → limit post → done → return.
-        """
-        self._my_node_calls += 1
-        frozen = _freeze(params)
-        self._status = "executing"
+        """共通実行テンプレート。サブクラスは run() を実装する。"""
+        if self._status != "ready":
+            raise RuntimeError("execute called when status is not ready")
 
-        if self._check_limit_pre(frozen):
+        # pre-limit は freeze 前の params を意図的に受け取る（execute の引数そのまま）
+        if self._check_pre_limit(params):
             self._status = "limit"
             return {}
+
+        self._status = "executing"
+        context = ExecutionContext()
+        self._current_context = context
+        self._limit_state["calls"] += 1  # run 開始前にのみ増加（pre_limit では増やさない）
 
         try:
-            result = self.run(inputs, frozen)
+            frozen_params = _freeze(params)
+            result = self.run(inputs, frozen_params, context)
         except PauseSignal:
-            self._status = "pause"
-            return {}
+            raise NotImplementedError("PauseSignal not implemented in this version")
         except LimitSignal:
+            raise NotImplementedError("LimitSignal not implemented in this version")
+        except NodeExecutionLimit:
             self._status = "limit"
+            return {}
+        except NodeExecutionFailure as e:
+            self._status = "fatal"
+            self._error = e
             return {}
         except Exception as e:
             self._status = "fatal"
             self._error = e
             return {}
+        finally:
+            self._current_context = None
 
         if not isinstance(result, dict):
             self._status = "fatal"
             self._error = TypeError("run() must return a dict")
             return {}
 
-        try:
-            _apply_revision_to_output(result)
-        except (TypeError, ValueError) as e:
-            self._status = "fatal"
-            self._error = e
+        self._apply_usage(result)
+        if self._check_post_limit(result, params):
+            self._status = "limit"
             return {}
 
-        if self._check_limit_post(frozen, run_succeeded=True):
-            self._status = "limit"
-            return result
-
-        if self._status == "executing":
-            self._status = "done"
+        result = _attach_revision(result)
+        self._status = "done"
         return result
+
+    def _check_pre_limit(self, params: Dict[str, Any]) -> bool:
+        """実行前の limit 判定。本版では max_calls のみ。params は freeze 前の生の dict。"""
+        limit_cfg = params.get("limit")
+        if not isinstance(limit_cfg, dict):
+            return False
+        max_calls = limit_cfg.get("max_calls")
+        if max_calls is None:
+            return False
+        return self._limit_state["calls"] >= max_calls
+
+    def _check_post_limit(self, result: Dict[str, Any], params: Dict[str, Any]) -> bool:
+        """実行後の limit 判定。本版では空実装。"""
+        return False
+
+    def _apply_usage(self, result: Dict[str, Any]) -> None:
+        """run の戻り値から _usage を取り除く（output port に残さない）。本版では集計なし。"""
+        result.pop("_usage", None)
+
+    def run(
+        self,
+        inputs: Dict[str, Any],
+        params: MappingProxyType,
+        context: ExecutionContext,
+    ) -> Dict[str, Any]:
+        """Override in subclass. Must return a dict (output ports)."""
+        raise NotImplementedError
+
+    def read_status(self) -> str:
+        """現在の status を返す。"""
+        return self._status
+
+    def read_error(self) -> Exception | None:
+        """status が fatal のとき原因例外を返す。それ以外は None。"""
+        return self._error if self._status == "fatal" else None
+
+    def reset_status(self) -> None:
+        """status を ready に戻す。executing 状態では呼び出してはならない。"""
+        if self._status == "executing":
+            raise RuntimeError("cannot reset while executing")
+        self._status = "ready"
+        self._error = None
+
+    def reset_limit_state(self, name: str) -> None:
+        """指定した limit state をリセットする。status は変更しない。"""
+        if name not in self._limit_state:
+            raise KeyError(f"Unknown limit state: {name}")
+        self._limit_state[name] = 0

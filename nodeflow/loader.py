@@ -1,32 +1,90 @@
 """
-NodeFlow v1.2 — node_pipeline.yaml, node.yaml, node class loading and input resolution.
+NodeFlow v1.41 — pipeline.yaml の parse、Node 組み立て、node_input_bindings のタプル形生成。
 """
 
 from __future__ import annotations
 
-import importlib.util
+import os
 import re
 from pathlib import Path
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, List, Tuple
 
 from .config import load_yaml
 from .node import BaseNode
+from .nodes import LLMNode, PythonScriptNode
+from .pipeline_node import PipelineNode
 
-
-# §11.4: Engine supported version (exact match)
-SUPPORTED_VERSION = "1.2"
+SUPPORTED_VERSION = "1.4"
 
 
 class VersionMismatchError(Exception):
-    """§11.4: Raised when YAML version is missing or does not match engine supported version."""
+    """Raised when YAML version is missing or does not match."""
 
 
-# Sentinel: required port is present but unresolved → node not executable (§3.1)
-UNRESOLVED = object()
+_REF_PATTERN = re.compile(r"\$\{([^}.]+)\.([^}]+)\}")
+_REF_PATTERN_DEEP = re.compile(r"\$\{([^}.]+)\.([^}.]+)\.([^}]+)\}")
+
+# node_input_bindings のタプル形式
+InputBinding = Tuple[str, ...]
 
 
-def load_node_pipeline(file_path: str) -> Dict[str, Any]:
-    """Load node_pipeline.yaml. §11.4: version required and must match. Expects graph.nodes, graph.final."""
+def _ref_to_binding(ref: Any) -> InputBinding | None:
+    """${source.key} または ${source.port.inner} をタプルに変換。"""
+    if not isinstance(ref, str):
+        return None
+    s = ref.strip()
+    m_deep = _REF_PATTERN_DEEP.fullmatch(s)
+    if m_deep:
+        src, port, inner = m_deep.group(1), m_deep.group(2), m_deep.group(3)
+        if src in ("inputs", "params"):
+            return None
+        return ("node", src, port, inner)
+    m = _REF_PATTERN.fullmatch(s)
+    if not m:
+        return None
+    source, key = m.group(1), m.group(2)
+    if source == "inputs":
+        return ("inputs", key)
+    if source == "params":
+        return ("params", key)
+    return ("node", source, key)
+
+
+def _build_node_input_bindings(nodes_list: List[Dict[str, Any]]) -> Dict[str, Dict[str, InputBinding]]:
+    """各ノードの inputs を §3.2.1 のタプル形に変換。"""
+    out: Dict[str, Dict[str, InputBinding]] = {}
+    for nd in nodes_list:
+        nid = nd.get("id")
+        if not nid:
+            continue
+        bindings_raw = nd.get("inputs") or {}
+        resolved: Dict[str, InputBinding] = {}
+        for port, ref in bindings_raw.items():
+            b = _ref_to_binding(ref)
+            if b is not None:
+                resolved[port] = b
+        out[nid] = resolved
+    return out
+
+
+def _node_class_for_type(node_type: str):
+    """type 文字列から Node クラスを返す。loop は NotImplementedError。"""
+    if node_type == "python_script":
+        return PythonScriptNode
+    if node_type == "llm":
+        return LLMNode
+    if node_type == "pipeline":
+        return PipelineNode  # ネスト時は load_pipeline を再帰的に使う
+    if node_type == "loop":
+        raise NotImplementedError("LoopNode not implemented in this version")
+    return None
+
+
+def load_pipeline(workspace_dir: str, file_path: str) -> PipelineNode:
+    """
+    pipeline.yaml を読み、PipelineNode を組み立てて返す。
+    version は "1.4" であること。script パスは python_script ノードで workspace 相対に解決する。
+    """
     data = load_yaml(file_path)
     if not data:
         raise ValueError(f"Empty or missing pipeline: {file_path}")
@@ -40,140 +98,61 @@ def load_node_pipeline(file_path: str) -> Dict[str, Any]:
             f"Unsupported version: {version!r}. Engine supports: {SUPPORTED_VERSION}"
         )
     graph = data.get("graph") or {}
-    if "nodes" not in graph:
-        raise ValueError(f"graph.nodes required: {file_path}")
-    if "final" not in graph:
-        raise ValueError(f"graph.final required: {file_path}")
-    return data
+    nodes_list = graph.get("nodes") or []
+    final_id = graph.get("final") or ""
+    if not nodes_list or not final_id:
+        raise ValueError(f"graph.nodes and graph.final required: {file_path}")
+
+    graph_node_order: List[str] = []
+    nodes: Dict[str, BaseNode] = {}
+    node_param_definitions: Dict[str, Dict[str, Any]] = {}
+
+    for nd in nodes_list:
+        nid = nd.get("id")
+        ntype = nd.get("type")
+        if not nid or not ntype:
+            continue
+        cls = _node_class_for_type(ntype)
+        if cls is None:
+            continue
+        if cls is PipelineNode:
+            raise ValueError("Nested pipeline not supported in this version")
+        graph_node_order.append(nid)
+        nodes[nid] = cls()
+        raw_params = nd.get("params") or {}
+        # python_script の script を workspace 相対で絶対パスに
+        if ntype == "python_script" and "script" in raw_params:
+            script = raw_params["script"]
+            if script and not os.path.isabs(script):
+                raw_params = {**raw_params, "script": str(Path(workspace_dir) / script)}
+        node_param_definitions[nid] = raw_params
+
+    node_input_bindings = _build_node_input_bindings(nodes_list)
+
+    return PipelineNode(
+        graph_node_order=graph_node_order,
+        nodes=nodes,
+        node_input_bindings=node_input_bindings,
+        node_param_definitions=node_param_definitions,
+        final_id=final_id,
+    )
 
 
-def load_node_yaml(workspace_dir: str, node_type: str) -> Dict[str, Any]:
-    """Load node.yaml for a node type. §11.4: version required and must match. required defaults to true (§7.1)."""
-    path = Path(workspace_dir) / "nodes" / node_type / "node.yaml"
-    if not path.exists():
-        return {}
-    data = load_yaml(str(path))
+def load_node_pipeline(file_path: str) -> Dict[str, Any]:
+    """Load pipeline YAML (raw). Version must be 1.4. For backward compat / tests."""
+    data = load_yaml(file_path)
     if not data:
-        return {}
+        raise ValueError(f"Empty or missing pipeline: {file_path}")
     version = data.get("version")
     if version is None:
         raise VersionMismatchError(
-            f"Unsupported version: missing in {path}. Engine supports: {SUPPORTED_VERSION}"
+            f"Unsupported version: missing. Engine supports: {SUPPORTED_VERSION}"
         )
     if version != SUPPORTED_VERSION:
         raise VersionMismatchError(
-            f"Unsupported version: {version!r} in {path}. Engine supports: {SUPPORTED_VERSION}"
+            f"Unsupported version: {version!r}. Engine supports: {SUPPORTED_VERSION}"
         )
+    graph = data.get("graph") or {}
+    if "nodes" not in graph or "final" not in graph:
+        raise ValueError(f"graph.nodes and graph.final required: {file_path}")
     return data
-
-
-def load_node_class(workspace_dir: str, node_type: str) -> Optional[Type[BaseNode]]:
-    """Load Node class from nodes/<node_type>/node.py. Returns BaseNode subclass or None."""
-    node_path = Path(workspace_dir) / "nodes" / node_type / "node.py"
-    if not node_path.exists():
-        return None
-    spec = importlib.util.spec_from_file_location(
-        f"nodes.{node_type}.node", str(node_path)
-    )
-    if spec is None or spec.loader is None:
-        return None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    for name in dir(mod):
-        obj = getattr(mod, name)
-        if isinstance(obj, type) and issubclass(obj, BaseNode) and obj is not BaseNode:
-            return obj
-    return None
-
-
-# Pattern: ${node_id.port}, ${inputs.port}, ${params.param_name}
-_REF_PATTERN = re.compile(r"\$\{([^}.]+)\.([^}]+)\}")
-
-
-def resolve_inputs(
-    bindings: Dict[str, Any],
-    latest_outputs: Dict[str, Dict[str, Any]],
-    pipeline_inputs: Dict[str, Any],
-    pipeline_params: Dict[str, Any],
-) -> Dict[str, Any]:
-    """
-    Resolve input bindings to values. Sources: latest_outputs (node_id.port), pipeline_inputs (inputs.port), pipeline_params (params.param_name).
-    Undefined refs: do not raise; leave value as UNRESOLVED (§3.1). Caller treats node as not executable.
-    """
-    resolved: Dict[str, Any] = {}
-    for port, ref in (bindings or {}).items():
-        if not isinstance(ref, str):
-            resolved[port] = ref
-            continue
-        m = _REF_PATTERN.fullmatch(ref.strip())
-        if not m:
-            resolved[port] = ref
-            continue
-        source, key = m.group(1), m.group(2)
-        if source == "inputs":
-            if key in pipeline_inputs:
-                resolved[port] = pipeline_inputs[key]
-            else:
-                resolved[port] = UNRESOLVED
-        elif source == "params":
-            if key in pipeline_params:
-                resolved[port] = pipeline_params[key]
-            else:
-                resolved[port] = UNRESOLVED
-        else:
-            # node_id.port
-            if source in latest_outputs:
-                out = latest_outputs[source]
-                if isinstance(out, dict) and key in out:
-                    resolved[port] = out[key]
-                else:
-                    resolved[port] = UNRESOLVED
-            else:
-                resolved[port] = UNRESOLVED
-    return resolved
-
-
-def resolve_params(
-    params_def: Dict[str, Any],
-    pipeline_params: Dict[str, Any],
-    latest_outputs: Dict[str, Dict[str, Any]],
-    pipeline_inputs: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Resolve params that may contain ${params.xxx} etc. Same sources as inputs."""
-    if not params_def:
-        return {}
-    resolved: Dict[str, Any] = {}
-    for k, v in params_def.items():
-        if isinstance(v, str) and v.startswith("${") and v.endswith("}"):
-            m = _REF_PATTERN.fullmatch(v.strip())
-            if m:
-                source, key = m.group(1), m.group(2)
-                if source == "params" and key in pipeline_params:
-                    resolved[k] = pipeline_params[key]
-                elif source == "inputs" and key in pipeline_inputs:
-                    resolved[k] = pipeline_inputs[key]
-                else:
-                    resolved[k] = v
-            else:
-                resolved[k] = v
-        elif isinstance(v, dict):
-            resolved[k] = resolve_params(
-                v, pipeline_params, latest_outputs, pipeline_inputs
-            )
-        else:
-            resolved[k] = v
-    return resolved
-
-
-def get_required_input_ports(workspace_dir: str, node_type: str) -> set:
-    """Return set of input port names that are required (default true). §7.1."""
-    schema = load_node_yaml(workspace_dir, node_type)
-    inputs = schema.get("inputs") or {}
-    required = set()
-    for port, port_schema in inputs.items():
-        if isinstance(port_schema, dict):
-            if port_schema.get("required", True):
-                required.add(port)
-        else:
-            required.add(port)
-    return required
