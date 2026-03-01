@@ -342,6 +342,18 @@ inputs:
 - Node.run が scalar を返した場合、execute は自動的に `{"value": scalar}` に昇格する。
 - scalar port は存在しない。
 
+### Revision Semantics (v1.42)
+
+- revision は **port 出力イベントの識別子**である。
+- revision は値の内容に依存しない。
+- 同じ値を再出力した場合でも、revision は必ず新しい値になる。
+- revision は「値が変わったかどうか」を保証するものではなく、
+  **「その port が再出力された」ことを示すシグナル**である。
+- 入力側 Node は、revision の変化によって更新を検出する。
+- revision は content-hash ではない。
+  将来 content-based revision を導入する場合は、
+  このセマンティクスを明示的に変更する必要がある。
+
 ### 3.2 outputs
 
 Node は必ず dict を返す。各 key が output port である。
