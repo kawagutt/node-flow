@@ -15,6 +15,7 @@ from .runner import Runner
 class InvalidStateError(Exception):
     """Raised when resume() is called and status is not pause (v1.5)."""
 
+
 InputBinding = Tuple[str, ...]
 _REF_PATTERN = re.compile(r"\$\{([^}.]+)\.([^}]+)\}")
 
@@ -102,7 +103,9 @@ class PipelineNode(BaseNode):
             progressed = runner.step()
 
             # 毎ループで (1)〜(4) をすべてチェック。progressed の値に関わらず。
-            statuses = [self._nodes[nid].read_status() for nid in self._graph_node_order]
+            statuses = [
+                self._nodes[nid].read_status() for nid in self._graph_node_order
+            ]
             if "fatal" in statuses:
                 raise NodeExecutionFailure("child fatal")
             if "limit" in statuses:

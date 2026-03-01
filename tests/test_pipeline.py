@@ -2,15 +2,11 @@
 Tier 3: PipelineNode テスト。Script → Script の最小パイプライン。
 """
 
-import tempfile
-from pathlib import Path
 
-import pytest
 
-from nodeflow.node import BaseNode, NodeExecutionFailure, NodeExecutionLimit
+from nodeflow.node import BaseNode, NodeExecutionLimit
 from nodeflow.nodes import PythonScriptNode
 from nodeflow.pipeline_node import PipelineNode
-from nodeflow.runner import Runner
 
 
 def test_script_to_script(tmp_path):
@@ -61,7 +57,10 @@ def test_pipeline_fatal_propagates(tmp_path):
     pipeline = PipelineNode(
         graph_node_order=["a", "b"],
         nodes=nodes,
-        node_input_bindings={"a": {"x": ("inputs", "x")}, "b": {"data": ("node", "a", "result")}},
+        node_input_bindings={
+            "a": {"x": ("inputs", "x")},
+            "b": {"data": ("node", "a", "result")},
+        },
         node_param_definitions={"a": {"script": str(a_py)}, "b": {"script": str(b_py)}},
         final_id="b",
     )
@@ -73,7 +72,6 @@ def test_pipeline_fatal_propagates(tmp_path):
 
 def test_pipeline_limit_propagates(tmp_path):
     """中間ノードが limit なら Pipeline も limit、{} を返す。"""
-    from nodeflow.node import NodeExecutionLimit
 
     class LimitOnceNode(BaseNode):
         def run(self, inputs, params, context):
@@ -86,7 +84,10 @@ def test_pipeline_limit_propagates(tmp_path):
     pipeline = PipelineNode(
         graph_node_order=["a", "b"],
         nodes=nodes,
-        node_input_bindings={"a": {"x": ("inputs", "x")}, "b": {"data": ("node", "a", "result")}},
+        node_input_bindings={
+            "a": {"x": ("inputs", "x")},
+            "b": {"data": ("node", "a", "result")},
+        },
         node_param_definitions={"a": {}, "b": {"script": str(b_py)}},
         final_id="b",
     )
@@ -106,7 +107,10 @@ def test_pipeline_max_calls_limit(tmp_path):
     pipeline = PipelineNode(
         graph_node_order=["a", "b"],
         nodes=nodes,
-        node_input_bindings={"a": {"x": ("inputs", "x")}, "b": {"data": ("node", "a", "result")}},
+        node_input_bindings={
+            "a": {"x": ("inputs", "x")},
+            "b": {"data": ("node", "a", "result")},
+        },
         node_param_definitions={"a": {"script": str(a_py)}, "b": {"script": str(b_py)}},
         final_id="b",
     )

@@ -2,13 +2,9 @@
 Tier 4: E2E — Script → LLM(mock) → Script。チェックリスト対応。
 """
 
-import tempfile
-from pathlib import Path
 
-import pytest
 
 from nodeflow.loader import load_pipeline
-from nodeflow.node import BaseNode
 from nodeflow.nodes import LLMNode, PythonScriptNode
 from nodeflow.pipeline_node import PipelineNode
 
@@ -17,19 +13,19 @@ def test_script_llm_script_in_memory(tmp_path):
     """Script → LLM(mock) → Script をコードで組み立てて実行。"""
     pre = tmp_path / "pre.py"
     pre.write_text(
-        '''
+        """
 def main(inputs):
     data = inputs.get("raw_data", "")
     return {"prompt_text": "analyze: " + str(data)}
-'''
+"""
     )
     post = tmp_path / "post.py"
     post.write_text(
-        '''
+        """
 def main(inputs):
     r = inputs.get("data", "")
     return {"final": "result:" + str(r)}
-'''
+"""
     )
 
     nodes = {
@@ -77,17 +73,17 @@ def test_e2e_via_load_pipeline(tmp_path):
 
     pre = scripts / "preprocess.py"
     pre.write_text(
-        '''
+        """
 def main(inputs):
     return {"prompt_text": "p:" + str(inputs.get("data", ""))}
-'''
+"""
     )
     post = scripts / "postprocess.py"
     post.write_text(
-        '''
+        """
 def main(inputs):
     return {"final": str(inputs.get("data", ""))}
-'''
+"""
     )
 
     yaml_path = workspace / "pipeline.yaml"

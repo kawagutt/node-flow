@@ -4,7 +4,7 @@
 
 ## 概要
 
-NodeFlow は、LLM、スクリプト、外部ツールを統合する Pipeline 主導のワークフロー実行基盤です。
+NodeFlow は、LLM、スクリプト、外部ツールを統合する Pipeline 主導のワークフロー実行基盤です。本版は **runtime-min** であり、直列 1-shot Pipeline・ScriptNode・LLMNode・limit（max_calls / max_tokens）をサポートします。LoopNode / pause-resume は未実装です。
 
 ### 設計思想
 
@@ -23,6 +23,23 @@ pip install -e .
 
 ```bash
 nodeflow run examples/pipelines/hello.yaml
+```
+
+### 実 API（OpenRouter）を使う場合
+
+pipeline YAML でノードに `type: openrouter` を指定し、環境変数 `OPENROUTER_API_KEY` を設定してください。
+
+```yaml
+# graph.nodes の例
+- id: llm_call
+  type: openrouter
+  params:
+    model: "openai/gpt-4o-mini"
+```
+
+```bash
+export OPENROUTER_API_KEY=your_key_here
+nodeflow run your_pipeline.yaml
 ```
 
 ## プロジェクト構造

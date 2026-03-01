@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Tuple
 
 from .config import load_yaml
 from .node import BaseNode
-from .nodes import LLMNode, PythonScriptNode
+from .nodes import LLMNode, OpenRouterNode, PythonScriptNode
 from .pipeline_node import PipelineNode
 
 SUPPORTED_VERSION = "1.4"
@@ -50,7 +50,9 @@ def _ref_to_binding(ref: Any) -> InputBinding | None:
     return ("node", source, key)
 
 
-def _build_node_input_bindings(nodes_list: List[Dict[str, Any]]) -> Dict[str, Dict[str, InputBinding]]:
+def _build_node_input_bindings(
+    nodes_list: List[Dict[str, Any]],
+) -> Dict[str, Dict[str, InputBinding]]:
     """各ノードの inputs を §3.2.1 のタプル形に変換。"""
     out: Dict[str, Dict[str, InputBinding]] = {}
     for nd in nodes_list:
@@ -73,10 +75,12 @@ def _node_class_for_type(node_type: str):
         return PythonScriptNode
     if node_type == "llm":
         return LLMNode
+    if node_type == "openrouter":
+        return OpenRouterNode
     if node_type == "pipeline":
         return PipelineNode  # ネスト時は load_pipeline を再帰的に使う
     if node_type == "loop":
-        raise NotImplementedError("LoopNode not implemented in this version")
+        raise NotImplementedError("LoopNode は本版では未サポートです")
     return None
 
 

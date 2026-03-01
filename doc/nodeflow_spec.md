@@ -377,12 +377,12 @@ if output != {}:
 
 Node の静的実行設定。実行中に変化しない。
 
-### 4.2 limit（この版では max_calls のみ）
+### 4.2 limit（この版では max_calls と max_tokens）
 
-この版で実装する limit は `max_calls` のみとする。**limit 判定は pre / post に分離される。**
+この版で実装する limit は **pre-limit の max_calls** と **post-limit の max_tokens** とする。**limit 判定は pre / post に分離される。**
 
-* **pre-limit**：実行前に判定。純粋関数。状態変更は execute が行う。本版では max_calls のみ。
-* **post-limit**：実行後に判定。本版では空実装（常に False）。将来 token / time / budget をここに追加する。
+* **pre-limit**：実行前に判定。純粋関数。状態変更は execute が行う。本版では max_calls のみ。超過時は run を実行せず `{}` を返し status = limit。
+* **post-limit**：実行後に判定。本版では max_tokens を評価。run は実行済みであり、usage 加算・revision 付与後に判定。超過時も **result は返す**（revision 付き）。status = limit により PipelineNode が以降の実行を止める。**max_tokens は 1 以上の int を想定する**（0 を指定した場合も 0 >= 0 で即 post-limit となり仕様上は正しいが、運用では 1 以上を推奨）。
 
 run() 内で NodeExecutionLimit を raise した場合も limit として扱う。
 
@@ -390,9 +390,10 @@ run() 内で NodeExecutionLimit を raise した場合も limit として扱う�
 params:
   limit:
     max_calls: 10
+    max_tokens: 2000   # 省略時は post-limit 判定なし
 ```
 
-`max_calls` を超えた場合、`execute` は `{}` を返し `status = limit` とする。
+`max_calls` を超えた場合（pre-limit）、`execute` は `{}` を返し `status = limit` とする。`max_tokens` を超えた場合（post-limit）、`execute` は **revision 付きの result を返し** `status = limit` とする。
 
 **call count の扱い：** `_limit_state["calls"]` は **run を開始する直前にのみ** 増加する（実行開始回数。pre_limit で止まった呼び出しはカウントしない）。これにより max_calls=3 のとき 3 回実行後に calls=3 となり、4 回目の execute で pre_limit が True になって status=limit で return する。limit 到達後は `reset_limit_state("calls")` を呼ばない限り再実行できない。
 
@@ -405,12 +406,14 @@ limit の**条件**（max_calls 等）は params 側に記述する。limit の*
 Node は `_limit_state` を dict で持つ（将来拡張可能）：
 
 ```python
-# この版
-self._limit_state = {"calls": 0}
+# この版（Phase 8 以降）
+self._limit_state = {"calls": 0, "tokens": 0}
 
 # 将来拡張例
 # {"calls": 0, "tokens": 0, "budget": 0}
 ```
+
+**reset_limit_state(name)**：指定した name が `_limit_state` に存在しない場合は **KeyError** を raise する。`"calls"` / `"tokens"` など、実装が保持する key のみ指定可能。
 
 ### 4.3 params は immutable
 
@@ -969,7 +972,7 @@ v1.3 の全不変条件のうち、この版で意味を持つものを列挙す
 
 17. **ExecutionContext は永続状態ではない。** execute 呼び出し単位で生成・破棄され、reset_status および reset_limit_state の対象ではない。
 
-18. **limit 判定は pre / post に分離される。** pre-limit は実行前、post-limit は実行後（本版では空実装）。
+18. **limit 判定は pre / post に分離される。** pre-limit は実行前（max_calls）、post-limit は実行後（max_tokens）。pre/post とも `_limit_state` と params のみ参照し、run の result は参照しない。
 
 19. **Node は同期・原子的に実行される。** execute は atomic に完了する。
 

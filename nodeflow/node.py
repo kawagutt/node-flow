@@ -92,13 +92,14 @@ def _attach_revision(output: dict) -> dict:
 class BaseNode:
     """
     NodeFlow v1.41. すべての Node が継承する基底クラス。
-    execute の構造は固定: pre-limit → executing → run → usage 適用 → post-limit → revision → done.
+    execute の構造は固定: pre-limit → executing → run → _apply_usage → revision 付与 → post-limit → status 設定 → result 返却。
+    post-limit 時も result は返す（revision 付与済み）。status = limit により PipelineNode が以降の実行を止める。
     """
 
     def __init__(self) -> None:
         self._status = "ready"
         self._error: Exception | None = None
-        self._limit_state: Dict[str, int] = {"calls": 0}
+        self._limit_state: Dict[str, int] = {"calls": 0, "tokens": 0}
         self._current_context: ExecutionContext | None = None
 
     def execute(self, inputs: Dict[str, Any], params: Dict[str, Any]) -> Dict[str, Any]:
@@ -114,7 +115,9 @@ class BaseNode:
         self._status = "executing"
         context = ExecutionContext()
         self._current_context = context
-        self._limit_state["calls"] += 1  # run 開始前にのみ増加（pre_limit では増やさない）
+        self._limit_state["calls"] += (
+            1  # run 開始前にのみ増加（pre_limit では増やさない）
+        )
 
         try:
             frozen_params = _freeze(params)
@@ -143,12 +146,13 @@ class BaseNode:
             return {}
 
         self._apply_usage(result)
-        if self._check_post_limit(result, params):
-            self._status = "limit"
-            return {}
-
         result = _attach_revision(result)
-        self._status = "done"
+
+        if self._check_post_limit(params):
+            self._status = "limit"
+        else:
+            self._status = "done"
+
         return result
 
     def _check_pre_limit(self, params: Dict[str, Any]) -> bool:
@@ -161,13 +165,27 @@ class BaseNode:
             return False
         return self._limit_state["calls"] >= max_calls
 
-    def _check_post_limit(self, result: Dict[str, Any], params: Dict[str, Any]) -> bool:
-        """実行後の limit 判定。本版では空実装。"""
+    def _check_post_limit(self, params: Dict[str, Any]) -> bool:
+        """実行後の limit 判定。_limit_state と params のみ参照。run の result は参照しない。"""
+        limit_cfg = params.get("limit")
+        if not isinstance(limit_cfg, dict):
+            return False
+        max_tokens = limit_cfg.get("max_tokens")
+        if (
+            isinstance(max_tokens, int)
+            and self._limit_state.get("tokens", 0) >= max_tokens
+        ):
+            return True
         return False
 
     def _apply_usage(self, result: Dict[str, Any]) -> None:
-        """run の戻り値から _usage を取り除く（output port に残さない）。本版では集計なし。"""
-        result.pop("_usage", None)
+        """run の戻り値から _usage を取り除き、tokens を _limit_state に加算する。"""
+        usage = result.pop("_usage", None)
+        if not isinstance(usage, dict):
+            return
+        total = usage.get("total_tokens")
+        if isinstance(total, int):
+            self._limit_state["tokens"] += total
 
     def run(
         self,

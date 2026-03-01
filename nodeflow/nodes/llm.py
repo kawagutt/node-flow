@@ -20,4 +20,16 @@ class LLMNode(BaseNode):
         context: ExecutionContext,
     ) -> Dict[str, Any]:
         prompt = inputs.get("prompt", "")
-        return {"response": f"mock:{prompt}"}
+        completion = f"mock:{prompt}"
+        # mock token count = character length（実 tokenizer とは一致しない）
+        prompt_tokens = len(prompt)
+        completion_tokens = len(completion)
+        total_tokens = prompt_tokens + completion_tokens
+        return {
+            "response": completion,
+            "_usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+            },
+        }

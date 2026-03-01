@@ -58,10 +58,10 @@ def test_run_raises_fatal():
 def test_max_calls_limit():
     node = DummyNode()
     params = {"limit": {"max_calls": 2}}
-    out1 = node.execute({"x": "1"}, params)
+    node.execute({"x": "1"}, params)
     assert node.read_status() == "done"
     node.reset_status()
-    out2 = node.execute({"x": "2"}, params)
+    node.execute({"x": "2"}, params)
     assert node.read_status() == "done"
     node.reset_status()
     out3 = node.execute({"x": "3"}, params)
@@ -110,7 +110,11 @@ def test_attach_revision_skips_reserved_keys():
     output = {"_meta": {"x": 1}, "_usage": {"y": 2}, "result": {"value": 1}}
     _attach_revision(output)
     assert "_meta" in output and "revision" not in output["_meta"]
-    assert "result" in output and "_meta" in output["result"] and "revision" in output["result"]["_meta"]
+    assert (
+        "result" in output
+        and "_meta" in output["result"]
+        and "revision" in output["result"]["_meta"]
+    )
 
 
 def test_node_execution_limit_sets_limit():
@@ -131,9 +135,10 @@ def test_node_execution_failure_sets_fatal():
 
 def test_run_returns_usage_removed():
     """_usage が除去され、dict port には revision が付くことを確認。"""
+
     class UsageNode(BaseNode):
         def run(self, inputs, params, context):
-            return {"out": {"value": 1}, "_usage": {"tokens": 10}}
+            return {"out": {"value": 1}, "_usage": {"total_tokens": 10}}
 
     node = UsageNode()
     out = node.execute({}, {})
