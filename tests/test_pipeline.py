@@ -2,8 +2,6 @@
 Tier 3: PipelineNode テスト。Script → Script の最小パイプライン。
 """
 
-
-
 from nodeflow.node import BaseNode, NodeExecutionLimit
 from nodeflow.nodes import PythonScriptNode
 from nodeflow.pipeline_node import PipelineNode
@@ -15,7 +13,7 @@ def test_script_to_script(tmp_path):
     a_py.write_text('def main(inputs): return {"value": inputs.get("x", "") + ":a"}')
     b_py = tmp_path / "b.py"
     b_py.write_text(
-        'def main(inputs): data = inputs.get("data", {}); return {"out": data.get("value", "") + ":b"}'
+        'def main(inputs): data = inputs.get("data", {}); val = data.get("value", "") if isinstance(data, dict) else data; return {"out": str(val) + ":b"}'
     )
 
     nodes = {
@@ -102,7 +100,9 @@ def test_pipeline_max_calls_limit(tmp_path):
     a_py = tmp_path / "a.py"
     a_py.write_text('def main(inputs): return {"value": inputs.get("x", "")}')
     b_py = tmp_path / "b.py"
-    b_py.write_text('def main(inputs): return {"out": inputs.get("data", "")}')
+    b_py.write_text(
+        'def main(inputs): data = inputs.get("data", {}); return {"out": str(data.get("value", ""))}'
+    )
     nodes = {"a": PythonScriptNode(), "b": PythonScriptNode()}
     pipeline = PipelineNode(
         graph_node_order=["a", "b"],

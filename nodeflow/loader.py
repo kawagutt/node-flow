@@ -29,7 +29,7 @@ InputBinding = Tuple[str, ...]
 
 
 def _ref_to_binding(ref: Any) -> InputBinding | None:
-    """${source.key} または ${source.port.inner} をタプルに変換。"""
+    """${source.key} または ${source.port.inner} をタプルに変換。inner はドット区切り可。"""
     if not isinstance(ref, str):
         return None
     s = ref.strip()
@@ -42,12 +42,22 @@ def _ref_to_binding(ref: Any) -> InputBinding | None:
     m = _REF_PATTERN.fullmatch(s)
     if not m:
         return None
-    source, key = m.group(1), m.group(2)
+    source, rest = m.group(1), m.group(2)
     if source == "inputs":
-        return ("inputs", key)
+        if "." in rest:
+            return None  # inputs への inner 参照は未サポート
+        return ("inputs", rest)
     if source == "params":
-        return ("params", key)
-    return ("node", source, key)
+        if "." in rest:
+            return None  # params への inner 参照は未サポート
+        return ("params", rest)
+    # node 参照: rest は "port" または "port.inner" の形 → 最初の . で分割して 4-tuple に
+    parts = rest.split(".", 1)
+    port = parts[0]
+    inner = parts[1] if len(parts) == 2 else None
+    if inner is not None:
+        return ("node", source, port, inner)
+    return ("node", source, port)
 
 
 def _build_node_input_bindings(
@@ -118,7 +128,7 @@ def load_pipeline(workspace_dir: str, file_path: str) -> PipelineNode:
             continue
         cls = _node_class_for_type(ntype)
         if cls is None:
-            continue
+            raise ValueError(f"Unknown node type: {ntype!r}")
         if cls is PipelineNode:
             raise ValueError("Nested pipeline not supported in this version")
         graph_node_order.append(nid)

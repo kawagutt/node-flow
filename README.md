@@ -1,10 +1,21 @@
 # NodeFlow
 
-**Everything is a Node** - 再帰可能なワークフロー実行基盤
+**NodeFlow v1.4.2 (runtime-min)** — Everything is a Node、再帰可能なワークフロー実行基盤
 
 ## 概要
 
-NodeFlow は、LLM、スクリプト、外部ツールを統合する Pipeline 主導のワークフロー実行基盤です。本版は **runtime-min** であり、直列 1-shot Pipeline・ScriptNode・LLMNode・limit（max_calls / max_tokens）をサポートします。LoopNode / pause-resume は未実装です。
+NodeFlow は、LLM、スクリプト、外部ツールを統合する Pipeline 主導のワークフロー実行基盤です。本版は **runtime-min** であり、直列 1-shot Pipeline・ScriptNode・LLMNode をサポートします。
+
+### runtime-min の制限
+
+本版では以下は未実装です。
+
+- Loop（LoopNode）
+- resume
+- re_execute
+- usage 集計
+
+limit は **max_calls のみ有効**です。max_tokens は将来実装予定です。
 
 ### 設計思想
 
@@ -21,8 +32,10 @@ pip install -e .
 
 ## クイックスタート
 
+examples は self-contained です。workspace に `examples` を指定して実行します。
+
 ```bash
-nodeflow run examples/pipelines/hello.yaml
+nodeflow run pipelines/hello.yaml -w examples
 ```
 
 ### 実 API（OpenRouter）を使う場合
@@ -41,6 +54,14 @@ pipeline YAML でノードに `type: openrouter` を指定し、環境変数 `OP
 export OPENROUTER_API_KEY=your_key_here
 nodeflow run your_pipeline.yaml
 ```
+
+## Workspace について
+
+**workspace** は CLI の `-w` / `--workspace` で指定する「作業ディレクトリ」です（リポジトリ内の `workspace` という名前のフォルダではありません）。
+
+- デフォルトはカレントディレクトリ（`.`）
+- `nodes/<ノード名>/config.yaml` や、python_script の `script` パスは、この workspace からの相対パスで解決されます
+- 例: プロジェクトルートで実行するときは `-w .`（省略可）。別のディレクトリを workspace にしたいときは `nodeflow run pipeline.yaml -w /path/to/my/project` のように指定します
 
 ## プロジェクト構造
 
@@ -65,6 +86,7 @@ nodeflow/
 ├── examples/
 │   ├── pipelines/
 │   └── nodes/
+├── nodes/                 # このリポジトリを workspace にしたときのノード定義（-w . のとき参照）
 ├── tests/
 └── pyproject.toml
 ```

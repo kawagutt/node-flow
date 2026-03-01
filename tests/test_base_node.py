@@ -117,17 +117,16 @@ def test_attach_revision_skips_reserved_keys():
     )
 
 
-def test_attach_revision_promotes_scalar_to_dict():
-    """scalar port は execute 内で {"value": x, "_meta": {"revision": ...}} に昇格する。"""
+def test_attach_revision_rejects_scalar_port_payload():
+    """v1.4.2: port payload は dict のみ。scalar を返すと TypeError。"""
+
     class ScalarNode(BaseNode):
         def run(self, inputs, params, context):
             return {"out": 42}
 
     node = ScalarNode()
-    out = node.execute({}, {})
-    assert isinstance(out["out"], dict)
-    assert out["out"]["value"] == 42
-    assert "revision" in out["out"]["_meta"]
+    with pytest.raises(TypeError, match="payload must be dict"):
+        node.execute({}, {})
 
 
 def test_node_execution_limit_sets_limit():

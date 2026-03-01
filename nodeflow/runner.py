@@ -1,9 +1,11 @@
 """
-NodeFlow v1.41 — Runner (§7). loader に依存せず、受け取ったデータのみで動作。
+NodeFlow v1.4.2 — Runner (§7). loader に依存せず、受け取ったデータのみで動作。
 """
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 from .node import BaseNode
@@ -59,10 +61,11 @@ class Runner:
                     return None
                 val = src_out[src_port]
                 if len(binding) == 4:
-                    inner_key = binding[3]
-                    if not isinstance(val, dict) or inner_key not in val:
-                        return None
-                    val = val[inner_key]
+                    inner = binding[3]
+                    for key in inner.split("."):
+                        if not isinstance(val, dict) or key not in val:
+                            return None
+                        val = val[key]
                 resolved[port] = val
             elif binding[0] == "inputs":
                 if len(binding) < 2:
@@ -117,5 +120,7 @@ def load_and_kick_pipeline(
     """Load root pipeline from YAML and execute. Returns output dict (or {})."""
     from .loader import load_pipeline
 
+    if not os.path.isabs(pipeline_path):
+        pipeline_path = str(Path(workspace_dir) / pipeline_path)
     root = load_pipeline(workspace_dir, pipeline_path)
     return root.execute(initial_inputs or {}, params or {})

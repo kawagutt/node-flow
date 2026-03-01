@@ -2,8 +2,6 @@
 Tier 4: E2E — Script → LLM(mock) → Script。チェックリスト対応。
 """
 
-
-
 from nodeflow.loader import load_pipeline
 from nodeflow.nodes import LLMNode, PythonScriptNode
 from nodeflow.pipeline_node import PipelineNode
@@ -33,7 +31,7 @@ def main(inputs):
         "llm_call": LLMNode(),
         "postprocess": PythonScriptNode(),
     }
-    # llm_call.prompt は preprocess.result の文字列（prompt_text）を渡す。dict 全体にしない。
+    # llm_call.prompt は preprocess.result.prompt_text、postprocess.data は llm_call.response.value
     node_input_bindings = {
         "preprocess": {"raw_data": ("inputs", "raw_data")},
         "llm_call": {"prompt": ("node", "preprocess", "result", "prompt_text")},

@@ -1,4 +1,4 @@
-# NodeFlow v1.42-runtime-min 仕様
+# NodeFlow v1.4.2 (runtime-min) 仕様
 
 **ブランチ**: `v14-runtime-min`
 **目的**: `ScriptNode → LLMNode → ScriptNode` が動くことを確認する最小構成  
@@ -12,7 +12,7 @@ v1.3 の全機能を実装しようとすると作業範囲が広すぎて「動
 本バージョンでは **「まず動く」** を最優先とし、以下の原則で機能を絞る。
 
 - **実装する**：直列 Pipeline・ScriptNode・LLMNode・status・execute の基本フロー
-- **v1.42**：すべての output port を dict に統一し、`_meta.revision` を必須とする（scalar port は存在しない）。
+- **v1.4.2**：すべての output port を dict に統一し、`_meta.revision` を必須とする（scalar port は存在しない）。
 - **スタブにする**：revision（ダミー値で十分）・usage（記録しない）
 - **削除する（この版では実装しない）**：pause / resume / re_execute / invalidate / LoopNode / 循環グラフ / 並列実行 / limit（max_idle_sec 等の複雑なもの）
 
@@ -335,14 +335,14 @@ inputs:
 - 循環参照はサポートしない（静的診断なし）
 - required / optional の区別はすべて required 扱い
 
-### Output Port Contract (v1.42)
+### Output Port Contract (v1.4.2)
 
 - 出力 port の値は常に dict である。
 - すべての port は `_meta.revision` を持つ。
-- Node.run が scalar を返した場合、execute は自動的に `{"value": scalar}` に昇格する。
+- Node.run の各 port payload は dict でなければならない。scalar を返した場合は `TypeError` とする。
 - scalar port は存在しない。
 
-### Revision Semantics (v1.42)
+### Revision Semantics (v1.4.2)
 
 - revision は **port 出力イベントの識別子**である。
 - revision は値の内容に依存しない。
@@ -447,7 +447,7 @@ revision の完全実装（content-hash / RFC 8785 / SHA-256）は v1.5 で行�
 
 ### 5.1 この版での revision 実装
 
-revision は **port 単位で必須**であり、**scalar 例外なし**（run が scalar を返した port は execute 内で `{"value": x}` に昇格したうえで revision が付与される）。
+revision は **port 単位で必須**である。各 port の payload は dict であり、scalar を返した場合は `TypeError` とする。
 
 ```python
 import uuid
@@ -455,18 +455,14 @@ import uuid
 RESERVED_KEYS = frozenset({"_meta", "_usage"})
 
 def _attach_revision(output: dict) -> dict:
-    """各 output port に UUID4 のダミー revision を付与。予約キーはスキップ。scalar は昇格する。"""
+    """各 output port に UUID4 のダミー revision を付与。予約キーはスキップ。payload は dict のみ（scalar は TypeError）。"""
     for port_key, port_value in list(output.items()):
         if port_key in RESERVED_KEYS:
             continue
         if not isinstance(port_value, dict):
-            output[port_key] = {
-                "value": port_value,
-                "_meta": {"revision": str(uuid.uuid4())},
-            }
-        else:
-            port_value.setdefault("_meta", {})
-            port_value["_meta"]["revision"] = str(uuid.uuid4())
+            raise TypeError(f"Port {port_key!r} payload must be dict in v1.4.2, got {type(port_value).__name__}")
+        port_value.setdefault("_meta", {})
+        port_value["_meta"]["revision"] = str(uuid.uuid4())
     return output
 ```
 
@@ -478,7 +474,7 @@ def _attach_revision(output: dict) -> dict:
 
 ### 5.2 Node 実装者への注意
 
-Node の run() は `_meta` キーを直接設定してはならない。BaseNode が自動付与する。これは v1.5 以降も変わらない。run が scalar を返した port は execute 内で自動的に `{"value": scalar}` に昇格する。
+Node の run() は `_meta` キーを直接設定してはならない。BaseNode が自動付与する。これは v1.5 以降も変わらない。各 port の payload は dict でなければならず、scalar を返した場合は `TypeError` となる。
 
 ---
 

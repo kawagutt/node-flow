@@ -1,15 +1,28 @@
 version: "1.4"
 name: hello_pipeline
-inputs: {}
+inputs:
+  raw_data: {}
 outputs: {}
 params:
   limit:
     max_total_node_calls: 100
 graph:
   nodes:
-    - id: hello
-      type: hello
-      inputs: {}
+    - id: preprocess
+      type: python_script
+      inputs:
+        data: ${inputs.raw_data}
       params:
-        message: "Hello, NodeFlow!"
-  final: hello
+        script: scripts/preprocess.py
+    - id: llm_call
+      type: llm
+      inputs:
+        prompt: ${preprocess.result.prompt_text}
+      params: {}
+    - id: postprocess
+      type: python_script
+      inputs:
+        data: ${llm_call.response.value}
+      params:
+        script: scripts/postprocess.py
+  final: postprocess
