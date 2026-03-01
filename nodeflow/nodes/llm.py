@@ -26,7 +26,7 @@ class LLMNode(BaseNode):
         completion_tokens = len(completion)
         total_tokens = prompt_tokens + completion_tokens
         return {
-            "response": completion,
+            "response": {"value": completion},
             "_usage": {
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,

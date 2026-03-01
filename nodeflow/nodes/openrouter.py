@@ -70,7 +70,7 @@ class OpenRouterNode(BaseNode):
             total_tokens = getattr(usage, "total_tokens", None) or 0
 
         return {
-            "response": content,
+            "response": {"value": content},
             "_usage": {
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,

@@ -57,21 +57,20 @@ def test_llm_node_mock_returns_response():
     out = node.execute({"prompt": "hello"}, {})
     assert node.read_status() == "done"
     assert "response" in out
-    assert out["response"] == "mock:hello"
+    assert out["response"]["value"] == "mock:hello"
+    assert "revision" in out["response"]["_meta"]
 
 
 def test_llm_node_mock_empty_prompt():
     node = LLMNode()
     out = node.execute({}, {})
     assert node.read_status() == "done"
-    assert out["response"] == "mock:"
+    assert out["response"]["value"] == "mock:"
+    assert "revision" in out["response"]["_meta"]
 
 
 def test_llm_max_tokens_limit():
-    """post-limit では result を返す。status=limit になる。
-    注: 現状 response は string のため _attach_revision は dict port にしか revision を付与せず、
-    out2 に _meta.revision は付かない（既知のギャップ）。string port 対応後に assert _meta/revision を追加する。
-    """
+    """post-limit では result を返す。status=limit になる。v1.42 で response は常に dict。"""
     node = LLMNode()
     params = {"limit": {"max_tokens": 20}}
 
@@ -79,7 +78,8 @@ def test_llm_max_tokens_limit():
     out1 = node.execute({"prompt": "abc"}, params)
     assert node.read_status() == "done"
     assert "response" in out1
-    assert out1["response"] == "mock:abc"
+    assert out1["response"]["value"] == "mock:abc"
+    assert "revision" in out1["response"]["_meta"]
 
     node.reset_status()
 
@@ -88,7 +88,8 @@ def test_llm_max_tokens_limit():
     assert node.read_status() == "limit"
     assert out2 != {}
     assert "response" in out2
-    assert out2["response"] == "mock:abc"
+    assert out2["response"]["value"] == "mock:abc"
+    assert "revision" in out2["response"]["_meta"]
 
 
 def test_reset_token_limit_state():
@@ -109,4 +110,5 @@ def test_reset_token_limit_state():
     out = node.execute({"prompt": "x"}, params)
     assert node.read_status() == "done"
     assert "response" in out
-    assert out["response"] == "mock:x"
+    assert out["response"]["value"] == "mock:x"
+    assert "revision" in out["response"]["_meta"]

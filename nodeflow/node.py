@@ -76,11 +76,17 @@ RESERVED_KEYS = frozenset({"_meta", "_usage"})
 
 
 def _attach_revision(output: dict) -> dict:
-    """各 output port に UUID4 のダミー revision を付与。予約キー _meta/_usage はスキップ（§5.1）。"""
-    for port_key, port_value in output.items():
+    """各 output port に UUID4 のダミー revision を付与。予約キー _meta/_usage はスキップ（§5.1）。
+    scalar は execute 層で {"value": x, "_meta": {"revision": ...}} に昇格する（v1.42）。"""
+    for port_key, port_value in list(output.items()):
         if port_key in RESERVED_KEYS:
             continue
-        if isinstance(port_value, dict):
+        if not isinstance(port_value, dict):
+            output[port_key] = {
+                "value": port_value,
+                "_meta": {"revision": str(uuid.uuid4())},
+            }
+        else:
             port_value.setdefault("_meta", {})
             port_value["_meta"]["revision"] = str(uuid.uuid4())
     return output

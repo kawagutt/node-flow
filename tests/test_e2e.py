@@ -37,7 +37,7 @@ def main(inputs):
     node_input_bindings = {
         "preprocess": {"raw_data": ("inputs", "raw_data")},
         "llm_call": {"prompt": ("node", "preprocess", "result", "prompt_text")},
-        "postprocess": {"data": ("node", "llm_call", "response")},
+        "postprocess": {"data": ("node", "llm_call", "response", "value")},
     }
     node_param_definitions = {
         "preprocess": {"script": str(pre)},
@@ -108,7 +108,7 @@ graph:
     - id: postprocess
       type: python_script
       inputs:
-        data: ${llm_call.response}
+        data: ${llm_call.response.value}
       params:
         script: scripts/postprocess.py
   final: postprocess
