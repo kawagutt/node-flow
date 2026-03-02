@@ -4,7 +4,7 @@ Hello Node — v1.2. run(inputs, params) -> dict.
 
 from typing import Any, Dict
 
-from nodeflow.node import BaseNode
+from nodeflow.core.base_node import BaseNode
 
 
 class HelloNode(BaseNode):

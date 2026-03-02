@@ -7,7 +7,7 @@ from __future__ import annotations
 from types import MappingProxyType
 from typing import Any, Dict
 
-from ..node import BaseNode, ExecutionContext
+from nodeflow.core.base_node import BaseNode, ExecutionContext
 
 
 class LLMNode(BaseNode):

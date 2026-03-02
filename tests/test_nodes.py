@@ -2,7 +2,7 @@
 Tier 2: PythonScriptNode / LLMNode (mock) テスト。
 """
 
-from nodeflow.nodes import LLMNode, PythonScriptNode
+from nodeflow.extensions import LLMNode, PythonScriptNode
 
 
 def test_python_script_returns_dict(tmp_path):

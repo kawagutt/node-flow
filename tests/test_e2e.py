@@ -2,9 +2,8 @@
 Tier 4: E2E — Script → LLM(mock) → Script。チェックリスト対応。
 """
 
-from nodeflow.loader import load_pipeline
-from nodeflow.nodes import LLMNode, PythonScriptNode
-from nodeflow.pipeline_node import PipelineNode
+from nodeflow.execution.loader import load_pipeline
+from nodeflow.extensions import LLMNode, PipelineNode, PythonScriptNode
 
 
 def test_script_llm_script_in_memory(tmp_path):

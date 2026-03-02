@@ -1,5 +1,5 @@
 """
-NodeFlow v1.41-runtime-min — Exceptions, ExecutionContext, BaseNode, utils.
+NodeFlow v1.41-runtime-min — Exceptions, ExecutionContext, BaseNode, StructuralNode, utils.
 """
 
 from __future__ import annotations
@@ -220,3 +220,25 @@ class BaseNode:
         if name not in self._limit_state:
             raise KeyError(f"Unknown limit state: {name}")
         self._limit_state[name] = 0
+
+
+# --- StructuralNode (abstract) ---
+
+
+class StructuralNode(BaseNode):
+    """
+    構造を持つ Node の抽象基底クラス（Core の概念）。
+    子ノードやグラフを持つ Node はこのサブクラスとして実装する（例: PipelineNode は extensions で実装）。
+    """
+
+    # デフォルトは graph 内の子ノードとして禁止。許可するサブクラスは True を明示する。
+    ALLOW_AS_CHILD = False
+
+    def run(
+        self,
+        inputs: Dict[str, Any],
+        params: MappingProxyType,
+        context: ExecutionContext,
+    ) -> Dict[str, Any]:
+        """Override in subclass (e.g. PipelineNode)."""
+        raise NotImplementedError

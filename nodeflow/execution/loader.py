@@ -1,5 +1,5 @@
 """
-NodeFlow v1.41 — pipeline.yaml の parse、Node 組み立て、node_input_bindings のタプル形生成。
+NodeFlow v1.4.4 — pipeline.yaml の parse、Node 組み立て。execution 層。registry で型解決。
 """
 
 from __future__ import annotations
@@ -9,10 +9,13 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+from nodeflow.core.base_node import BaseNode, StructuralNode
+from nodeflow.core.registry import UnknownNodeTypeError, registry
+
 from .config import load_yaml
-from .node import BaseNode
-from .nodes import LLMNode, OpenRouterNode, PythonScriptNode
-from .pipeline_node import PipelineNode
+
+# built-in 登録を明示的に保証（nodeflow 直 import を経由しない場合でも registry が埋まる）
+import nodeflow.extensions  # noqa: F401
 
 SUPPORTED_VERSION = "1.4"
 
@@ -80,21 +83,16 @@ def _build_node_input_bindings(
 
 
 def _node_class_for_type(node_type: str):
-    """type 文字列から Node クラスを返す。loop は NotImplementedError。"""
-    if node_type == "python_script":
-        return PythonScriptNode
-    if node_type == "llm":
-        return LLMNode
-    if node_type == "openrouter":
-        return OpenRouterNode
-    if node_type == "pipeline":
-        return PipelineNode  # ネスト時は load_pipeline を再帰的に使う
-    if node_type == "loop":
-        raise NotImplementedError("LoopNode は本版では未サポートです")
-    return None
+    """type 文字列から Node クラスを返す。registry で解決。loop は NotImplementedError。"""
+    try:
+        return registry.resolve(node_type)
+    except UnknownNodeTypeError as e:
+        if e.type_name == "loop":
+            raise NotImplementedError("LoopNode は本版では未サポートです") from e
+        raise
 
 
-def load_pipeline(workspace_dir: str, file_path: str) -> PipelineNode:
+def load_pipeline(workspace_dir: str, file_path: str) -> StructuralNode:
     """
     pipeline.yaml を読み、PipelineNode を組み立てて返す。
     version は "1.4" であること。script パスは python_script ノードで workspace 相対に解決する。
@@ -127,9 +125,7 @@ def load_pipeline(workspace_dir: str, file_path: str) -> PipelineNode:
         if not nid or not ntype:
             continue
         cls = _node_class_for_type(ntype)
-        if cls is None:
-            raise ValueError(f"Unknown node type: {ntype!r}")
-        if cls is PipelineNode:
+        if not getattr(cls, "ALLOW_AS_CHILD", True):
             raise ValueError("Nested pipeline not supported in this version")
         graph_node_order.append(nid)
         nodes[nid] = cls()
@@ -142,8 +138,9 @@ def load_pipeline(workspace_dir: str, file_path: str) -> PipelineNode:
         node_param_definitions[nid] = raw_params
 
     node_input_bindings = _build_node_input_bindings(nodes_list)
+    pipeline_cls = registry.resolve("pipeline")
 
-    return PipelineNode(
+    return pipeline_cls(
         graph_node_order=graph_node_order,
         nodes=nodes,
         node_input_bindings=node_input_bindings,

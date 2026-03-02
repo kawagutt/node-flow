@@ -2,9 +2,8 @@
 Tier 3: PipelineNode テスト。Script → Script の最小パイプライン。
 """
 
-from nodeflow.node import BaseNode, NodeExecutionLimit
-from nodeflow.nodes import PythonScriptNode
-from nodeflow.pipeline_node import PipelineNode
+from nodeflow.core.base_node import BaseNode, NodeExecutionLimit
+from nodeflow.extensions import PipelineNode, PythonScriptNode
 
 
 def test_script_to_script(tmp_path):

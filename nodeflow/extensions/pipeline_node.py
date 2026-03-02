@@ -8,16 +8,21 @@ import re
 from types import MappingProxyType
 from typing import Any, Dict, List, Tuple
 
-from .node import BaseNode, ExecutionContext, NodeExecutionFailure, NodeExecutionLimit
-from .runner import Runner
+from nodeflow.core.base_node import (
+    BaseNode,
+    ExecutionContext,
+    NodeExecutionFailure,
+    NodeExecutionLimit,
+    StructuralNode,
+)
+from nodeflow.core.runner import Runner
+
+InputBinding = Tuple[str, ...]
+_REF_PATTERN = re.compile(r"\$\{([^}.]+)\.([^}]+)\}")
 
 
 class InvalidStateError(Exception):
     """Raised when resume() is called and status is not pause (v1.5)."""
-
-
-InputBinding = Tuple[str, ...]
-_REF_PATTERN = re.compile(r"\$\{([^}.]+)\.([^}]+)\}")
 
 
 def _resolve_params_dict(
@@ -49,7 +54,7 @@ def _resolve_params_dict(
     return resolved
 
 
-class PipelineNode(BaseNode):
+class PipelineNode(StructuralNode):
     """
     Graph を直列 1-shot 実行する StructuralNode。
     Runner を run の冒頭で毎回 new する。停止条件は毎ループで (1)fatal (2)limit (3)final done (4)no progress の順でチェック。

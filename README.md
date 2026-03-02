@@ -1,6 +1,6 @@
 # NodeFlow
 
-**NodeFlow v1.4.2 (runtime-min)** — Everything is a Node、再帰可能なワークフロー実行基盤
+**NodeFlow v1.4.4 (runtime-min)** — Everything is a Node、再帰可能なワークフロー実行基盤
 
 ## 概要
 
@@ -65,24 +65,30 @@ nodeflow run your_pipeline.yaml
 
 ## プロジェクト構造
 
+- **Core**（`nodeflow/core/`）: 抽象実行モデル。BaseNode・StructuralNode（抽象）・Runner・**NodeRegistry**。IO に依存しない。
+- **Extensions**（`nodeflow/extensions/`）: 公式実装。PipelineNode・PythonScriptNode・LLMNode・OpenRouterNode。起動時に **registry に登録**され、loader は type 文字列でクラスを解決する。
+- **Execution**（`nodeflow/execution/`）: IO adapter 層。YAML 読み込み・設定・Pipeline 組み立て・「ロードして実行」の入口（`load_pipeline`, `load_and_kick_pipeline`）。
+
 ```
 nodeflow/
 ├── nodeflow/
-│   ├── __init__.py
-│   ├── runner.py          # Runner（極小化）
-│   ├── node.py            # BaseNode 基底クラス
-│   ├── pipeline_node.py   # PipelineNode（Pipeline も Node）
-│   ├── config.py          # 設定管理（YAML読み込み、deep merge）
-│   ├── context.py         # Context クラス
-│   ├── updates.py         # Updates モデル
-│   ├── schema.py          # Schema 検証
-│   ├── logger.py          # Execution Log v2
+│   ├── __init__.py        # import nodeflow.extensions で registry を埋める
+│   ├── core/
+│   │   ├── base_node.py   # BaseNode, StructuralNode（抽象）
+│   │   ├── runner.py      # Runner（極小化）
+│   │   └── registry.py    # NodeRegistry（type → クラス）
+│   ├── extensions/
+│   │   ├── pipeline_node.py
+│   │   ├── python_script.py
+│   │   ├── llm.py
+│   │   └── openrouter.py
+│   ├── execution/
+│   │   ├── loader.py      # pipeline.yaml の parse、registry.resolve で Node 組み立て
+│   │   ├── config.py      # YAML 読み込み、deep merge
+│   │   └── run.py         # load_and_kick_pipeline（CLI の入口）
 │   ├── cli.py             # CLI エントリーポイント
 │   └── sdk/
-│       ├── __init__.py
-│       ├── templates.py   # Jinja2 テンプレートレンダリング
-│       ├── llm.py         # LLM 呼び出し
-│       └── shell.py       # シェル実行
+│       └── __init__.py
 ├── examples/
 │   ├── pipelines/
 │   └── nodes/
@@ -90,6 +96,10 @@ nodeflow/
 ├── tests/
 └── pyproject.toml
 ```
+
+### 外部拡張（カスタム Node）
+
+自作の Node クラスを `nodeflow.core.registry.registry` に `register("my_type", MyNode)` で登録すると、pipeline YAML の `type: my_type` で利用できる。未登録の type は `UnknownNodeTypeError`、`loop` は「未実装」として `NotImplementedError` になる。
 
 ## ライセンス
 

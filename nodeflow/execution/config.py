@@ -1,6 +1,5 @@
 """
-設定管理モジュール（YAML読み込み、deep merge）。
-load_yaml / deep_merge は v1.2 でも使用。load_node_config / load_global_config は v1.11 互換・レガシー用（v1.2 Runner は loader を使用）。
+設定管理モジュール（YAML読み込み、deep merge）。execution 層 — ファイル IO。
 """
 
 import copy

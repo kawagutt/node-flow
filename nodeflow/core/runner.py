@@ -4,11 +4,9 @@ NodeFlow v1.4.2 — Runner (§7). loader に依存せず、受け取ったデー
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from .node import BaseNode
+from .base_node import BaseNode
 
 # node_input_bindings のタプル形式: ("node", src_node_id, src_port) | ("inputs", port) | ("params", param_name)
 InputBinding = Tuple[str, ...]
@@ -109,18 +107,3 @@ class Runner:
                 self.latest_output[node_id] = output
             return True
         return False
-
-
-def load_and_kick_pipeline(
-    workspace_dir: str,
-    pipeline_path: str,
-    initial_inputs: Dict[str, Any] | None = None,
-    params: Dict[str, Any] | None = None,
-) -> Dict[str, Any]:
-    """Load root pipeline from YAML and execute. Returns output dict (or {})."""
-    from .loader import load_pipeline
-
-    if not os.path.isabs(pipeline_path):
-        pipeline_path = str(Path(workspace_dir) / pipeline_path)
-    root = load_pipeline(workspace_dir, pipeline_path)
-    return root.execute(initial_inputs or {}, params or {})

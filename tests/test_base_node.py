@@ -5,7 +5,7 @@ Tier 1: BaseNode 単体テスト。
 import pytest
 from types import MappingProxyType
 
-from nodeflow.node import (
+from nodeflow.core.base_node import (
     BaseNode,
     ExecutionContext,
     NodeExecutionFailure,

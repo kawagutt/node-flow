@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 
-from .runner import load_and_kick_pipeline
+from nodeflow.execution.run import load_and_kick_pipeline
 
 
 @click.command()

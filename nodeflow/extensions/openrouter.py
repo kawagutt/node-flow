@@ -10,7 +10,7 @@ from typing import Any, Dict
 
 from openai import OpenAI
 
-from ..node import BaseNode, ExecutionContext
+from nodeflow.core.base_node import BaseNode, ExecutionContext
 
 
 class OpenRouterNode(BaseNode):
