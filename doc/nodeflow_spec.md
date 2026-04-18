@@ -1,12 +1,15 @@
-# NodeFlow v1.4.2 (runtime-min) 仕様
+# NodeFlow 仕様書
 
-**ブランチ**: `v14-runtime-min`
-**目的**: `ScriptNode → LLMNode → ScriptNode` が動くことを確認する最小構成  
-**ベース**: NodeFlow v1.3
+**収録内容**
+
+- **Part I–IV**: NodeFlow **v1.4.2 (runtime-min)** のコアモデルおよび実行層仕様（ブランチ `v14-runtime-min`、ベース v1.3）。`ScriptNode → LLMNode → ScriptNode` が動く最小構成を対象とする。**過去層・実装参照用**として残す。
+- **Part V**: **NodeFlow v1.5 Dispatcher Model**（本書における **v1.5 の正本仕様**）。node-flow を dispatcher として定義する node model。**node taxonomy・class 構造・project 構成の語彙は Part V を正本とする。** role と implementation kind の分離、単発ジョブ原則、Runner 禁止事項、および **§17 Project Layout Guidance**（仕様本文ではない実装整理方針）を含む。
+
+Part II に現れる「v1.5 で追加」等の表記は **実行基盤**（pause / revision / usage 等）の拡張を指す。実行基盤は Part V の dispatcher model と **独立に**検討・実装でき、同一リリースに束ねる必要はない（詳細は **Part V §18**）。
 
 ---
 
-## このバージョンの方針
+## v1.4.2（Part I–IV）の方針
 
 v1.3 の全機能を実装しようとすると作業範囲が広すぎて「動く状態」に到達しにくい。
 本バージョンでは **「まず動く」** を最優先とし、以下の原則で機能を絞る。
@@ -1005,26 +1008,785 @@ v1.3 の全不変条件のうち、この版で意味を持つものを列挙す
 
 ---
 
-# v1.5 に向けた TODO リスト
+# Part V — NodeFlow v1.5 Dispatcher Model
 
-本バージョンで「動く」ことを確認したら、v1.5 で以下を追加する。
-
-| 優先 | 機能 | 内容 |
-|------|------|------|
-| 高 | revision 完全実装 | SHA-256 content-hash / RFC 8785 Canonical JSON |
-| 高 | PauseSignal / resume | LLMNode の human-in-the-loop |
-| 高 | usage 記録 | prompt_tokens / completion_tokens |
-| 中 | limit 拡張 | max_wall_time_sec / max_idle_sec / max_total_node_calls |
-| 中 | re_execute + invalidate | node2 から再スタート + params_override |
-| 中 | execution_cursor | resume / re_execute の統一基盤 |
-| 中 | reset_limit_state の高度利用 | limit 解除 + resume |
-| 低 | LoopNode | 条件付き反復実行 |
-| 低 | 並列実行 | async 対応 |
-| 低 | 循環グラフ | LoopNode と一体 |
+**Part V では v1.5 の node model を正本とする。** Part I–IV に現れる `DataNode` / `StructuralNode` 等の分類語彙は、**Part V 本文では参照しない**（過去層の説明は Part I–IV にのみ存在する）。実装は Part I–IV の runtime と併存し得るが、dispatcher としての型・配置・契約の読み取りは Part V に従う。
 
 ---
 
-# チェックリスト（動作確認）
+## 1. Purpose
+
+v1.5 では、node-flow を単なる汎用 workflow 実行基盤としてではなく、**外部 LLM / coding agent / API を task 単位で振り分けて実行する dispatcher** として、実際に使える形に整理する。
+
+本バージョンでは、抽象的な汎用性の追求よりも、まず以下を確実に満たすことを優先する。
+
+* task を適切な外部実行器へ振り分けられる
+* 外部実行を単発ジョブとして扱える
+* 実行結果を共通形式で扱える
+* node の接続と composite による再利用を維持できる
+* 具体ノードを増やしやすい構造を持つ
+* base class と concrete node の責務を明確に分離できる
+
+---
+
+## 2. Scope and Non-Goals
+
+### 2.1 Primary Goal
+
+v1.5 の primary goal は、node-flow を以下のような dispatcher として使えるようにすることである。
+
+* review task を Claude Code に渡す
+* implement task を Codex に渡す
+* summarize / cheap analysis を OpenAI-compatible API に渡す
+* route / exec / summarize のような流れを composite 化して再利用できる
+* task ごとに外部実行を独立 run として扱う
+
+### 2.2 Non-Goals
+
+v1.5 では以下を primary scope に含めない。
+
+* 高度な multi-agent negotiation
+* 複雑な scheduler / queue / worker system
+* provider 全体を横断する完全な plugin framework
+* 長期 session orchestration
+* Claude Code や Codex 内部の subagent 相当機構の再実装
+* role ごとの大規模 taxonomy の完成
+
+---
+
+## 3. Design Principles
+
+### 3.1 Principles
+
+v1.5 では以下を設計原則とする。
+
+* 実際に使える dispatcher を優先する
+* Runner は dumb のまま維持する
+* 外部実行は単発ジョブを基本とする
+* node の大分類は `PipeNode` と `ActionNode` とする
+* `ActionNode` の継承軸は実現方法とする
+* node の role は継承の第一軸にしない
+* role と implementation は独立概念として扱う
+* concrete node は役割の明確なものを優先する
+* base class と concrete node の置き場所は分離する
+
+### 3.2 Runner Prohibitions
+
+dispatcher を実装するとき、Runner に制御を寄せたくなるが、v1.5 では次を **禁止**する（**§10** の単発ジョブ原則と併せて解釈する）。
+
+* Runner は **routing policy** を持ってはならない
+* Runner は **provider selection** を持ってはならない
+* Runner は **node role を解釈して実行順を変えてはならない**
+* dispatch の判断は **ActionNode** または **PipeNode** の構成に閉じ込める
+
+---
+
+## 4. Terminology
+
+Part V における主要概念の関係は、次の一文ずつの定義で捉える。
+
+* **dispatcher** は、task を適切な **node** および **executor** に振り分ける仕組み全体を指す。
+* **executor** は、CLI プロセスや HTTP API など、node-flow の外で実際の処理を行う **外部実行器そのもの**を指す。
+* **ActionNode** は、graph 上の **単一責務の処理単位**であり、dispatcher の中でロジックや external execution を担う。
+* **external execution** は、**ActionNode** が **executor** を呼び出して結果を得る行為を指す。
+
+### 4.1 Task
+
+dispatcher が扱う仕事単位。  
+例: review, implement, summarize, analyze
+
+### 4.2 Executor
+
+task を実行する外部実行器。  
+例:
+
+* Codex CLI
+* Claude Code CLI
+* OpenAI-compatible API client
+
+### 4.3 PipeNode
+
+複数の node を内部に持ち、それらを 1 つの node として扱う合成 node。
+
+### 4.4 ActionNode
+
+**ActionNode** は単一責務の処理 node である。その **role** は routing / transform / `exec` などでありうる。実装手段は **implementation kind**（`PythonActionNode` / `CliActionNode` / `ApiActionNode`）で表し、role とは独立に選ぶ（§6 参照）。
+
+### 4.5 Role
+
+node が何をするかを表す概念。  
+例:
+
+* `route_by_task_type`
+* `summarize_result`
+* `exec`
+
+role は node の意味・契約を表すものであり、**継承の第一軸ではない**。
+
+### 4.6 Implementation Kind
+
+node が処理をどう実現するかを表す概念。  
+v1.5 では少なくとも以下を扱う。
+
+* `python`
+* `cli`
+* `api`
+
+### 4.7 Common Result
+
+外部実行系 `ActionNode` が **標準出力 port `execution_result`** に載せる payload の共通形。port 契約および `_meta.revision` は **§9** を参照。
+
+---
+
+## 5. Node Taxonomy
+
+v1.5 における node class の大分類は **`PipeNode` と `ActionNode` のみ**とする（`BaseNode` 直下の top-level category はこの 2 つに限定する）。
+
+* **`PipeNode`**: composite / subgraph を 1 node として扱うための class
+* **`ActionNode`**: 単一責務の処理 node。subclass は **implementation kind** に基づいて定義する
+
+```text
+BaseNode
+├─ PipeNode
+└─ ActionNode
+   ├─ PythonActionNode
+   ├─ CliActionNode
+   └─ ApiActionNode
+```
+
+### 5.1 Taxonomy のルール
+
+* `PipeNode` と `ActionNode` 以外を top-level category に増やさない
+* role は taxonomy に含めない（role は `ActionNode` の意味属性）
+* implementation kind は `ActionNode` の継承軸とする
+
+### 5.2 PythonActionNode / CliActionNode / ApiActionNode
+
+* **PythonActionNode**: ローカル Python ロジックで処理を完結する
+* **CliActionNode**: 外部 CLI を subprocess 等で呼び出す
+* **ApiActionNode**: HTTP API を呼び出す
+
+### 5.3 BaseNode との継承と execute 契約
+
+* **`PipeNode` および `ActionNode`（その subclass を含む）はすべて `BaseNode` を継承する。**
+* **`PipeNode.execute()` は `BaseNode.execute()` の共通テンプレート**（Part II の pre-limit → `run` → revision 付与・status 遷移等）に従う。`PipeNode` は **独自の execute 契約を定義しない**。
+* **`PipeNode` 固有の責務は `run()` の内部**にあり、**内部 subgraph の実行**および §8 に従った **出力 dict の組み立て**を行う（§8.4 参照）。
+
+---
+
+## 6. Role and Implementation Model
+
+v1.5 では、各 ActionNode は少なくとも以下の 2 つの側面を持ち、**仕様上完全に独立**とする。
+
+* **role**: 何をする node か（契約・意味）
+* **implementation kind**: どう実現する node か（継承軸）
+
+継承は **implementation kind 側にのみ**置く。**role の表現規則は §6.1** に従う。**role ごとの abstract base class は導入しない**。
+
+### 6.1 Rules
+
+* role と implementation kind は独立概念として扱う
+* 同じ role が複数の implementation kind を持ってよい
+* 継承の骨格は implementation kind 側に置く
+* **role は string 値として表現し、常に外向きの処理責務を表す**（内部実装名や略称を role 値に流用しない）
+* **v1.5 では role の正本（source of truth）は class attribute**（例: `role = "exec"`）とする。spec や graph metadata にも同じ文字列を載せてよいが、**実装の参照は class attribute を優先**する
+* v1.5 で **正式に用いる role 値**は少なくとも `route_by_task_type`, `summarize_result`, `exec` とする（将来、taxonomy を拡張してよい）
+* **新しい role 値**を導入する場合は、既存値と意味が重複しないこと、および **外向きの処理責務**を表すことを条件とする
+* role と implementation kind を **同一の継承木で表現しようとしてはならない**
+
+### 6.2 external execution と role 名
+
+v1.5 では外部実行系 ActionNode の **role メタデータ**は **`exec`** を用いる。将来、必要に応じて `call_cli` / `call_api` 等へ細分化してよい（予約的な拡張余地）。
+
+**concrete クラス名**では外部呼び出しを **`*ExecNode`** に揃える（例: `CodexExecNode`, `ClaudeCodeExecNode`, `KimiExecNode`, `QwenExecNode`）。CLI / API の別は **implementation kind**（`CliActionNode` / `ApiActionNode`）で表す（§12.1）。
+
+### 6.3 Prohibition
+
+* role ごとの abstract base class は v1.5 では導入しない
+* `RoutingNode` / `TransformNode` / `ExecutionNode` のような **role-based taxonomy** は採用しない
+* role と implementation kind を同一の継承木で表現しようとしてはならない
+
+### 6.4 例
+
+以下の例は role と implementation kind の **独立性** を示すものであり、**role ごとの継承体系を意味しない**。
+
+| Node                        | role                 | implementation kind |
+| --------------------------- | -------------------- | ------------------- |
+| `PythonRouteByTaskTypeNode` | `route_by_task_type` | `python`            |
+| `PythonSummarizeResultNode` | `summarize_result`   | `python`            |
+| `CodexExecNode`             | `exec`               | `cli`               |
+| `ClaudeCodeExecNode`        | `exec`               | `cli`               |
+| `KimiExecNode`              | `exec`               | `api`               |
+| `QwenExecNode`              | `exec`               | `api`               |
+
+---
+
+## 7. Concrete Nodes in v1.5
+
+### 7.1 PythonActionNode 配下
+
+v1.5 で正式対象とする Python concrete は次の 2 つ。**クラス名・ファイル名は §12.1**。
+
+#### PythonRouteByTaskTypeNode
+
+role: `route_by_task_type`
+
+役割:
+
+* task metadata を見て次の executor / node を決める
+* 自身では外部実行を行わない
+
+入力例:
+
+* `task_type`
+* `needs_repo_write`
+* `needs_shell`
+* `cost_tier`
+* `preferred_executor`（任意）
+* `forbid_executor`（任意）
+
+出力例:
+
+* `route.executor`
+* `route.reason`
+* `route.next_node`
+
+原則:
+
+* v1.5 では deterministic な Python ロジックで実装する
+* LLM を暗黙に使わない
+
+#### PythonSummarizeResultNode
+
+role: `summarize_result`
+
+役割:
+
+* 直前結果を後段に渡しやすい summary に整形する
+* raw result を保持したまま summary を追加する
+
+> 本 node は、**外部実行系 `ActionNode` が返す標準 port `execution_result` の payload** を入力として受け取ることを基本とする（§9）。
+
+入力:
+
+* `execution_result`
+
+出力:
+
+* `summary.short`
+* `summary.key_findings`
+* `summary.next_hint`
+
+原則:
+
+* v1.5 では Python ロジックで実装する
+* LLM 要約は future scope とする
+
+---
+
+### 7.2 CliActionNode 配下
+
+#### CodexExecNode
+
+role: `exec`
+
+役割:
+
+* Codex CLI を単発ジョブとして呼び出す
+
+原則:
+
+* 対話 slash command (`/exit`, `/new`) に依存しない
+* 単発実行完了でプロセス終了とする
+* session 継続前提で dispatcher を組まない
+
+#### ClaudeCodeExecNode
+
+role: `exec`
+
+役割:
+
+* Claude Code を単発または非対話実行として呼び出す
+* Sonnet / Opus を選択可能とする
+
+原則:
+
+* Claude Code 内部の subagent / skill / hook は Claude Code 側責務とする
+* node-flow 側は開始・終了・結果取得のみを扱う
+
+#### Future examples
+
+* `CodexRouteByTaskTypeNode`
+* `ClaudeCodeSummarizeResultNode`
+
+これらは仕組み上は可能だが、v1.5 の正式対象には含めない。
+
+---
+
+### 7.3 ApiActionNode 配下
+
+v1.5 では **provider ごとの concrete `ApiActionNode`** を正式対象とし、**OpenAI-compatible 等の横断 shared base クラスは仕様語彙に含めない**。複数 provider で重なる HTTP 処理は **§12.4 の推奨 helper**（または private モジュール）に切り出す。
+
+#### KimiExecNode
+
+role: `exec`
+
+役割:
+
+* Kimi（Moonshot）互換 HTTP API を **単発リクエスト**で呼び出す
+
+原則:
+
+* 出力は **§9** の `execution_result` port 契約に従う
+* auth / endpoint / retry は **`run()` 実装**に置き、**timeout / retry 中の status 観測は §18.1**、retry 方針の詳細は **§11.3** に従う
+
+#### QwenExecNode
+
+role: `exec`
+
+役割:
+
+* Qwen 系 HTTP API を **単発リクエスト**で呼び出す
+
+原則:
+
+* **標準出力 port は `execution_result`**。payload は KimiExecNode と同様に **§9** の Common Result 契約に従う
+* auth / endpoint / retry / **§18.1** / **§11.3** は KimiExecNode と同様
+
+##### Future concrete examples
+
+仕組み上は次のような **route / summarize の API concrete** を後から追加してよい（v1.5 の正式対象外）。
+
+* `KimiRouteByTaskTypeNode`
+* `KimiSummarizeResultNode`
+* `QwenRouteByTaskTypeNode`
+* `QwenSummarizeResultNode`
+
+v1.5 では API-backed route / summarize は正式対象に含めず、まずは **§7.1 の Python 実装**を正式対象とする。
+
+---
+
+## 8. PipeNode Contract
+
+### 8.1 定義
+
+`PipeNode` は、複数 node の接続を内部に持つ composite node である。  
+内部には `ActionNode` だけでなく `PipeNode` を含めてもよい。
+
+**継承・execute:** `PipeNode` は **`BaseNode` の subclass**であり、**§5.3** に従い `BaseNode.execute()` のテンプレートを用いる。外部から見た「通常 node と同じ interface」とは、主にこの **execute / status / port 出力の契約**を指す。
+
+**`PipelineNode` との対応:** Part I–IV の **`PipelineNode` は本 Part の `PipeNode` に相当する**（`BaseNode` 継承・`run` 内で Runner により子を直列実行する構造）。実装移行時は **execute 外殻を共通化し、子実行ロジックを `run()` に集約**すればよい。
+
+### 8.2 Output contract（規範）
+
+実装者が passthrough 専用と誤読しないよう、出力に関して次を **規範**とする。
+
+1. `PipeNode` は、内部 graph の **final output をそのまま** 外部へ返してよい。
+2. `PipeNode` は、**自身の外部 input / output contract** に従い、内部 node の出力を **再構成して** 返してよい。
+3. **外部 caller は内部構造を意識しない。** caller は `PipeNode` を black box とし、内部の node 構成や最終子の id に依存した契約を前提としてはならない。
+
+**注釈（final output）:** 上記 1 の **final output** は、`PipeNode.run()` が内部実行の結果として **外部に公開する最終出力**を指す。内部でどの子の出力を採用・集約するかは **`PipeNode` 実装の責務**であり、caller は black box として扱う。
+
+### 8.3 Structural rules
+
+* `PipeNode` は通常 node と同じ外部 interface（execute 契約など）を持つ
+* `PipeNode` は明確な input / output contract を持たなければならない
+* `PipeNode` の内部には node または `PipeNode` を任意に含めてよい
+* ネスト深さに仕様上の制限は設けない
+
+### 8.4 Execution rule
+
+* **`PipeNode.run()`** は内部 subgraph の **実行責務**を持つ（子の `execute` 呼び出し順・接続解決・中間結果の受け渡しはすべて `run()` の実装詳細である）
+* **`PipeNode.execute()`** は **`BaseNode.execute()`** に従い、**`run()` の前後**で status / limit / revision（Part II）を扱う
+* `PipeNode` の内部 node 構成は **実装詳細**である
+* 外部 caller は `PipeNode` を通常 node と同様に扱えることを期待してよい
+
+### 8.5 Guidance
+
+* 深いネストは許可する
+* ただし、可読性・debug 性・再利用性との trade-off を考慮する
+* 実運用では shallow で役割の明確な `PipeNode` が有利なことが多い
+
+### 8.6 例
+
+* `ReviewDispatchPipeNode`
+
+  * `PythonRouteByTaskTypeNode`
+  * `ClaudeCodeExecNode`
+  * `PythonSummarizeResultNode`
+
+* `ImplementDispatchPipeNode`
+
+  * `PythonRouteByTaskTypeNode`
+  * `CodexExecNode`
+  * `PythonSummarizeResultNode`
+
+---
+
+## 9. Common Result
+
+### 9.1 Port 名と Part II との整合
+
+外部実行系 `ActionNode`（`CliActionNode` / `ApiActionNode` の **exec role** concrete 等）は、**標準出力 port 名として `execution_result` を用いる。** `run()` の戻り値（または `execute` が最終的に公開する output port の集合）は、少なくとも **`execution_result` というキー**を含み、その値が **Common Result の payload** である。
+
+payload は **Part I–IV の port 契約に従い dict とし、`_meta.revision` を必須**とする（scalar port はない）。以下のフィールドは **`_meta` と同一階層**（payload 直下）に置く。
+
+```python
+{
+    "execution_result": {
+        "_meta": {"revision": "..."},
+        "ok": bool,
+        "executor": str,
+        "provider": str,
+        "model": str | None,
+        "task_type": str | None,
+        "summary": str | None,
+        "stdout": str | None,
+        "stderr": str | None,
+        "raw_response": Any,
+        "artifacts": list,
+        "provider_meta": dict,
+        "next_hint": str | None,
+    }
+}
+```
+
+上記は **ノード出力の一例**である。他 port を追加してよいが、**外部実行の共通契約として `execution_result` は必須**とする。
+
+**命名:** `provider_meta` は **provider 固有の任意メタデータ**を格納する。Part II の **port-level `_meta.revision`** とは別概念であり、混同しないこと。
+
+### 9.2 Payload フィールドの意味（Common Result 本体）
+
+`execution_result` の dict 直下（`_meta` と兄弟）に最低限次を持つ。
+
+* `ok`, `executor`, `provider`, `model`, `task_type`, `summary`, `stdout`, `stderr`, `raw_response`, `artifacts`, `provider_meta`, `next_hint` — 意味は従来どおり（`provider_meta` は旧称 `meta` に相当する provider 専用領域）
+
+### 9.3 Rules
+
+* **Common Result は `execution_result` port の payload として返す**
+* raw output を捨ててはならない
+* summary は raw を置き換えず追加情報として持つ
+* provider 固有詳細は **`provider_meta`** に格納する
+* **`provider_meta`** は **port-level の `_meta`（revision 等）とは別**である
+* payload 直下にキー **`meta` は用いない**（旧案は `provider_meta` に統一する）
+* 後段 node（例: `PythonSummarizeResultNode`）は可能な限り **`execution_result` payload** を前提に実装する
+
+---
+
+## 10. Single-Run Principle
+
+**external execution を行う `ActionNode`（典型: `*ExecNode`）** について、原則として **1 task = 1 external run** とする。ここでいう **external run** は、**CLI プロセスの 1 回起動**、または **HTTP API の 1 回のリクエスト**を指す。
+
+**`PipeNode.execute()`** は複数の子を含み得る **composite 実行**であり、**single-run 原則の直接の対象ではない**（各子の external run がそれぞれ 1 run として数えられる）。Runner に制御を寄せないことについては **§3.2** も参照する。
+
+**retry:** single-run 原則は **対話セッション継続や暗黙の再利用を禁じる**ものであり、**transient 失敗に対する同一 `execute` 呼び出し内の有限 retry を禁止するものではない**（§18 参照）。
+
+### Rules
+
+* 対話 session 継続を前提にしない
+* `/exit`, `/new` などの対話操作に依存しない
+* 単発実行可能な実行器は単発実行を優先する
+* 長期 session orchestration は v1.5 の primary scope 外とする
+
+### Rationale
+
+* task 境界を明確化できる
+* session 汚染を防ぎやすい
+* audit / rerun / retry がやりやすい
+* CLI 実行と API 実行を統一的に扱いやすい
+
+---
+
+## 11. Base Class Responsibilities
+
+### 11.1 PythonActionNode
+
+共通責務:
+
+* 入力解決
+* ローカル Python ロジック実行
+* 例外処理
+* 共通出力形式への整形
+
+### 11.2 CliActionNode
+
+共通責務:
+
+* subprocess 実行
+* timeout 管理
+* exit code 判定
+* stdout / stderr 回収
+* command 記録
+
+### 11.3 ApiActionNode
+
+共通責務:
+
+* request 発行
+* auth / endpoint 設定
+* retry（**retry 中の status 観測は §18.1**）
+* response 正規化
+
+### 11.4 PipeNode
+
+共通責務:
+
+* 内部 node 構成の保持
+* input / output contract の管理
+* subgraph 実行の外部インターフェース化
+* **`BaseNode.execute()` のテンプレートに従い**、status / limit / revision 等は **`BaseNode` 側の契約**に任せる（§5.3）。`PipeNode` は **独自の execute フックでこれらを迂回しない**
+
+---
+
+## 12. Inheritance and Composition Rules
+
+### 12.1 Naming Rules
+
+1. **Framework 固定名** — `BaseNode`, `PipeNode`, `ActionNode`, `PythonActionNode`, `CliActionNode`, `ApiActionNode` は本 Part の語彙として固定する。
+2. **concrete `ActionNode`** — クラス名は **`<Scope><Role>Node`** とする。`Scope` は実装スコープ（例: `Python`, `OpenAI`, `Codex`, `ClaudeCode`, `Kimi`, `Qwen`）。**`Role` は必須**（外向き責務の PascalCase 語幹。例: `RouteByTaskType`, `SummarizeResult`, `Exec`）。**implementation kind** は継承で表し、**concrete 名では scope を省略しない**。
+3. **concrete `PipeNode`** — **`<Purpose>PipeNode`**。外から見た目的のみを表す。
+4. **外部実行系 concrete** — **`*ExecNode`**。role メタデータは **`exec`**（§6.2）。
+5. **基底と concrete の同名禁止**。
+6. **ファイル名** — クラス名の **snake_case**（例: `python_route_by_task_type.py`, `kimi_exec.py`）。
+
+### 12.2 本 Part で用いる推奨クラス名
+
+| 名前 | 種別 |
+|------|------|
+| `BaseNode` | 最上位基底 |
+| `PipeNode`, `ActionNode`, `PythonActionNode`, `CliActionNode`, `ApiActionNode` | 本仕様で定義する基底 / 中間 |
+| `PythonRouteByTaskTypeNode`, `PythonSummarizeResultNode` | Python concrete（`<Scope><Role>Node`） |
+| `CodexExecNode`, `ClaudeCodeExecNode` | CLI 外部実行 concrete |
+| `KimiExecNode`, `QwenExecNode` | API 外部実行 concrete（provider 別） |
+| `KimiRouteByTaskTypeNode`, `KimiSummarizeResultNode`, `QwenRouteByTaskTypeNode`, `QwenSummarizeResultNode` | future concrete 例（§7.3） |
+| `ReviewDispatchPipeNode`, `ImplementDispatchPipeNode` | `PipeNode` 例 |
+
+### 12.3 継承・共通化の Rules
+
+* base class は implementation kind ごとに持つ
+* role ごとに巨大な base class を作らない
+* provider 固有差分まで抽象親に押し込まない
+* 必要に応じて helper / composition を使う
+
+### 12.4 推奨 helper
+
+* `CommandBuilder`
+* `RequestBuilder`
+* `ResultNormalizer`
+* `ArtifactWriter`
+
+**API exec 間のコード共有（仕様語彙に含めない）:** `KimiExecNode` / `QwenExecNode` 等が **HTTP リクエスト・auth・retry・レスポンス正規化**を重複実装しないため、**非 node のヘルパ**に切り出すことを推奨する。名前・配置の例（いずれも **class 名の固定語彙ではない**）:
+
+* **仮称 `HttpApiCallHelper`**（モジュール `http_api_call.py` 等）。request 構築・auth・retry・正規化まで含む範囲に合わせて **`HttpApiExecHelper`** / **`ApiExecHelper`** 等の呼び方でもよい — **`nodes/base/helpers/`** または **`nodes/base/`** 直下に置き、concrete から import して用いる
+* 同一ファイル内の **private 関数群**でもよいが、**複数 provider で共通化する場合は `nodes/base/` 側に寄せる**と配置が明確になる
+
+---
+
+## 13. What Remains Unchanged
+
+v1.5 では以下は維持する。
+
+* graph と node 接続を中心とする基本モデル
+* Runner は dumb であるという方針（禁止事項は **§3.2**）
+* pipeline / graph 記述方式の基本枠組み
+* node を組み合わせて再利用するという flow の考え方
+
+---
+
+## 14. Implementation Order
+
+### Step 1
+
+* `PipeNode`
+* `ActionNode`
+* `PythonActionNode`
+* `CliActionNode`
+* `ApiActionNode`
+
+### Step 2
+
+* `PythonRouteByTaskTypeNode`
+* `PythonSummarizeResultNode`
+* `CodexExecNode`
+* `ClaudeCodeExecNode`
+
+### Step 3
+
+* `KimiExecNode`
+* `QwenExecNode`
+
+### Step 4
+
+* `ReviewDispatchPipeNode`
+* `ImplementDispatchPipeNode`
+* dispatcher example pipeline
+
+---
+
+## 15. Success Criteria
+
+v1.5 完了時点で最低限以下が成立していること。
+
+* `PipeNode` と `ActionNode` の区別が明確である
+* base class が implementation kind ごとに整理されている
+* role と implementation kind が独立概念として扱われている
+* task_type に応じて executor を分岐できる
+* Codex を単発ジョブとして呼べる
+* Claude Code を単発ジョブとして呼べる
+* Kimi / Qwen 等の HTTP API を **単発 exec** で呼べる concrete を持つ
+* 共通結果形式で後段 node に渡せる
+* `PipeNode` を通常 node と同様に扱える
+* Runner に provider 固有ロジックを持ち込んでいない
+
+---
+
+## 16. Change Summary
+
+### 16.1 削除・整理するもの
+
+* `RoutingNode` / `TransformNode` / `ExecutionNode` のような role-based taxonomy
+* role ごとの abstract base class
+* abstract base と concrete node を曖昧にする命名（`Abstract…` 接頭辞への依存を含む）
+* 仕様語彙としての **OpenAI-compatible 横断 shared base**（旧 `OpenAICompatible*` 系クラス名）
+* file / folder 構成で implementation と role が混ざった配置
+* Part V 本文での v1.4 系分類語彙（`DataNode` / `StructuralNode` 等）の参照
+
+### 16.2 明確化するもの
+
+* `PipeNode` / `ActionNode` を top-level taxonomy とする
+* `ActionNode` の継承軸は implementation kind とする
+* role は継承の第一軸にしない
+* `PipeNode` は composite を正式に表す
+* `PipeNode` は外部 contract に従って出力を再構成してよい
+* `PipeNode` / `ActionNode` は **`BaseNode.execute()` テンプレート**に従う（§5.3、§8.4、§11.4）
+* concrete `ActionNode` は **`<Scope><Role>Node`**（§12.1）
+* Common Result の **port 名 `execution_result`** と **`provider_meta`**（§9）
+* file / folder 配置は **role ベース**、継承は **implementation ベース**とする
+
+### 16.3 追加するもの
+
+* Naming Rules（§12.1）および推奨クラス名（§12.2）
+* Runner Prohibitions（§3.2）
+* `exec` role の将来細分化余地（§6.2）
+* 用語間の関係説明（§4 冒頭）
+* `PipeNode` の output / structural / execution に関する contract（§8.2–8.4）
+* **§5.3** / **§18** — `BaseNode` との関係および Part II runtime との接続原則
+* **§9** — `execution_result` port、`provider_meta`、`_meta.revision` との区別
+* **§10** — external run 粒度と retry の関係
+
+### 16.4 維持する考え方
+
+**§13 What Remains Unchanged** に集約する（本節では列挙しない）。
+
+---
+
+## 17. Project Layout Guidance
+
+**本節は normative な node 契約ではなく、project 構成の推奨である。** 実装時の一貫性のために明記する。
+
+### 17.1 方針
+
+* **abstract base を置く場所** と **concrete node を置く場所** は分ける
+* **ファイル配置は role ベースに統一**する（`routing` / `transform` / `exec` 等）
+* 継承は implementation kind ベースで読み、**ディレクトリで implementation を表現しなくてよい**
+* `PipeNode` 系（`pipe/`）と concrete `ActionNode` 系（`action/`）を分ける
+
+### 17.2 提案例
+
+```text
+nodeflow/
+  nodes/
+    base/
+      node.py
+      pipe.py
+      action.py
+      python_action.py
+      cli_action.py
+      api_action.py
+
+    action/
+      routing/
+        python_route_by_task_type.py
+        # future:
+        # openai_route_by_task_type.py
+        # kimi_route_by_task_type.py
+
+      transform/
+        python_summarize_result.py
+        # future:
+        # openai_summarize_result.py
+        # qwen_summarize_result.py
+
+      exec/
+        codex_exec.py
+        claude_code_exec.py
+        kimi_exec.py
+        qwen_exec.py
+
+    pipe/
+      review_dispatch_pipe.py
+      implement_dispatch_pipe.py
+
+  runner.py
+  graph.py
+```
+
+### 17.3 この構成の意図
+
+#### `nodes/base/`
+
+* **abstract base class のみ**（および共通 helper）
+* implementation kind ごとの共通親（`PythonActionNode` 等）
+
+#### `nodes/action/`
+
+* concrete ActionNode のみ
+* **role ごとのサブディレクトリ**に揃える
+
+#### `nodes/pipe/`
+
+* reusable composite としての `PipeNode` 実装
+
+### 17.4 ルール案
+
+* `base/` には **abstract base class のみ**置く（concrete node を置かない）
+* concrete ActionNode は **`action/<role>/`** に置く
+* reusable composite は **`pipe/`** に置く
+* 継承は implementation kind ベースでも、**ファイル配置は role ベースを優先**する
+* implementation kind は **class hierarchy で読むもの**とし、ディレクトリで表現しなくてよい
+* **§12.4** の API 用ヘルパは **`nodes/base/` 配下**（`helpers/` 推奨）に置き、**concrete の `action/exec/` には node クラス以外の共有モジュールを混在させない**（読み手が「node か helper か」を判別しやすくする）
+
+---
+
+## 18. Relation to Part II Runtime Extensions
+
+Part II に記述される **execution primitives**（`execute` / status / limit / revision 等）は、**node taxonomy とは別層**であり、Part V の `PipeNode` / `ActionNode` 実装と **共有してよい**。
+
+* **Part V** は **dispatcher 用の node model**（taxonomy・role・Common Result・Runner 禁止等）を定義する。
+* **Part II** は **同一の `BaseNode.execute()` テンプレート**および status / limit / revision の意味を定義する。v1.5 の `PipeNode` / `ActionNode` はこれに従う（§5.3、§8.4、§11.4）。
+
+**`DataNode` / `StructuralNode`** 等の v1.4 系分類語彙は **Part I–IV のみ**に残す。Part V 本文では用いない。
+
+### 18.1 timeout / retry / status（v1.5 での接続原則）
+
+timeout / retry / status の接続原則は **本節**に従う。
+
+* **`CliActionNode`** の subprocess **timeout** は **`run()` 実装内**で扱う（Part II 本版の timeout 節が未整備でも、v1.5 の CLI 実行には事実上必須）。
+* **`ApiActionNode`** の **retry** も **`run()` 実装内**で扱う。**retry 中に外部から観測される node の status は `executing`** とする（同一 `execute` 呼び出しの範囲内）。
+* **single-run 原則（§10）** は **external run の粒度**を定義するものであり、**transient 向けの有限 retry を禁止しない**。
+* **PauseSignal / resume** 等は Part II 側の拡張として **dispatcher の single-run 方針と両立させる**（詳細は Part II の該当節。本 Part では「対話セッション前提の dispatcher を組まない」§10 の趣旨と衝突しないよう設計する）。
+
+### 18.2 usage / post-limit
+
+**usage 集計・post-limit（token 等）** は Part II の runtime 拡張に属する。Part V の `ApiActionNode` / `LLM` 相当ノードは、**戻り値の `_usage` 等で Part II の契約に接続する**想定とする（本 Part では数値を固定しない）。
+
+---
+
+実行基盤の拡張（revision 完全実装、PauseSignal / resume、usage 等）は、**dispatcher model の節（§1–§17）と独立に**仕様化・実装してよい。同一リリースに束ねる必要はないが、最終的には **同一 Runner / graph 実行モデル**上で共存させる。
+
+---
+
+# Appendix A — v1.4.2 動作確認チェックリスト
 
 `ScriptNode → LLMNode → ScriptNode` が動くことを確認するための最小チェック項目。
 
@@ -1042,5 +1804,7 @@ v1.3 の全不変条件のうち、この版で意味を持つものを列挙す
 [ ] fatal 発生時に PipelineNode が {} を返す
 [ ] max_calls を超えた場合に status = limit になる
 [ ] read_error() で原因例外が取得できる
+[ ] ready 以外のノードを execute しようとした場合に RuntimeError が raise される（PipelineNode が fatal になる）
+```d_error() で原因例外が取得できる
 [ ] ready 以外のノードを execute しようとした場合に RuntimeError が raise される（PipelineNode が fatal になる）
 ```
