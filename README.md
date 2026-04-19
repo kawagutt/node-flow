@@ -1,106 +1,98 @@
 # NodeFlow
 
-**NodeFlow v1.4.4 (runtime-min)** — Everything is a Node、再帰可能なワークフロー実行基盤
+**NodeFlow v1.5** — task-oriented **dispatcher** over external CLIs and HTTP APIs (Part V of the [specification](doc/nodeflow_spec.md)).
 
-## 概要
+## Overview
 
-NodeFlow は、LLM、スクリプト、外部ツールを統合する Pipeline 主導のワークフロー実行基盤です。本版は **runtime-min** であり、直列 1-shot Pipeline・ScriptNode・LLMNode をサポートします。
+NodeFlow wires **routing**, **external execution**, and **summarization** into reusable **graphs**. The public model is strict:
 
-### runtime-min の制限
+- **Taxonomy (under `BaseNode`)**: `PipeNode` and `ActionNode` only.
+- **Implementation kinds (under `ActionNode`)**: `PythonActionNode`, `CliActionNode`, `ApiActionNode`.
+- **Role** (`route_by_task_type`, `summarize_result`, `exec`, …) is a **class attribute**, not an inheritance axis.
+- **Runner** stays minimal: it only runs `execute` in graph order; **no routing, provider selection, or role interpretation** inside the Runner.
 
-本版では以下は未実装です。
+Runtime primitives (`BaseNode.execute`, limits, revision stubs, `ExecutionContext`) live in **`nodeflow/core/`**. Dispatcher nodes live in **`nodeflow/nodes/`** (`base/`, `action/<role>/`, `pipe/`).
 
-- Loop（LoopNode）
-- resume
-- re_execute
-- usage 集計
-
-limit は **max_calls のみ有効**です。max_tokens は将来実装予定です。
-
-### 設計思想
-
-- **Everything is a Node** - Pipeline も Node として実装
-- **Limit evaluation is also a Node's responsibility** - limit 評価は Node 側で行う
-- **Runner is dumb** - Runner は極小化され、root PipelineNode を execute するだけ
-- **metrics = updates(add_metric) only** - metrics は updates の add_metric のみで更新
-
-## インストール
+## Install
 
 ```bash
 pip install -e .
 ```
 
-## クイックスタート
-
-examples は self-contained です。workspace に `examples` を指定して実行します。
+Or with [uv](https://github.com/astral-sh/uv):
 
 ```bash
-nodeflow run pipelines/hello.yaml -w examples
+uv sync --extra dev
 ```
 
-### 実 API（OpenRouter）を使う場合
+## Quick start
 
-pipeline YAML でノードに `type: openrouter` を指定し、環境変数 `OPENROUTER_API_KEY` を設定してください。
+From the repository root (pipeline path may be workspace-relative or cwd-relative):
+
+```bash
+nodeflow examples/pipelines/hello.yaml -w examples -i task_type=review
+```
+
+## Exec and API failure semantics
+
+- **External call returned a response** (HTTP error, error JSON, logical failure): represent it inside the normal output, e.g. port `execution_result` with `ok: false` and details in `stderr` / `raw_response` — same key shape as success (Part V §9).
+- **Precondition not met before a meaningful request** (e.g. missing required API key env var): raise or let `BaseNode` surface **fatal** + `read_error()` — this is a node/configuration error, not a domain `execution_result`.
+
+See `ApiActionNode` docstring in code for the same contract.
+
+## SerialPipeNode (`compose`) and errors
+
+The root graph built by the loader uses `SerialPipeNode`. Its `read_error()` returns the **first** child error only (not a list of all children). This is intentional and simpler than the old multi-error aggregation; for full child diagnostics, read each child node’s status and error.
+
+## Workspace
+
+The CLI `-w` / `--workspace` option sets the working directory (not necessarily a folder named `workspace`). Paths in YAML `params` are resolved relative to this directory when applicable.
+
+## YAML (v1.5)
+
+- `version` must be **`"1.5"`**.
+- The loader always builds a root **`compose`** graph (`SerialPipeNode`) over `graph.nodes` and `graph.final`.
+- **`type`** values are registry keys, for example: `compose` (internal root only), `python_route_by_task_type`, `python_summarize_result`, `codex_exec`, `claude_code_exec`, `kimi_exec`, `qwen_exec`, `review_dispatch`, `implement_dispatch`.
+
+Example fragment:
 
 ```yaml
-# graph.nodes の例
-- id: llm_call
-  type: openrouter
-  params:
-    model: "openai/gpt-4o-mini"
+version: "1.5"
+graph:
+  nodes:
+    - id: route
+      type: python_route_by_task_type
+      inputs:
+        task_type: ${inputs.task_type}
+      params: {}
+  final: route
 ```
 
-```bash
-export OPENROUTER_API_KEY=your_key_here
-nodeflow run your_pipeline.yaml
-```
+## API keys (optional)
 
-## Workspace について
+- **Kimi (Moonshot)**: `MOONSHOT_API_KEY` for `kimi_exec`.
+- **Qwen (DashScope compatible mode)**: `DASHSCOPE_API_KEY` for `qwen_exec`.
 
-**workspace** は CLI の `-w` / `--workspace` で指定する「作業ディレクトリ」です（リポジトリ内の `workspace` という名前のフォルダではありません）。
-
-- デフォルトはカレントディレクトリ（`.`）
-- `nodes/<ノード名>/config.yaml` や、python_script の `script` パスは、この workspace からの相対パスで解決されます
-- 例: プロジェクトルートで実行するときは `-w .`（省略可）。別のディレクトリを workspace にしたいときは `nodeflow run pipeline.yaml -w /path/to/my/project` のように指定します
-
-## プロジェクト構造
-
-- **Core**（`nodeflow/core/`）: 抽象実行モデル。BaseNode・StructuralNode（抽象）・Runner・**NodeRegistry**。IO に依存しない。
-- **Extensions**（`nodeflow/extensions/`）: 公式実装。PipelineNode・PythonScriptNode・LLMNode・OpenRouterNode。起動時に **registry に登録**され、loader は type 文字列でクラスを解決する。
-- **Execution**（`nodeflow/execution/`）: IO adapter 層。YAML 読み込み・設定・Pipeline 組み立て・「ロードして実行」の入口（`load_pipeline`, `load_and_kick_pipeline`）。
+## Layout
 
 ```
 nodeflow/
-├── nodeflow/
-│   ├── __init__.py        # import nodeflow.extensions で registry を埋める
-│   ├── core/
-│   │   ├── base_node.py   # BaseNode, StructuralNode（抽象）
-│   │   ├── runner.py      # Runner（極小化）
-│   │   └── registry.py    # NodeRegistry（type → クラス）
-│   ├── extensions/
-│   │   ├── pipeline_node.py
-│   │   ├── python_script.py
-│   │   ├── llm.py
-│   │   └── openrouter.py
-│   ├── execution/
-│   │   ├── loader.py      # pipeline.yaml の parse、registry.resolve で Node 組み立て
-│   │   ├── config.py      # YAML 読み込み、deep merge
-│   │   └── run.py         # load_and_kick_pipeline（CLI の入口）
-│   ├── cli.py             # CLI エントリーポイント
-│   └── sdk/
-│       └── __init__.py
-├── examples/
-│   ├── pipelines/
-│   └── nodes/
-├── nodes/                 # このリポジトリを workspace にしたときのノード定義（-w . のとき参照）
-├── tests/
-└── pyproject.toml
+├── core/           # BaseNode.execute template, Runner, registry
+├── nodes/          # PipeNode / ActionNode taxonomy and built-ins
+│   ├── base/
+│   ├── action/
+│   └── pipe/
+└── execution/      # YAML load + run entrypoints
 ```
 
-### 外部拡張（カスタム Node）
+## Custom nodes
 
-自作の Node クラスを `nodeflow.core.registry.registry` に `register("my_type", MyNode)` で登録すると、pipeline YAML の `type: my_type` で利用できる。未登録の type は `UnknownNodeTypeError`、`loop` は「未実装」として `NotImplementedError` になる。
+Register classes on `nodeflow.core.registry.registry` with `register("your_type", YourClass)` and use `type: your_type` in YAML. Custom code typically subclasses `BaseNode` or `ActionNode` / `PythonActionNode` and lives in your workspace, not in this package.
 
-## ライセンス
+## Upgrading from v1.4
+
+- **CLI:** `nodeflow run …` is no longer used; pass the pipeline YAML as the first argument (see [CHANGELOG.md](CHANGELOG.md)).
+
+## License
 
 MIT

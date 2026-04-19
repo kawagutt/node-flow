@@ -1,6 +1,4 @@
-"""
-NodeFlow v1.2 CLI — kick pipeline execute, display output. Resume is not provided (§7).
-"""
+"""NodeFlow v1.5 CLI — load pipeline YAML and execute."""
 
 import sys
 from pathlib import Path
@@ -17,7 +15,7 @@ from nodeflow.execution.run import load_and_kick_pipeline
     "--input", "-i", "input_", multiple=True, help="Initial inputs (key=value)"
 )
 def main(pipeline: str, workspace: str, input_: tuple) -> None:
-    """NodeFlow v1.2 — Run pipeline. Resume is program API only."""
+    """Run a v1.5 pipeline YAML (path may be workspace-relative or cwd-relative)."""
     try:
         workspace_dir = str(Path(workspace).resolve())
         initial_inputs = {}

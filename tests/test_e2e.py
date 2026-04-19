@@ -1,122 +1,83 @@
-"""
-Tier 4: E2E — Script → LLM(mock) → Script。チェックリスト対応。
-"""
+"""E2E — compose: route → codex_exec → summarize."""
+
+from __future__ import annotations
 
 from nodeflow.execution.loader import load_pipeline
-from nodeflow.extensions import LLMNode, PipelineNode, PythonScriptNode
+from nodeflow.nodes.action.exec.codex_exec import CodexExecNode
+from nodeflow.nodes.action.routing.python_route_by_task_type import (
+    PythonRouteByTaskTypeNode,
+)
+from nodeflow.nodes.action.transform.python_summarize_result import (
+    PythonSummarizeResultNode,
+)
+from nodeflow.nodes.pipe.serial_pipe import SerialPipeNode
 
 
-def test_script_llm_script_in_memory(tmp_path):
-    """Script → LLM(mock) → Script をコードで組み立てて実行。"""
-    pre = tmp_path / "pre.py"
-    pre.write_text(
-        """
-def main(inputs):
-    data = inputs.get("raw_data", "")
-    return {"prompt_text": "analyze: " + str(data)}
-"""
-    )
-    post = tmp_path / "post.py"
-    post.write_text(
-        """
-def main(inputs):
-    r = inputs.get("data", "")
-    return {"final": "result:" + str(r)}
-"""
-    )
-
+def test_route_exec_summarize_in_memory():
     nodes = {
-        "preprocess": PythonScriptNode(),
-        "llm_call": LLMNode(),
-        "postprocess": PythonScriptNode(),
+        "route": PythonRouteByTaskTypeNode(),
+        "exec": CodexExecNode(),
+        "summarize": PythonSummarizeResultNode(),
     }
-    # llm_call.prompt は preprocess.result.prompt_text、postprocess.data は llm_call.response.value
     node_input_bindings = {
-        "preprocess": {"raw_data": ("inputs", "raw_data")},
-        "llm_call": {"prompt": ("node", "preprocess", "result", "prompt_text")},
-        "postprocess": {"data": ("node", "llm_call", "response", "value")},
+        "route": {"task_type": ("inputs", "task_type")},
+        "exec": {"prompt": ("inputs", "task_prompt")},
+        "summarize": {"execution_result": ("node", "exec", "execution_result")},
     }
     node_param_definitions = {
-        "preprocess": {"script": str(pre)},
-        "llm_call": {},
-        "postprocess": {"script": str(post)},
+        "route": {},
+        "exec": {"argv": ["sh", "-c", "echo e2e-out"]},
+        "summarize": {},
     }
-    pipeline = PipelineNode(
-        graph_node_order=["preprocess", "llm_call", "postprocess"],
+    pipe = SerialPipeNode(
+        graph_node_order=["route", "exec", "summarize"],
         nodes=nodes,
         node_input_bindings=node_input_bindings,
         node_param_definitions=node_param_definitions,
-        final_id="postprocess",
+        final_id="summarize",
     )
-    out = pipeline.execute({"raw_data": "hello"}, {})
-
-    assert pipeline.read_status() == "done"
+    out = pipe.execute({"task_type": "implement", "task_prompt": "x"}, {})
+    assert pipe.read_status() == "done"
     for n in nodes.values():
         assert n.read_status() == "done"
-    assert "result" in out
-    assert "final" in out["result"]
-    assert "result:" in out["result"]["final"]
-    assert "mock:analyze: hello" in out["result"]["final"]
-    assert "_meta" in out["result"]
-    assert "revision" in out["result"]["_meta"]
+    assert "summary" in out
+    assert "short" in out["summary"]
 
 
 def test_e2e_via_load_pipeline(tmp_path):
-    """pipeline.yaml を load_pipeline で読み、Script → LLM(mock) → Script を実行。"""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    scripts = workspace / "scripts"
-    scripts.mkdir()
-
-    pre = scripts / "preprocess.py"
-    pre.write_text(
-        """
-def main(inputs):
-    return {"prompt_text": "p:" + str(inputs.get("data", ""))}
-"""
-    )
-    post = scripts / "postprocess.py"
-    post.write_text(
-        """
-def main(inputs):
-    return {"final": str(inputs.get("data", ""))}
-"""
-    )
-
     yaml_path = workspace / "pipeline.yaml"
     yaml_path.write_text(
         """
-version: "1.4"
+version: "1.5"
 name: e2e
 
 graph:
   nodes:
-    - id: preprocess
-      type: python_script
+    - id: route
+      type: python_route_by_task_type
       inputs:
-        data: ${inputs.raw_data}
-      params:
-        script: scripts/preprocess.py
-    - id: llm_call
-      type: llm
-      inputs:
-        prompt: ${preprocess.result.prompt_text}
+        task_type: ${inputs.task_type}
       params: {}
-    - id: postprocess
-      type: python_script
+    - id: exec
+      type: codex_exec
       inputs:
-        data: ${llm_call.response.value}
+        prompt: ${inputs.task_prompt}
       params:
-        script: scripts/postprocess.py
-  final: postprocess
+        argv: ["sh", "-c", "echo yaml-e2e"]
+    - id: summarize
+      type: python_summarize_result
+      inputs:
+        execution_result: ${exec.execution_result}
+      params: {}
+  final: summarize
 """
     )
 
     root = load_pipeline(str(workspace), str(yaml_path))
-    out = root.execute({"raw_data": "hello"}, {})
-
+    out = root.execute({"task_type": "implement", "task_prompt": "hello"}, {})
     assert root.read_status() == "done"
-    assert "result" in out
-    assert "final" in out["result"]
-    assert "_meta" in out["result"]
-    assert "revision" in out["result"]["_meta"]
+    assert "summary" in out
+    assert "_meta" in out["summary"]
+    assert "revision" in out["summary"]["_meta"]

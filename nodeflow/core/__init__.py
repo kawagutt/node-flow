@@ -1,4 +1,4 @@
-"""NodeFlow core — BaseNode, StructuralNode, Runner, Registry."""
+"""NodeFlow core — BaseNode (runtime template), Runner, Registry."""
 
 from .base_node import (
     BaseNode,
@@ -7,7 +7,6 @@ from .base_node import (
     NodeExecutionFailure,
     NodeExecutionLimit,
     PauseSignal,
-    StructuralNode,
 )
 from .registry import (
     NodeRegistry,
@@ -28,7 +27,6 @@ __all__ = [
     "NodeRegistry",
     "RegistryConflictError",
     "Runner",
-    "StructuralNode",
     "UnknownNodeTypeError",
     "registry",
 ]

@@ -1,28 +1,14 @@
-version: "1.4"
+version: "1.5"
 name: hello_pipeline
 inputs:
-  raw_data: {}
+  task_type: {}
 outputs: {}
-params:
-  limit:
-    max_total_node_calls: 100
+params: {}
 graph:
   nodes:
-    - id: preprocess
-      type: python_script
+    - id: route
+      type: python_route_by_task_type
       inputs:
-        data: ${inputs.raw_data}
-      params:
-        script: scripts/preprocess.py
-    - id: llm_call
-      type: llm
-      inputs:
-        prompt: ${preprocess.result.prompt_text}
+        task_type: ${inputs.task_type}
       params: {}
-    - id: postprocess
-      type: python_script
-      inputs:
-        data: ${llm_call.response.value}
-      params:
-        script: scripts/postprocess.py
-  final: postprocess
+  final: route

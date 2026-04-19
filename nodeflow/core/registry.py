@@ -1,10 +1,10 @@
 """
-NodeFlow v1.4.4 — NodeRegistry. type 文字列から Node クラスを解決する。
+NodeFlow v1.5 — NodeRegistry. Resolves a YAML `type` string to a node class.
 """
 
 from __future__ import annotations
 
-from typing import Dict, Type, Any
+from typing import Any, Dict, Type
 
 # BaseNode の型ヒント用（循環回避のため文字列で参照しない）
 _NodeClass = Type[Any]

@@ -1,36 +1,32 @@
 """
-NodeFlow v1.41 — PipelineNode (StructuralNode). Graph 直列 1-shot 実行。
+SerialPipeNode — YAML-driven serial graph (Part V §8, registry type `compose`).
 """
 
 from __future__ import annotations
 
 import re
 from types import MappingProxyType
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from nodeflow.core.base_node import (
     BaseNode,
     ExecutionContext,
     NodeExecutionFailure,
     NodeExecutionLimit,
-    StructuralNode,
 )
 from nodeflow.core.runner import Runner
+from nodeflow.nodes.base.pipe import PipeNode
 
 InputBinding = Tuple[str, ...]
 _REF_PATTERN = re.compile(r"\$\{([^}.]+)\.([^}]+)\}")
 
 
-class InvalidStateError(Exception):
-    """Raised when resume() is called and status is not pause (v1.5)."""
-
-
 def _resolve_params_dict(
     params_def: Dict[str, Any],
-    pipeline_params: Dict[str, Any],
-    pipeline_inputs: Dict[str, Any],
+    pipe_params: Dict[str, Any],
+    pipe_inputs: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """${params.x} と ${inputs.x} を再帰的に解決。Runner に渡す前に PipelineNode が呼ぶ。"""
+    """Resolve ${params.x} and ${inputs.x} before Runner.step."""
     if not params_def:
         return {}
     resolved: Dict[str, Any] = {}
@@ -39,26 +35,43 @@ def _resolve_params_dict(
             m = _REF_PATTERN.fullmatch(v.strip())
             if m:
                 source, key = m.group(1), m.group(2)
-                if source == "params" and key in pipeline_params:
-                    resolved[k] = pipeline_params[key]
-                elif source == "inputs" and key in pipeline_inputs:
-                    resolved[k] = pipeline_inputs[key]
+                if source == "params" and key in pipe_params:
+                    resolved[k] = pipe_params[key]
+                elif source == "inputs" and key in pipe_inputs:
+                    resolved[k] = pipe_inputs[key]
                 else:
                     resolved[k] = v
             else:
                 resolved[k] = v
         elif isinstance(v, dict):
-            resolved[k] = _resolve_params_dict(v, pipeline_params, pipeline_inputs)
+            resolved[k] = _resolve_params_dict(v, pipe_params, pipe_inputs)
         else:
             resolved[k] = v
     return resolved
 
 
-class PipelineNode(StructuralNode):
+def _reset_children_for_run(nodes: Dict[str, BaseNode]) -> None:
+    """Allow repeated root execute on the same graph instance."""
+    for node in nodes.values():
+        st = node.read_status()
+        if st == "executing":
+            raise RuntimeError("child node stuck in executing")
+        if st != "ready":
+            node.reset_status()
+
+
+class SerialPipeNode(PipeNode):
     """
-    Graph を直列 1-shot 実行する StructuralNode。
-    Runner を run の冒頭で毎回 new する。停止条件は毎ループで (1)fatal (2)limit (3)final done (4)no progress の順でチェック。
+    One-shot serial execution using Runner inside ``run()`` only.
+
+    **read_error**: Unlike aggregating every child error into a list, this class
+    returns the **first** non-none child ``read_error()`` (then the pipe's own fatal
+    error if any). That keeps the surface small and deterministic; callers that
+    need full diagnostics should inspect child nodes directly.
     """
+
+    # YAML `compose` root: disallow nesting another compose in the same graph (loader check).
+    ALLOW_AS_CHILD = False
 
     def __init__(
         self,
@@ -81,15 +94,15 @@ class PipelineNode(StructuralNode):
         params: MappingProxyType | Dict[str, Any],
         context: ExecutionContext,
     ) -> Dict[str, Any]:
-        pipeline_params = dict(params) if params else {}
-        pipeline_inputs = dict(inputs) if inputs else {}
+        _reset_children_for_run(self._nodes)
+        pipe_params = dict(params) if params else {}
+        pipe_inputs = dict(inputs) if inputs else {}
 
-        # run 冒頭で node_params を解決し、Runner を毎回 new する
         resolved_node_params = {
             nid: _resolve_params_dict(
                 self._node_param_definitions.get(nid, {}),
-                pipeline_params,
-                pipeline_inputs,
+                pipe_params,
+                pipe_inputs,
             )
             for nid in self._graph_node_order
         }
@@ -99,18 +112,14 @@ class PipelineNode(StructuralNode):
             nodes=self._nodes,
             node_params=resolved_node_params,
             node_input_bindings=self._node_input_bindings,
-            pipeline_inputs=pipeline_inputs,
-            pipeline_params=pipeline_params,
+            pipeline_inputs=pipe_inputs,
+            pipeline_params=pipe_params,
             latest_output=latest_output,
         )
 
         while True:
             progressed = runner.step()
-
-            # 毎ループで (1)〜(4) をすべてチェック。progressed の値に関わらず。
-            statuses = [
-                self._nodes[nid].read_status() for nid in self._graph_node_order
-            ]
+            statuses = [self._nodes[nid].read_status() for nid in self._graph_node_order]
             if "fatal" in statuses:
                 raise NodeExecutionFailure("child fatal")
             if "limit" in statuses:
@@ -125,13 +134,11 @@ class PipelineNode(StructuralNode):
 
         return latest_output.get(self._final_id, {})
 
-    def read_error(self) -> Any:
-        """子ノードの fatal 原因を集約。"""
-        out: List[Exception] = []
+    def read_error(self) -> Optional[Exception]:
         for node in self._nodes.values():
             e = node.read_error()
             if e is not None:
-                out.append(e)
+                return e
         if self._status == "fatal" and self._error is not None:
-            out.append(self._error)
-        return out
+            return self._error
+        return None

@@ -1,23 +1,30 @@
 """
-NodeFlow v1.4.4 — pipeline.yaml の parse、Node 組み立て。execution 層。registry で型解決。
+NodeFlow v1.5 — pipeline.yaml parse and graph assembly.
+
+YAML vocabulary (fixed):
+- version: \"1.5\"
+- graph.nodes[].id, type, inputs, params
+- graph.final: id of the terminal node
+- Root graph is always loaded as compose (SerialPipeNode) wrapping listed nodes.
+
+Allowed node type strings (registry keys):
+  compose, python_route_by_task_type, python_summarize_result,
+  codex_exec, claude_code_exec, kimi_exec, qwen_exec,
+  review_dispatch, implement_dispatch
 """
 
 from __future__ import annotations
 
-import os
 import re
-from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from nodeflow.core.base_node import BaseNode, StructuralNode
-from nodeflow.core.registry import UnknownNodeTypeError, registry
+import nodeflow.nodes  # noqa: F401 — built-in registration
+from nodeflow.core.base_node import BaseNode
+from nodeflow.core.registry import registry
 
 from .config import load_yaml
 
-# built-in 登録を明示的に保証（nodeflow 直 import を経由しない場合でも registry が埋まる）
-import nodeflow.extensions  # noqa: F401
-
-SUPPORTED_VERSION = "1.4"
+SUPPORTED_VERSION = "1.5"
 
 
 class VersionMismatchError(Exception):
@@ -27,12 +34,10 @@ class VersionMismatchError(Exception):
 _REF_PATTERN = re.compile(r"\$\{([^}.]+)\.([^}]+)\}")
 _REF_PATTERN_DEEP = re.compile(r"\$\{([^}.]+)\.([^}.]+)\.([^}]+)\}")
 
-# node_input_bindings のタプル形式
 InputBinding = Tuple[str, ...]
 
 
 def _ref_to_binding(ref: Any) -> InputBinding | None:
-    """${source.key} または ${source.port.inner} をタプルに変換。inner はドット区切り可。"""
     if not isinstance(ref, str):
         return None
     s = ref.strip()
@@ -48,13 +53,12 @@ def _ref_to_binding(ref: Any) -> InputBinding | None:
     source, rest = m.group(1), m.group(2)
     if source == "inputs":
         if "." in rest:
-            return None  # inputs への inner 参照は未サポート
+            return None
         return ("inputs", rest)
     if source == "params":
         if "." in rest:
-            return None  # params への inner 参照は未サポート
+            return None
         return ("params", rest)
-    # node 参照: rest は "port" または "port.inner" の形 → 最初の . で分割して 4-tuple に
     parts = rest.split(".", 1)
     port = parts[0]
     inner = parts[1] if len(parts) == 2 else None
@@ -66,7 +70,6 @@ def _ref_to_binding(ref: Any) -> InputBinding | None:
 def _build_node_input_bindings(
     nodes_list: List[Dict[str, Any]],
 ) -> Dict[str, Dict[str, InputBinding]]:
-    """各ノードの inputs を §3.2.1 のタプル形に変換。"""
     out: Dict[str, Dict[str, InputBinding]] = {}
     for nd in nodes_list:
         nid = nd.get("id")
@@ -83,19 +86,12 @@ def _build_node_input_bindings(
 
 
 def _node_class_for_type(node_type: str):
-    """type 文字列から Node クラスを返す。registry で解決。loop は NotImplementedError。"""
-    try:
-        return registry.resolve(node_type)
-    except UnknownNodeTypeError as e:
-        if e.type_name == "loop":
-            raise NotImplementedError("LoopNode は本版では未サポートです") from e
-        raise
+    return registry.resolve(node_type)
 
 
-def load_pipeline(workspace_dir: str, file_path: str) -> StructuralNode:
+def load_pipeline(workspace_dir: str, file_path: str) -> BaseNode:
     """
-    pipeline.yaml を読み、PipelineNode を組み立てて返す。
-    version は "1.4" であること。script パスは python_script ノードで workspace 相対に解決する。
+    Load pipeline YAML and return a SerialPipeNode (compose) root wrapping the graph.
     """
     data = load_yaml(file_path)
     if not data:
@@ -126,21 +122,16 @@ def load_pipeline(workspace_dir: str, file_path: str) -> StructuralNode:
             continue
         cls = _node_class_for_type(ntype)
         if not getattr(cls, "ALLOW_AS_CHILD", True):
-            raise ValueError("Nested pipeline not supported in this version")
+            raise ValueError("Nested compose inside graph is not supported")
         graph_node_order.append(nid)
         nodes[nid] = cls()
         raw_params = nd.get("params") or {}
-        # python_script の script を workspace 相対で絶対パスに
-        if ntype == "python_script" and "script" in raw_params:
-            script = raw_params["script"]
-            if script and not os.path.isabs(script):
-                raw_params = {**raw_params, "script": str(Path(workspace_dir) / script)}
         node_param_definitions[nid] = raw_params
 
     node_input_bindings = _build_node_input_bindings(nodes_list)
-    pipeline_cls = registry.resolve("pipeline")
+    compose_cls = registry.resolve("compose")
 
-    return pipeline_cls(
+    return compose_cls(
         graph_node_order=graph_node_order,
         nodes=nodes,
         node_input_bindings=node_input_bindings,
@@ -150,7 +141,7 @@ def load_pipeline(workspace_dir: str, file_path: str) -> StructuralNode:
 
 
 def load_node_pipeline(file_path: str) -> Dict[str, Any]:
-    """Load pipeline YAML (raw). Version must be 1.4. For backward compat / tests."""
+    """Load pipeline YAML (raw). Version must be 1.5."""
     data = load_yaml(file_path)
     if not data:
         raise ValueError(f"Empty or missing pipeline: {file_path}")

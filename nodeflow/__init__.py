@@ -1,8 +1,7 @@
 """
-NodeFlow v1.4.4 (runtime-min) - Everything is a Node workflow execution engine.
+NodeFlow v1.5 — dispatcher-oriented workflow engine (Part V).
 """
 
-__version__ = "1.4.4"
+__version__ = "1.5.0"
 
-# パッケージ利用時に built-in を登録（execution.loader でも明示的に import するので二重でも可）
-import nodeflow.extensions  # noqa: F401, E402
+import nodeflow.nodes  # noqa: F401, E402 — built-in node registration

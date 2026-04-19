@@ -1,5 +1,6 @@
 """
-NodeFlow v1.41-runtime-min — Exceptions, ExecutionContext, BaseNode, StructuralNode, utils.
+NodeFlow v1.5 — Exceptions, ExecutionContext, BaseNode, utils (runtime template).
+Taxonomy (PipeNode / ActionNode) lives in nodeflow.nodes.
 """
 
 from __future__ import annotations
@@ -77,13 +78,13 @@ RESERVED_KEYS = frozenset({"_meta", "_usage"})
 
 def _attach_revision(output: dict) -> dict:
     """各 output port に UUID4 のダミー revision を付与。予約キー _meta/_usage はスキップ（§5.1）。
-    v1.4.2: port の payload は dict のみ。scalar は禁止（TypeError）。_meta を付与するのみ（二重 value にしない）。"""
+    Port payload は dict のみ。scalar は禁止（TypeError）。_meta を付与するのみ（二重 value にしない）。"""
     for port_key, port_value in list(output.items()):
         if port_key in RESERVED_KEYS:
             continue
         if not isinstance(port_value, dict):
             raise TypeError(
-                f"Port {port_key!r} payload must be dict in v1.4.2, got {type(port_value).__name__}"
+                f"Port {port_key!r} payload must be dict, got {type(port_value).__name__}"
             )
         port_value.setdefault("_meta", {})
         port_value["_meta"]["revision"] = str(uuid.uuid4())
@@ -95,9 +96,9 @@ def _attach_revision(output: dict) -> dict:
 
 class BaseNode:
     """
-    NodeFlow v1.41. すべての Node が継承する基底クラス。
+    NodeFlow v1.5 — すべての Node が継承する基底クラス。
     execute の構造は固定: pre-limit → executing → run → _apply_usage → revision 付与 → post-limit → status 設定 → result 返却。
-    post-limit 時も result は返す（revision 付与済み）。status = limit により PipelineNode が以降の実行を止める。
+    post-limit 時も result は返す（revision 付与済み）。status = limit により PipeNode が以降の実行を止める。
     """
 
     def __init__(self) -> None:
@@ -220,25 +221,3 @@ class BaseNode:
         if name not in self._limit_state:
             raise KeyError(f"Unknown limit state: {name}")
         self._limit_state[name] = 0
-
-
-# --- StructuralNode (abstract) ---
-
-
-class StructuralNode(BaseNode):
-    """
-    構造を持つ Node の抽象基底クラス（Core の概念）。
-    子ノードやグラフを持つ Node はこのサブクラスとして実装する（例: PipelineNode は extensions で実装）。
-    """
-
-    # デフォルトは graph 内の子ノードとして禁止。許可するサブクラスは True を明示する。
-    ALLOW_AS_CHILD = False
-
-    def run(
-        self,
-        inputs: Dict[str, Any],
-        params: MappingProxyType,
-        context: ExecutionContext,
-    ) -> Dict[str, Any]:
-        """Override in subclass (e.g. PipelineNode)."""
-        raise NotImplementedError

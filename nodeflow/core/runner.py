@@ -1,5 +1,5 @@
 """
-NodeFlow v1.4.2 — Runner (§7). loader に依存せず、受け取ったデータのみで動作。
+NodeFlow v1.5 — Runner (Part II §7). No loader dependency; uses only passed-in graph data.
 """
 
 from __future__ import annotations

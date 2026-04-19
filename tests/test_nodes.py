@@ -1,112 +1,69 @@
-"""
-Tier 2: PythonScriptNode / LLMNode (mock) テスト。
-"""
+"""Built-in ActionNode behaviour (v1.5)."""
 
-from nodeflow.extensions import LLMNode, PythonScriptNode
+from __future__ import annotations
+
+from nodeflow.nodes.action.exec.codex_exec import CodexExecNode
+from nodeflow.nodes.action.routing.python_route_by_task_type import (
+    PythonRouteByTaskTypeNode,
+)
+from nodeflow.nodes.action.transform.python_summarize_result import (
+    PythonSummarizeResultNode,
+)
 
 
-def test_python_script_returns_dict(tmp_path):
-    script = tmp_path / "main.py"
-    script.write_text(
-        """
-def main(inputs):
-    return {"value": inputs.get("x", 0)}
-"""
-    )
-    node = PythonScriptNode()
-    out = node.execute({"x": 42}, {"script": str(script)})
+def test_python_route_review_default():
+    node = PythonRouteByTaskTypeNode()
+    out = node.execute({"task_type": "review"}, {})
     assert node.read_status() == "done"
-    assert "result" in out
-    assert out["result"]["value"] == 42
+    assert out["route"]["executor"] == "claude_code"
+    assert out["route"]["next_node"] == "review_dispatch"
 
 
-def test_python_script_raises_fatal(tmp_path):
-    script = tmp_path / "fail.py"
-    script.write_text(
-        """
-def main(inputs):
-    raise RuntimeError("script error")
-"""
-    )
-    node = PythonScriptNode()
-    out = node.execute({}, {"script": str(script)})
-    assert node.read_status() == "fatal"
-    assert out == {}
-    assert "script error" in str(node.read_error())
+def test_python_route_implement_path():
+    node = PythonRouteByTaskTypeNode()
+    out = node.execute({"task_type": "implement", "needs_repo_write": True}, {})
+    assert out["route"]["executor"] == "codex"
+    assert out["route"]["next_node"] == "implement_dispatch"
 
 
-def test_python_script_non_dict_return_fatal(tmp_path):
-    script = tmp_path / "bad.py"
-    script.write_text(
-        """
-def main(inputs):
-    return "not a dict"
-"""
-    )
-    node = PythonScriptNode()
-    out = node.execute({}, {"script": str(script)})
-    assert node.read_status() == "fatal"
-    assert out == {}
-    assert isinstance(node.read_error(), TypeError)
-
-
-def test_llm_node_mock_returns_response():
-    node = LLMNode()
-    out = node.execute({"prompt": "hello"}, {})
+def test_python_summarize_reads_execution_result():
+    node = PythonSummarizeResultNode()
+    er = {
+        "ok": True,
+        "executor": "codex",
+        "provider": "codex",
+        "model": None,
+        "task_type": "implement",
+        "summary": None,
+        "stdout": "patch applied\n",
+        "stderr": "",
+        "raw_response": {"rc": 0},
+        "artifacts": [],
+        "provider_meta": {},
+        "next_hint": None,
+    }
+    out = node.execute({"execution_result": er}, {})
     assert node.read_status() == "done"
-    assert "response" in out
-    assert out["response"]["value"] == "mock:hello"
-    assert "revision" in out["response"]["_meta"]
+    assert "summary" in out
+    assert "short" in out["summary"]
+    assert out["summary"]["key_findings"]
 
 
-def test_llm_node_mock_empty_prompt():
-    node = LLMNode()
+def test_codex_exec_default_echo():
+    node = CodexExecNode()
     out = node.execute({}, {})
     assert node.read_status() == "done"
-    assert out["response"]["value"] == "mock:"
-    assert "revision" in out["response"]["_meta"]
+    assert "execution_result" in out
+    pl = out["execution_result"]
+    assert pl["ok"] is True
+    assert pl["executor"] == "codex"
+    assert pl["raw_response"] == {"returncode": 0, "args": ["echo", "codex-exec-placeholder"]}
+    assert "_meta" in pl
+    assert "revision" in pl["_meta"]
 
 
-def test_llm_max_tokens_limit():
-    """post-limit では result を返す。status=limit になる。v1.42 で response は常に dict。"""
-    node = LLMNode()
-    params = {"limit": {"max_tokens": 20}}
-
-    # 1 回目: "abc" -> prompt_tokens=3, completion="mock:abc" -> completion_tokens=8, total=11
-    out1 = node.execute({"prompt": "abc"}, params)
-    assert node.read_status() == "done"
-    assert "response" in out1
-    assert out1["response"]["value"] == "mock:abc"
-    assert "revision" in out1["response"]["_meta"]
-
-    node.reset_status()
-
-    # 2 回目: 累積 11+11=22 >= 20 → post-limit。result は返す
-    out2 = node.execute({"prompt": "abc"}, params)
-    assert node.read_status() == "limit"
-    assert out2 != {}
-    assert "response" in out2
-    assert out2["response"]["value"] == "mock:abc"
-    assert "revision" in out2["response"]["_meta"]
-
-
-def test_reset_token_limit_state():
-    """token limit で limit になった後、reset_limit_state('tokens') で再実行可能。"""
-    node = LLMNode()
-    params = {"limit": {"max_tokens": 10}}
-
-    node.execute(
-        {"prompt": "ab"}, params
-    )  # total_tokens = len("ab") + len("mock:ab") = 2 + 7 = 9
-    node.reset_status()
-    node.execute({"prompt": "ab"}, params)  # 累積 9+9=18 >= 10 → limit
-    assert node.read_status() == "limit"
-
-    node.reset_limit_state("tokens")
-    node.reset_status()
-
-    out = node.execute({"prompt": "x"}, params)
-    assert node.read_status() == "done"
-    assert "response" in out
-    assert out["response"]["value"] == "mock:x"
-    assert "revision" in out["response"]["_meta"]
+def test_codex_exec_custom_argv():
+    node = CodexExecNode()
+    out = node.execute({}, {"argv": ["sh", "-c", "echo hi"]})
+    assert out["execution_result"]["stdout"] is not None
+    assert "hi" in (out["execution_result"]["stdout"] or "")

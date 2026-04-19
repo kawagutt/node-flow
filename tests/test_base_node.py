@@ -2,8 +2,9 @@
 Tier 1: BaseNode 単体テスト。
 """
 
-import pytest
 from types import MappingProxyType
+
+import pytest
 
 from nodeflow.core.base_node import (
     BaseNode,
@@ -118,7 +119,7 @@ def test_attach_revision_skips_reserved_keys():
 
 
 def test_attach_revision_rejects_scalar_port_payload():
-    """v1.4.2: port payload は dict のみ。scalar を返すと TypeError。"""
+    """Port payload must be dict; scalar returns TypeError."""
 
     class ScalarNode(BaseNode):
         def run(self, inputs, params, context):
