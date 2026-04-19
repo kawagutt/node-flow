@@ -1,16 +1,15 @@
-"""E2E — compose: route → codex_exec → summarize."""
+"""E2E — route → codex_exec → summarize (linear PipeNode graph)."""
 
 from __future__ import annotations
 
+from types import MappingProxyType
+
+from nodeflow.core.base_node import BaseNode, ExecutionContext
+from nodeflow.core.node_kinds import PipeNode
 from nodeflow.execution.loader import load_pipeline
-from nodeflow.nodes.action.exec.codex_exec import CodexExecNode
-from nodeflow.nodes.action.routing.python_route_by_task_type import (
-    PythonRouteByTaskTypeNode,
-)
-from nodeflow.nodes.action.transform.python_summarize_result import (
-    PythonSummarizeResultNode,
-)
-from nodeflow.nodes.pipe.serial_pipe import SerialPipeNode
+from nodeflow.nodes.exec.codex_exec import CodexExecNode
+from nodeflow.nodes.routing.python_route_by_task_type import PythonRouteByTaskTypeNode
+from nodeflow.nodes.summarize.python_summarize_result import PythonSummarizeResultNode
 
 
 def test_route_exec_summarize_in_memory():
@@ -29,7 +28,7 @@ def test_route_exec_summarize_in_memory():
         "exec": {"argv": ["sh", "-c", "echo e2e-out"]},
         "summarize": {},
     }
-    pipe = SerialPipeNode(
+    pipe = PipeNode(
         graph_node_order=["route", "exec", "summarize"],
         nodes=nodes,
         node_input_bindings=node_input_bindings,
@@ -79,5 +78,14 @@ graph:
     out = root.execute({"task_type": "implement", "task_prompt": "hello"}, {})
     assert root.read_status() == "done"
     assert "summary" in out
-    assert "_meta" in out["summary"]
-    assert "revision" in out["summary"]["_meta"]
+    assert "revision" in out["_runtime"]["ports"]["summary"]
+
+
+def test_run_returning_runtime_is_fatal():
+    class BadPipe(BaseNode):
+        def run(self, inputs, params: MappingProxyType, context: ExecutionContext):
+            return {"out": {"x": 1}, "_runtime": {"ports": {}}}
+
+    n = BadPipe()
+    assert n.execute({}, {}) == {}
+    assert n.read_status() == "fatal"

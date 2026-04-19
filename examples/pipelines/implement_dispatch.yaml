@@ -1,0 +1,14 @@
+# Example: reusable implement_dispatch pipe — nested exec argv is required (no defaults).
+version: "1.5"
+name: implement_dispatch_sample
+graph:
+  nodes:
+    - id: id
+      type: implement_dispatch
+      inputs:
+        task_type: ${inputs.task_type}
+        task_prompt: ${inputs.task_prompt}
+      params:
+        codex_exec:
+          argv: ["sh", "-c", "echo implement-sample"]
+  final: id

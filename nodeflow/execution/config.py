@@ -46,7 +46,7 @@ def load_node_config(
     """
     Node config を読み込んで deep merge。
 
-    優先順位（仕様 §6）:
+    優先順位:
     1. DEFAULT_CONFIG（Node クラスから取得し default_config で渡す）
     2. nodes/<node>/config.yaml
     3. Pipeline step config

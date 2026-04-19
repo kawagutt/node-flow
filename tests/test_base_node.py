@@ -11,12 +11,12 @@ from nodeflow.core.base_node import (
     ExecutionContext,
     NodeExecutionFailure,
     NodeExecutionLimit,
-    _attach_revision,
+    _attach_runtime,
 )
 
 
 class DummyNode(BaseNode):
-    """run を実装するテスト用ノード。port は dict なので _meta.revision が付く。"""
+    """run を実装するテスト用ノード。revision は _runtime['ports'] に付く。"""
 
     def run(self, inputs, params: MappingProxyType, context: ExecutionContext):
         return {"out": {"value": inputs.get("x", "")}}
@@ -43,8 +43,8 @@ def test_execute_happy_path():
     assert node.read_status() == "done"
     assert "out" in out
     assert out["out"]["value"] == "hello"
-    assert "_meta" in out["out"]
-    assert "revision" in out["out"]["_meta"]
+    assert "_runtime" in out
+    assert "revision" in out["_runtime"]["ports"]["out"]
 
 
 def test_run_raises_fatal():
@@ -107,18 +107,15 @@ def test_reset_status_while_executing_raises():
     assert "cannot reset while executing" in str(node.read_error())
 
 
-def test_attach_revision_skips_reserved_keys():
-    output = {"_meta": {"x": 1}, "_usage": {"y": 2}, "result": {"value": 1}}
-    _attach_revision(output)
-    assert "_meta" in output and "revision" not in output["_meta"]
-    assert (
-        "result" in output
-        and "_meta" in output["result"]
-        and "revision" in output["result"]["_meta"]
-    )
+def test_attach_runtime_skips_reserved_keys():
+    output = {"_usage": {"y": 2}, "result": {"value": 1}}
+    _attach_runtime(output)
+    assert "_runtime" in output
+    assert "ports" in output["_runtime"]
+    assert "revision" in output["_runtime"]["ports"]["result"]
 
 
-def test_attach_revision_rejects_scalar_port_payload():
+def test_attach_runtime_rejects_scalar_port_payload():
     """Port payload must be dict; scalar returns TypeError."""
 
     class ScalarNode(BaseNode):
@@ -147,7 +144,7 @@ def test_node_execution_failure_sets_fatal():
 
 
 def test_run_returns_usage_removed():
-    """_usage が除去され、dict port には revision が付くことを確認。"""
+    """_usage が除去され、_runtime に revision が付くことを確認。"""
 
     class UsageNode(BaseNode):
         def run(self, inputs, params, context):
@@ -158,4 +155,17 @@ def test_run_returns_usage_removed():
     assert "_usage" not in out
     assert "out" in out
     assert out["out"]["value"] == 1
-    assert "_meta" in out["out"] and "revision" in out["out"]["_meta"]
+    assert "revision" in out["_runtime"]["ports"]["out"]
+
+
+def test_run_must_not_return_runtime():
+    class BadNode(BaseNode):
+        def run(self, inputs, params, context):
+            return {"out": {"x": 1}, "_runtime": {"ports": {}}}
+
+    node = BadNode()
+    out = node.execute({}, {})
+    assert node.read_status() == "fatal"
+    assert out == {}
+    assert isinstance(node.read_error(), ValueError)
+    assert "run() must not return _runtime" in str(node.read_error())

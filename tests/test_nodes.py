@@ -1,14 +1,11 @@
-"""Built-in ActionNode behaviour (v1.5)."""
+"""Built-in ActionNode behaviour."""
 
 from __future__ import annotations
 
-from nodeflow.nodes.action.exec.codex_exec import CodexExecNode
-from nodeflow.nodes.action.routing.python_route_by_task_type import (
-    PythonRouteByTaskTypeNode,
-)
-from nodeflow.nodes.action.transform.python_summarize_result import (
-    PythonSummarizeResultNode,
-)
+from nodeflow.core.base_node import NodeExecutionFailure
+from nodeflow.nodes.exec.codex_exec import CodexExecNode
+from nodeflow.nodes.routing.python_route_by_task_type import PythonRouteByTaskTypeNode
+from nodeflow.nodes.summarize.python_summarize_result import PythonSummarizeResultNode
 
 
 def test_python_route_review_default():
@@ -49,17 +46,24 @@ def test_python_summarize_reads_execution_result():
     assert out["summary"]["key_findings"]
 
 
-def test_codex_exec_default_echo():
+def test_codex_exec_missing_argv_is_fatal():
     node = CodexExecNode()
     out = node.execute({}, {})
+    assert node.read_status() == "fatal"
+    assert out == {}
+    assert isinstance(node.read_error(), NodeExecutionFailure)
+
+
+def test_codex_exec_runs_with_valid_argv():
+    node = CodexExecNode()
+    out = node.execute({}, {"argv": ["echo", "codex-ok"]})
     assert node.read_status() == "done"
     assert "execution_result" in out
     pl = out["execution_result"]
     assert pl["ok"] is True
     assert pl["executor"] == "codex"
-    assert pl["raw_response"] == {"returncode": 0, "args": ["echo", "codex-exec-placeholder"]}
-    assert "_meta" in pl
-    assert "revision" in pl["_meta"]
+    assert pl["raw_response"] == {"returncode": 0, "args": ["echo", "codex-ok"]}
+    assert "revision" in out["_runtime"]["ports"]["execution_result"]
 
 
 def test_codex_exec_custom_argv():

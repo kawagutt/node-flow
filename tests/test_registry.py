@@ -1,4 +1,4 @@
-"""NodeRegistry (v1.5 built-ins)."""
+"""NodeRegistry and built-in registration."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def test_registry_clear():
         assert registry.get("_test_clear") is BaseNode
         registry.clear()
         assert registry.get("_test_clear") is None
-        assert registry.get("compose") is None
+        assert registry.get("python_route_by_task_type") is None
     finally:
         register_builtin_nodes()
 

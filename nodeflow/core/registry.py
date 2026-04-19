@@ -1,5 +1,5 @@
 """
-NodeFlow v1.5 — NodeRegistry. Resolves a YAML `type` string to a node class.
+NodeFlow — NodeRegistry. Resolves a YAML `type` string to a node class.
 """
 
 from __future__ import annotations

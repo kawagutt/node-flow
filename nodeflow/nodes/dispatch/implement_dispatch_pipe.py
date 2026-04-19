@@ -1,4 +1,9 @@
-"""ImplementDispatchPipeNode — Part V §8.6 (route → Codex exec → summarize)."""
+"""ImplementDispatchPipeNode — route → Codex exec → summarize (reusable subgraph).
+
+Graph wiring (child ids, bindings, param keys) lives in this class; the same
+structure could later be moved to external config without changing exec
+contract semantics.
+"""
 
 from __future__ import annotations
 
@@ -11,16 +16,11 @@ from nodeflow.core.base_node import (
     NodeExecutionFailure,
     NodeExecutionLimit,
 )
+from nodeflow.core.node_kinds import PipeNode, reset_children_for_graph
 from nodeflow.core.runner import Runner
-from nodeflow.nodes.action.exec.codex_exec import CodexExecNode
-from nodeflow.nodes.action.routing.python_route_by_task_type import (
-    PythonRouteByTaskTypeNode,
-)
-from nodeflow.nodes.action.transform.python_summarize_result import (
-    PythonSummarizeResultNode,
-)
-from nodeflow.nodes.base.pipe import PipeNode
-from nodeflow.nodes.pipe.serial_pipe import _reset_children_for_run
+from nodeflow.nodes.exec.codex_exec import CodexExecNode
+from nodeflow.nodes.routing.python_route_by_task_type import PythonRouteByTaskTypeNode
+from nodeflow.nodes.summarize.python_summarize_result import PythonSummarizeResultNode
 
 
 class ImplementDispatchPipeNode(PipeNode):
@@ -46,7 +46,7 @@ class ImplementDispatchPipeNode(PipeNode):
         params: MappingProxyType | Dict[str, Any],
         context: ExecutionContext,
     ) -> Dict[str, Any]:
-        _reset_children_for_run(self._nodes)
+        reset_children_for_graph(self._nodes)
         pipe_params = dict(params) if params else {}
         pipe_inputs = dict(inputs) if inputs else {}
 

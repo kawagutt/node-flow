@@ -1,4 +1,4 @@
-"""PythonSummarizeResultNode — Part V §7.1 (input: execution_result port)."""
+"""PythonSummarizeResultNode — consumes execution_result port; emits summary."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from types import MappingProxyType
 from typing import Any, Dict, List
 
 from nodeflow.core.base_node import ExecutionContext
-from nodeflow.nodes.base.python_action import PythonActionNode
+from nodeflow.core.node_kinds import PythonActionNode
 
 
 class PythonSummarizeResultNode(PythonActionNode):

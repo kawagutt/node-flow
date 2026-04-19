@@ -1,5 +1,5 @@
 """
-NodeFlow v1.5 — Runner (Part II §7). No loader dependency; uses only passed-in graph data.
+NodeFlow — Runner (dumb graph stepping; see doc/nodeflow_spec.md §3.1). No loader dependency.
 """
 
 from __future__ import annotations

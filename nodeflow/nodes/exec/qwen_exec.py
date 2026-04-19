@@ -1,4 +1,4 @@
-"""KimiExecNode — Part V §7.3 (Moonshot OpenAI-compatible API, single request)."""
+"""QwenExecNode — DashScope OpenAI-compatible API, single request per execute."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from openai import OpenAI
 
 from nodeflow.core.base_node import ExecutionContext
-from nodeflow.nodes.base.api_action import ApiActionNode
+from nodeflow.core.node_kinds import ApiActionNode
 
 
 def _execution_result_payload(
@@ -43,7 +43,7 @@ def _execution_result_payload(
     }
 
 
-class KimiExecNode(ApiActionNode):
+class QwenExecNode(ApiActionNode):
     role = "exec"
 
     def run(
@@ -53,12 +53,17 @@ class KimiExecNode(ApiActionNode):
         context: ExecutionContext,
     ) -> Dict[str, Any]:
         p = dict(params)
-        api_key = os.environ.get("MOONSHOT_API_KEY")
+        api_key = os.environ.get("DASHSCOPE_API_KEY")
         if not api_key:
-            raise RuntimeError("MOONSHOT_API_KEY is not set")
+            raise RuntimeError("DASHSCOPE_API_KEY is not set")
 
-        base_url = str(p.get("base_url", "https://api.moonshot.cn/v1"))
-        model = str(p.get("model", "moonshot-v1-8k"))
+        base_url = str(
+            p.get(
+                "base_url",
+                "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            )
+        )
+        model = str(p.get("model", "qwen-turbo"))
         temperature = p.get("temperature", 0.7)
         if not isinstance(temperature, (int, float)):
             temperature = 0.7
@@ -86,8 +91,8 @@ class KimiExecNode(ApiActionNode):
             return {
                 "execution_result": _execution_result_payload(
                     ok=False,
-                    executor="kimi",
-                    provider="moonshot",
+                    executor="qwen",
+                    provider="dashscope",
                     model=model,
                     task_type=task_type,
                     summary=None,
@@ -123,8 +128,8 @@ class KimiExecNode(ApiActionNode):
         return {
             "execution_result": _execution_result_payload(
                 ok=True,
-                executor="kimi",
-                provider="moonshot",
+                executor="qwen",
+                provider="dashscope",
                 model=model,
                 task_type=task_type,
                 summary=summary,

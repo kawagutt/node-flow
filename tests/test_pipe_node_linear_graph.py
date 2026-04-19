@@ -1,4 +1,4 @@
-"""SerialPipeNode (compose) — linear graph execution."""
+"""PipeNode — linear graph execution (loader root uses the same class)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from types import MappingProxyType
 from typing import Any, Dict
 
 from nodeflow.core.base_node import BaseNode, ExecutionContext, NodeExecutionLimit
-from nodeflow.nodes.pipe.serial_pipe import SerialPipeNode
+from nodeflow.core.node_kinds import PipeNode
 
 
 class EchoNode(BaseNode):
@@ -31,7 +31,17 @@ class EchoBNode(BaseNode):
         return {"result": {"out": str(val) + ":b"}}
 
 
-def test_compose_two_nodes():
+def _make_pipe(nodes, order, bindings, params_def, final_id):
+    return PipeNode(
+        graph_node_order=order,
+        nodes=nodes,
+        node_input_bindings=bindings,
+        node_param_definitions=params_def,
+        final_id=final_id,
+    )
+
+
+def test_pipe_two_nodes():
     nodes = {"a": EchoNode(), "b": EchoBNode()}
     graph_node_order = ["a", "b"]
     node_input_bindings = {
@@ -39,13 +49,7 @@ def test_compose_two_nodes():
         "b": {"data": ("node", "a", "result")},
     }
     node_param_definitions = {"a": {}, "b": {}}
-    pipe = SerialPipeNode(
-        graph_node_order=graph_node_order,
-        nodes=nodes,
-        node_input_bindings=node_input_bindings,
-        node_param_definitions=node_param_definitions,
-        final_id="b",
-    )
+    pipe = _make_pipe(nodes, graph_node_order, node_input_bindings, node_param_definitions, "b")
     out = pipe.execute({"x": "in"}, {})
     assert pipe.read_status() == "done"
     assert nodes["a"].read_status() == "done"
@@ -54,21 +58,21 @@ def test_compose_two_nodes():
     assert out["result"]["out"] == "in:a:b"
 
 
-def test_compose_fatal_propagates():
+def test_pipe_fatal_propagates():
     class FailingNode(BaseNode):
         def run(self, inputs, params, context):
             raise RuntimeError("a failed")
 
     nodes = {"a": FailingNode(), "b": EchoBNode()}
-    pipe = SerialPipeNode(
-        graph_node_order=["a", "b"],
-        nodes=nodes,
-        node_input_bindings={
+    pipe = _make_pipe(
+        nodes,
+        ["a", "b"],
+        {
             "a": {"x": ("inputs", "x")},
             "b": {"data": ("node", "a", "result")},
         },
-        node_param_definitions={"a": {}, "b": {}},
-        final_id="b",
+        {"a": {}, "b": {}},
+        "b",
     )
     out = pipe.execute({"x": 1}, {})
     assert pipe.read_status() == "fatal"
@@ -76,21 +80,21 @@ def test_compose_fatal_propagates():
     assert nodes["a"].read_status() == "fatal"
 
 
-def test_compose_limit_propagates():
+def test_pipe_limit_propagates():
     class LimitOnceNode(BaseNode):
         def run(self, inputs, params, context):
             raise NodeExecutionLimit()
 
     nodes = {"a": LimitOnceNode(), "b": EchoBNode()}
-    pipe = SerialPipeNode(
-        graph_node_order=["a", "b"],
-        nodes=nodes,
-        node_input_bindings={
+    pipe = _make_pipe(
+        nodes,
+        ["a", "b"],
+        {
             "a": {"x": ("inputs", "x")},
             "b": {"data": ("node", "a", "result")},
         },
-        node_param_definitions={"a": {}, "b": {}},
-        final_id="b",
+        {"a": {}, "b": {}},
+        "b",
     )
     out = pipe.execute({"x": 1}, {})
     assert nodes["a"].read_status() == "limit"
@@ -98,17 +102,17 @@ def test_compose_limit_propagates():
     assert out == {}
 
 
-def test_compose_max_calls_on_root():
+def test_pipe_max_calls_on_root():
     nodes = {"a": EchoNode(), "b": EchoBNode()}
-    pipe = SerialPipeNode(
-        graph_node_order=["a", "b"],
-        nodes=nodes,
-        node_input_bindings={
+    pipe = _make_pipe(
+        nodes,
+        ["a", "b"],
+        {
             "a": {"x": ("inputs", "x")},
             "b": {"data": ("node", "a", "result")},
         },
-        node_param_definitions={"a": {}, "b": {}},
-        final_id="b",
+        {"a": {}, "b": {}},
+        "b",
     )
     params = {"limit": {"max_calls": 1}}
     out1 = pipe.execute({"x": "1"}, params)

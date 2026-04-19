@@ -1,4 +1,4 @@
-"""ClaudeCodeExecNode — Part V §7.2 (single subprocess)."""
+"""CodexExecNode — single subprocess, no session; Common Result on execution_result port."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import subprocess
 from types import MappingProxyType
 from typing import Any, Dict, List, Optional
 
-from nodeflow.core.base_node import ExecutionContext
-from nodeflow.nodes.base.cli_action import CliActionNode
+from nodeflow.core.base_node import ExecutionContext, NodeExecutionFailure
+from nodeflow.core.node_kinds import CliActionNode
 
 
 def _execution_result_payload(
@@ -41,7 +41,7 @@ def _execution_result_payload(
     }
 
 
-class ClaudeCodeExecNode(CliActionNode):
+class CodexExecNode(CliActionNode):
     role = "exec"
 
     def run(
@@ -52,15 +52,17 @@ class ClaudeCodeExecNode(CliActionNode):
     ) -> Dict[str, Any]:
         p = dict(params)
         argv = p.get("argv")
-        if not isinstance(argv, list) or not all(isinstance(x, str) for x in argv):
-            argv = ["echo", "claude-code-exec-placeholder"]
+        if not isinstance(argv, list) or not argv:
+            raise NodeExecutionFailure(
+                "params.argv must be a non-empty list of strings (CLI precondition)"
+            )
+        if not all(isinstance(x, str) for x in argv):
+            raise NodeExecutionFailure(
+                "params.argv must contain only strings (CLI precondition)"
+            )
         timeout = p.get("timeout", 120)
         if not isinstance(timeout, (int, float)) or timeout <= 0:
             timeout = 120.0
-
-        model = p.get("model")
-        if model is not None:
-            model = str(model)
 
         task_type = inputs.get("task_type")
         if task_type is not None:
@@ -78,13 +80,13 @@ class ClaudeCodeExecNode(CliActionNode):
             return {
                 "execution_result": _execution_result_payload(
                     ok=False,
-                    executor="claude_code",
-                    provider="anthropic",
-                    model=model,
+                    executor="codex",
+                    provider="codex",
+                    model=None,
                     task_type=task_type,
                     summary="subprocess timeout",
-                    stdout=getattr(exc, "stdout", None) or None,
-                    stderr=getattr(exc, "stderr", None) or str(exc),
+                    stdout=exc.stdout or None if hasattr(exc, "stdout") else None,
+                    stderr=exc.stderr or None if hasattr(exc, "stderr") else str(exc),
                     raw_response={"error": "timeout", "cmd": argv},
                     artifacts=[],
                     provider_meta={"argv": argv},
@@ -100,9 +102,9 @@ class ClaudeCodeExecNode(CliActionNode):
         return {
             "execution_result": _execution_result_payload(
                 ok=ok,
-                executor="claude_code",
-                provider="anthropic",
-                model=model,
+                executor="codex",
+                provider="codex",
+                model=None,
                 task_type=task_type,
                 summary=None,
                 stdout=proc.stdout or None,

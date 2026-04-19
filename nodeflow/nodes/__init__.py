@@ -1,4 +1,4 @@
-"""NodeFlow v1.5 — dispatcher taxonomy (PipeNode / ActionNode) and built-in registration."""
+"""Built-in node registration (concrete nodes under routing/, exec/, …)."""
 
 from __future__ import annotations
 

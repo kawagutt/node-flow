@@ -1,5 +1,5 @@
 """
-NodeFlow v1.5 — dispatcher-oriented workflow engine (Part V).
+NodeFlow — dispatcher-oriented workflow engine (see doc/nodeflow_spec.md).
 """
 
 __version__ = "1.5.0"

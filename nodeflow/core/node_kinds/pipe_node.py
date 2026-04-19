@@ -1,6 +1,4 @@
-"""
-SerialPipeNode — YAML-driven serial graph (Part V §8, registry type `compose`).
-"""
+"""PipeNode — child graph wiring and orchestration."""
 
 from __future__ import annotations
 
@@ -13,12 +11,22 @@ from nodeflow.core.base_node import (
     ExecutionContext,
     NodeExecutionFailure,
     NodeExecutionLimit,
+    domain_ports_from_observation,
 )
 from nodeflow.core.runner import Runner
-from nodeflow.nodes.base.pipe import PipeNode
 
 InputBinding = Tuple[str, ...]
 _REF_PATTERN = re.compile(r"\$\{([^}.]+)\.([^}]+)\}")
+
+
+def reset_children_for_graph(nodes: Dict[str, BaseNode]) -> None:
+    """Reset child node status so the same graph instance can be executed again."""
+    for node in nodes.values():
+        st = node.read_status()
+        if st == "executing":
+            raise RuntimeError("child node stuck in executing")
+        if st != "ready":
+            node.reset_status()
 
 
 def _resolve_params_dict(
@@ -50,42 +58,32 @@ def _resolve_params_dict(
     return resolved
 
 
-def _reset_children_for_run(nodes: Dict[str, BaseNode]) -> None:
-    """Allow repeated root execute on the same graph instance."""
-    for node in nodes.values():
-        st = node.read_status()
-        if st == "executing":
-            raise RuntimeError("child node stuck in executing")
-        if st != "ready":
-            node.reset_status()
+class PipeNode(BaseNode):
+    """Composite: connects children; domain semantics live in child ActionNodes.
 
-
-class SerialPipeNode(PipeNode):
-    """
-    One-shot serial execution using Runner inside ``run()`` only.
-
-    **read_error**: Unlike aggregating every child error into a list, this class
-    returns the **first** non-none child ``read_error()`` (then the pipe's own fatal
-    error if any). That keeps the surface small and deterministic; callers that
-    need full diagnostics should inspect child nodes directly.
+    Instances built by the loader (``graph_node_order``, ``final_id``, bindings)
+    are the minimal linear-graph implementation. Subclasses that override
+    ``run()`` should keep wiring, child execution, and exposing **child domain
+    ports** only—avoid routing or transform logic here (PipeNode contract in
+    ``doc/nodeflow_spec.md``).
     """
 
-    # YAML `compose` root: disallow nesting another compose in the same graph (loader check).
-    ALLOW_AS_CHILD = False
+    ALLOW_AS_CHILD = True
 
     def __init__(
         self,
-        graph_node_order: List[str],
-        nodes: Dict[str, BaseNode],
-        node_input_bindings: Dict[str, Dict[str, InputBinding]],
-        node_param_definitions: Dict[str, Dict[str, Any]],
-        final_id: str,
+        *,
+        graph_node_order: List[str] | None = None,
+        nodes: Dict[str, BaseNode] | None = None,
+        node_input_bindings: Dict[str, Dict[str, InputBinding]] | None = None,
+        node_param_definitions: Dict[str, Dict[str, Any]] | None = None,
+        final_id: str | None = None,
     ) -> None:
         super().__init__()
         self._graph_node_order = graph_node_order
-        self._nodes = nodes
-        self._node_input_bindings = node_input_bindings
-        self._node_param_definitions = node_param_definitions
+        self._nodes = nodes if nodes is not None else {}
+        self._node_input_bindings = node_input_bindings or {}
+        self._node_param_definitions = node_param_definitions or {}
         self._final_id = final_id
 
     def run(
@@ -94,7 +92,11 @@ class SerialPipeNode(PipeNode):
         params: MappingProxyType | Dict[str, Any],
         context: ExecutionContext,
     ) -> Dict[str, Any]:
-        _reset_children_for_run(self._nodes)
+        if self._final_id is None or not self._graph_node_order:
+            raise NotImplementedError(
+                "PipeNode without loader graph config must be subclassed with a custom run()"
+            )
+        reset_children_for_graph(self._nodes)
         pipe_params = dict(params) if params else {}
         pipe_inputs = dict(inputs) if inputs else {}
 
@@ -132,9 +134,12 @@ class SerialPipeNode(PipeNode):
             if not progressed:
                 raise NodeExecutionFailure("invalid execution state")
 
-        return latest_output.get(self._final_id, {})
+        final_obs = latest_output.get(self._final_id, {})
+        return domain_ports_from_observation(final_obs)
 
     def read_error(self) -> Optional[Exception]:
+        if not self._nodes:
+            return super().read_error()
         for node in self._nodes.values():
             e = node.read_error()
             if e is not None:

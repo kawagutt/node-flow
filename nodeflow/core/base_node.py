@@ -1,6 +1,6 @@
 """
-NodeFlow v1.5 — Exceptions, ExecutionContext, BaseNode, utils (runtime template).
-Taxonomy (PipeNode / ActionNode) lives in nodeflow.nodes.
+NodeFlow — Exceptions, ExecutionContext, BaseNode, execution template (_runtime / _usage).
+Taxonomy (PipeNode / ActionNode) lives in nodeflow.core.node_kinds.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ import uuid
 from types import MappingProxyType
 from typing import Any, Dict
 
-# --- Execution control exceptions (§2.2.1) ---
+# --- Execution control exceptions (see doc/nodeflow_spec.md) ---
 
 
 class NodeExecutionLimit(Exception):
@@ -29,7 +29,7 @@ class NodeExecutionFailure(Exception):
 
 
 class PauseSignal(Exception):
-    """v1.5 で正式実装。本版では raise すると NotImplementedError。"""
+    """Reserved; raising in run() is NotImplementedError in this package version."""
 
     def __init__(self, reason: str = "", resume_inputs_schema: dict | None = None):
         super().__init__(reason)
@@ -38,14 +38,14 @@ class PauseSignal(Exception):
 
 
 class LimitSignal(Exception):
-    """v1.5 で正式実装。本版では raise すると NotImplementedError。"""
+    """Reserved; raising in run() is NotImplementedError in this package version."""
 
     def __init__(self, reason: str = ""):
         super().__init__(reason)
         self.reason = reason
 
 
-# --- ExecutionContext (§2.4) ---
+# --- ExecutionContext ---
 
 
 class ExecutionContext:
@@ -69,36 +69,50 @@ class ExecutionContext:
 
 
 def _freeze(params: dict) -> MappingProxyType:
-    """Shallow freeze for params (§4.3)."""
+    """Shallow freeze for params."""
     return MappingProxyType(params.copy() if params else {})
 
 
-RESERVED_KEYS = frozenset({"_meta", "_usage"})
+RESERVED_TOP_LEVEL_FROM_RUN = frozenset({"_runtime", "_usage"})
 
 
-def _attach_revision(output: dict) -> dict:
-    """各 output port に UUID4 のダミー revision を付与。予約キー _meta/_usage はスキップ（§5.1）。
-    Port payload は dict のみ。scalar は禁止（TypeError）。_meta を付与するのみ（二重 value にしない）。"""
+def domain_ports_from_observation(obs: Dict[str, Any]) -> Dict[str, Any]:
+    """Strip reserved top-level keys from a child ``execute()`` return.
+
+    Only ``_runtime`` and ``_usage`` are removed (see ``RESERVED_TOP_LEVEL_FROM_RUN``).
+    Do not use this to drop arbitrary other keys—extend the frozenset only if the
+    port contract adds a new reserved name.
+
+    **Call sites:** ``PipeNode.run()`` implementations (loader-built root pipe or
+    custom subclass) when forwarding the **final** child’s observation to this pipe’s
+    domain output. Not a general-purpose dict helper—avoid importing it elsewhere.
+    """
+    return {k: v for k, v in obs.items() if k not in RESERVED_TOP_LEVEL_FROM_RUN}
+
+
+def _attach_runtime(output: dict) -> dict:
+    """テンプレートが _runtime['ports'][port_name]['revision'] を付与する。domain port には触れない。"""
+    ports: Dict[str, Dict[str, str]] = {}
     for port_key, port_value in list(output.items()):
-        if port_key in RESERVED_KEYS:
+        if port_key in RESERVED_TOP_LEVEL_FROM_RUN:
             continue
         if not isinstance(port_value, dict):
             raise TypeError(
                 f"Port {port_key!r} payload must be dict, got {type(port_value).__name__}"
             )
-        port_value.setdefault("_meta", {})
-        port_value["_meta"]["revision"] = str(uuid.uuid4())
+        ports[port_key] = {"revision": str(uuid.uuid4())}
+    output["_runtime"] = {"ports": ports}
     return output
 
 
-# --- BaseNode (§6) ---
+# --- BaseNode ---
 
 
 class BaseNode:
     """
-    NodeFlow v1.5 — すべての Node が継承する基底クラス。
-    execute の構造は固定: pre-limit → executing → run → _apply_usage → revision 付与 → post-limit → status 設定 → result 返却。
-    post-limit 時も result は返す（revision 付与済み）。status = limit により PipeNode が以降の実行を止める。
+    すべての Node が継承する基底クラス（実行テンプレート）。
+    execute の構造は固定: pre-limit → executing → run → _usage 除去 → _runtime 付与 → post-limit → status 設定 → result 返却。
+    post-limit 時も result は返す（_runtime 付与済み）。status = limit により PipeNode が以降の実行を止める。
     """
 
     def __init__(self) -> None:
@@ -150,8 +164,15 @@ class BaseNode:
             self._error = TypeError("run() must return a dict")
             return {}
 
+        if "_runtime" in result:
+            self._status = "fatal"
+            self._error = ValueError(
+                "run() must not return _runtime; execution template owns _runtime"
+            )
+            return {}
+
         self._apply_usage(result)
-        result = _attach_revision(result)
+        result = _attach_runtime(result)
 
         if self._check_post_limit(params):
             self._status = "limit"

@@ -1,4 +1,4 @@
-"""PythonRouteByTaskTypeNode — Part V §7.1 (deterministic routing, no LLM)."""
+"""PythonRouteByTaskTypeNode — deterministic routing by task metadata (no LLM)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from types import MappingProxyType
 from typing import Any, Dict
 
 from nodeflow.core.base_node import ExecutionContext
-from nodeflow.nodes.base.python_action import PythonActionNode
+from nodeflow.core.node_kinds import PythonActionNode
 
 
 class PythonRouteByTaskTypeNode(PythonActionNode):

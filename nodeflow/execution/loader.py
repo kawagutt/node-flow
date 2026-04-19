@@ -1,14 +1,14 @@
 """
-NodeFlow v1.5 — pipeline.yaml parse and graph assembly.
+NodeFlow — pipeline YAML parse and graph assembly.
 
 YAML vocabulary (fixed):
 - version: \"1.5\"
 - graph.nodes[].id, type, inputs, params
 - graph.final: id of the terminal node
-- Root graph is always loaded as compose (SerialPipeNode) wrapping listed nodes.
+- Root graph is assembled internally as ``PipeNode`` (not a public YAML ``type``).
 
-Allowed node type strings (registry keys):
-  compose, python_route_by_task_type, python_summarize_result,
+Allowed node type strings (registry keys for ``graph.nodes[].type``):
+  python_route_by_task_type, python_summarize_result,
   codex_exec, claude_code_exec, kimi_exec, qwen_exec,
   review_dispatch, implement_dispatch
 """
@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Tuple
 
 import nodeflow.nodes  # noqa: F401 — built-in registration
 from nodeflow.core.base_node import BaseNode
+from nodeflow.core.node_kinds import PipeNode
 from nodeflow.core.registry import registry
 
 from .config import load_yaml
@@ -91,7 +92,7 @@ def _node_class_for_type(node_type: str):
 
 def load_pipeline(workspace_dir: str, file_path: str) -> BaseNode:
     """
-    Load pipeline YAML and return a SerialPipeNode (compose) root wrapping the graph.
+    Load pipeline YAML and return a root ``PipeNode`` wrapping the graph (not via registry).
     """
     data = load_yaml(file_path)
     if not data:
@@ -121,17 +122,18 @@ def load_pipeline(workspace_dir: str, file_path: str) -> BaseNode:
         if not nid or not ntype:
             continue
         cls = _node_class_for_type(ntype)
+        # Composable in YAML graphs by default; opt-out for types that must not appear
+        # as graph nodes (aligns with composite PipeNode children in doc/nodeflow_spec.md).
         if not getattr(cls, "ALLOW_AS_CHILD", True):
-            raise ValueError("Nested compose inside graph is not supported")
+            raise ValueError("This node type is not allowed as a child in graph.nodes")
         graph_node_order.append(nid)
         nodes[nid] = cls()
         raw_params = nd.get("params") or {}
         node_param_definitions[nid] = raw_params
 
     node_input_bindings = _build_node_input_bindings(nodes_list)
-    compose_cls = registry.resolve("compose")
 
-    return compose_cls(
+    return PipeNode(
         graph_node_order=graph_node_order,
         nodes=nodes,
         node_input_bindings=node_input_bindings,
