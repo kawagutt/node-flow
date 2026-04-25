@@ -23,9 +23,7 @@ class RegistryConflictError(ValueError):
 
     def __init__(self, type_name: str):
         self.type_name = type_name
-        super().__init__(
-            f"Type {type_name!r} already registered. Use override=True to replace."
-        )
+        super().__init__(f"Type {type_name!r} already registered. Use override=True to replace.")
 
 
 class NodeRegistry:
@@ -34,9 +32,7 @@ class NodeRegistry:
     def __init__(self) -> None:
         self._store: Dict[str, _NodeClass] = {}
 
-    def register(
-        self, type_name: str, node_class: _NodeClass, *, override: bool = False
-    ) -> None:
+    def register(self, type_name: str, node_class: _NodeClass, *, override: bool = False) -> None:
         """type 文字列と Node クラスを登録する。既存の場合は override=True のときだけ上書き。"""
         if type_name in self._store and not override:
             raise RegistryConflictError(type_name)

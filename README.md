@@ -46,15 +46,30 @@ The YAML `graph` section (`graph.nodes`, `graph.final`) is loaded by **`executio
 
 `read_error()` on that root `PipeNode` returns the **first** child error only when present; for full diagnostics, inspect child nodes.
 
+Top-level execution (`load_and_kick_pipeline` / CLI) is **fail-fast**: if the root
+status ends as anything other than `done` (`fatal` / `limit`), execution raises an error.
+
 ## Workspace
 
-The CLI `-w` / `--workspace` option sets the working directory (not necessarily a folder named `workspace`). Paths in YAML `params` are resolved relative to this directory when applicable.
+The CLI `-w` / `--workspace` option sets the workspace directory (not necessarily a folder named `workspace`). It is used for pipeline file resolution and workspace-relative params where applicable.
+
+For CLI exec nodes (`codex_exec`, `claude_code_exec`), subprocess `cwd` follows this order:
+- `params.cwd` (relative paths are resolved against workspace when available)
+- otherwise workspace directory (`_workspace_dir`) when provided by top-level execution
+- otherwise process default cwd
+
+## `_usage` visibility
+
+`_usage` is a reserved **runtime-internal accounting channel** consumed by the
+execution template (`BaseNode._apply_usage`). It is not part of domain output and is
+not exposed on final node outputs by default.
 
 ## YAML (v1.5)
 
 - `version` must be **`"1.5"`**.
-- **`graph.nodes`**: each entry has `id`, `type`, `inputs`, `params`. **`type`** values are **registry keys** for concrete nodes (for example: `python_route_by_task_type`, `python_summarize_result`, `codex_exec`, `claude_code_exec`, `kimi_exec`, `qwen_exec`, `review_dispatch`, `implement_dispatch`). There is **no** built-in YAML `type` for the root wrapper; the loader builds the root **`PipeNode`** internally. **CLI exec nodes** (`codex_exec`, `claude_code_exec`) require a **non-empty `params.argv`** list (subprocess precondition). For **`review_dispatch`** / **`implement_dispatch`**, put **nested exec params on that graph node’s `params`** (the same `params` object the loader passes into the composite), e.g. `claude_code_exec: { argv: [...] }` or `codex_exec: { argv: [...] }`—there are **no implicit default argv** in those pipes. See **`examples/pipelines/review_dispatch.yaml`** and **`examples/pipelines/implement_dispatch.yaml`**.
+- **`graph.nodes`**: each entry has `id`, `type`, `inputs`, `params`. **`type`** values are **registry keys** for concrete nodes (for example: `python_route_by_task_type`, `python_summarize_result`, `codex_exec`, `claude_code_exec`, `kimi_exec`, `qwen_exec`, `review_with_claude`, `implement_with_codex`). There is **no** built-in YAML `type` for the root wrapper; the loader builds the root **`PipeNode`** internally. **CLI exec nodes** (`codex_exec`, `claude_code_exec`) require a **non-empty `params.argv`** list (subprocess precondition). For **`review_with_claude`** / **`implement_with_codex`**, put **nested exec params on that graph node’s `params`** (the same `params` object the loader passes into the composite), e.g. `claude_code_exec: { argv: [...] }` or `codex_exec: { argv: [...] }`—there are **no implicit default argv** in those pipes. These fixed-provider pipes expect both `task_prompt` and `task_type` inputs; `task_type` is forwarded to exec result context. See **`examples/pipelines/review_with_claude.yaml`** and **`examples/pipelines/implement_with_codex.yaml`**.
 - **`graph.final`**: id of the terminal node whose output is exposed as the pipeline result.
+- Nodes are executed in declaration order; `${node.port}` references are allowed only for nodes declared earlier (forward references are rejected).
 
 Minimal example (routing only):
 
@@ -70,7 +85,10 @@ graph:
   final: route
 ```
 
-Dispatch pipe examples with nested `argv` are under **`examples/pipelines/`** (`review_dispatch.yaml`, `implement_dispatch.yaml`).
+Fixed provider pipe examples with nested `argv` are under **`examples/pipelines/`** (`review_with_claude.yaml`, `implement_with_codex.yaml`).
+
+`execution.loader.load_node_pipeline()` is a raw loader for version + top-level shape checks.
+Use `execution.loader.load_pipeline()` for executable graph validation.
 
 ## API keys (optional)
 

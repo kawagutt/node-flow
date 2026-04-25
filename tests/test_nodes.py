@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.nodes.exec.codex_exec import CodexExecNode
 from nodeflow.nodes.routing.python_route_by_task_type import PythonRouteByTaskTypeNode
@@ -13,14 +15,14 @@ def test_python_route_review_default():
     out = node.execute({"task_type": "review"}, {})
     assert node.read_status() == "done"
     assert out["route"]["executor"] == "claude_code"
-    assert out["route"]["next_node"] == "review_dispatch"
+    assert out["route"]["recommended_pipe_type"] == "review_with_claude"
 
 
 def test_python_route_implement_path():
     node = PythonRouteByTaskTypeNode()
     out = node.execute({"task_type": "implement", "needs_repo_write": True}, {})
     assert out["route"]["executor"] == "codex"
-    assert out["route"]["next_node"] == "implement_dispatch"
+    assert out["route"]["recommended_pipe_type"] == "implement_with_codex"
 
 
 def test_python_summarize_reads_execution_result():
@@ -71,3 +73,38 @@ def test_codex_exec_custom_argv():
     out = node.execute({}, {"argv": ["sh", "-c", "echo hi"]})
     assert out["execution_result"]["stdout"] is not None
     assert "hi" in (out["execution_result"]["stdout"] or "")
+
+
+def test_codex_exec_resolves_relative_cwd_against_workspace(tmp_path):
+    node = CodexExecNode()
+    workspace = tmp_path / "ws"
+    subdir = workspace / "sub"
+    subdir.mkdir(parents=True)
+    out = node.execute(
+        {},
+        {
+            "argv": ["sh", "-c", "pwd"],
+            "_workspace_dir": str(workspace),
+            "cwd": "sub",
+        },
+    )
+    assert node.read_status() == "done"
+    stdout = (out["execution_result"]["stdout"] or "").strip()
+    assert stdout == str(subdir.resolve())
+    assert out["execution_result"]["provider_meta"]["cwd"] == str(subdir.resolve())
+
+
+def test_codex_exec_defaults_cwd_to_workspace(tmp_path):
+    node = CodexExecNode()
+    workspace = tmp_path / "ws2"
+    workspace.mkdir(parents=True)
+    out = node.execute(
+        {},
+        {
+            "argv": ["sh", "-c", "pwd"],
+            "_workspace_dir": str(workspace),
+        },
+    )
+    assert node.read_status() == "done"
+    stdout = (out["execution_result"]["stdout"] or "").strip()
+    assert Path(stdout).resolve() == workspace.resolve()

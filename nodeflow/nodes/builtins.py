@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from nodeflow.core.registry import registry
-from nodeflow.nodes.dispatch.implement_dispatch_pipe import ImplementDispatchPipeNode
-from nodeflow.nodes.dispatch.review_dispatch_pipe import ReviewDispatchPipeNode
+from nodeflow.nodes.dispatch.implement_with_codex_pipe import ImplementWithCodexPipeNode
+from nodeflow.nodes.dispatch.review_with_claude_pipe import ReviewWithClaudePipeNode
 from nodeflow.nodes.exec.claude_code_exec import ClaudeCodeExecNode
 from nodeflow.nodes.exec.codex_exec import CodexExecNode
 from nodeflow.nodes.exec.kimi_exec import KimiExecNode
@@ -20,8 +20,9 @@ def register_builtin_nodes() -> None:
     registry.register("claude_code_exec", ClaudeCodeExecNode, override=True)
     registry.register("kimi_exec", KimiExecNode, override=True)
     registry.register("qwen_exec", QwenExecNode, override=True)
-    registry.register("review_dispatch", ReviewDispatchPipeNode, override=True)
-    registry.register("implement_dispatch", ImplementDispatchPipeNode, override=True)
+    # Preferred v1.5 names for fixed provider pipes (no dynamic dispatch in PipeNode).
+    registry.register("review_with_claude", ReviewWithClaudePipeNode, override=True)
+    registry.register("implement_with_codex", ImplementWithCodexPipeNode, override=True)
 
 
 register_builtin_nodes()

@@ -5,15 +5,14 @@ from pathlib import Path
 
 import click
 
+from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.execution.run import load_and_kick_pipeline
 
 
 @click.command()
-@click.argument("pipeline", type=click.Path(exists=True))
+@click.argument("pipeline", type=click.Path(exists=False))
 @click.option("--workspace", "-w", default=".", help="Workspace directory")
-@click.option(
-    "--input", "-i", "input_", multiple=True, help="Initial inputs (key=value)"
-)
+@click.option("--input", "-i", "input_", multiple=True, help="Initial inputs (key=value)")
 def main(pipeline: str, workspace: str, input_: tuple) -> None:
     """Run a pipeline YAML (path may be workspace-relative or cwd-relative)."""
     try:
@@ -23,11 +22,11 @@ def main(pipeline: str, workspace: str, input_: tuple) -> None:
             if "=" in item:
                 key, value = item.split("=", 1)
                 initial_inputs[key] = value
-        result = load_and_kick_pipeline(
-            workspace_dir, pipeline, initial_inputs=initial_inputs
-        )
+        result = load_and_kick_pipeline(workspace_dir, pipeline, initial_inputs=initial_inputs)
         click.echo("Pipeline execution completed.")
         click.echo(f"Output: {result}")
+    except NodeExecutionFailure as e:
+        raise click.ClickException(str(e)) from e
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)

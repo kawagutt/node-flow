@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from nodeflow.core.node_kinds import PipeNode
 from nodeflow.core.runner import Runner
 from nodeflow.execution.loader import load_pipeline
@@ -47,43 +49,95 @@ def test_runner_has_no_resolve_role_method():
     assert not hasattr(Runner, "resolve_role")
 
 
-def test_reusable_dispatch_pipe_bundles_child_domain_only():
+def test_fixed_provider_pipe_bundles_child_domain_only():
     """Custom PipeNode.run() must not leak child _runtime into bundled domain ports."""
-    from nodeflow.nodes.dispatch.implement_dispatch_pipe import ImplementDispatchPipeNode
-    from nodeflow.nodes.dispatch.review_dispatch_pipe import ReviewDispatchPipeNode
+    from nodeflow.nodes.dispatch.implement_with_codex_pipe import ImplementWithCodexPipeNode
+    from nodeflow.nodes.dispatch.review_with_claude_pipe import ReviewWithClaudePipeNode
 
-    impl = ImplementDispatchPipeNode()
+    impl = ImplementWithCodexPipeNode()
     out_impl = impl.execute(
         {"task_type": "implement", "task_prompt": "hi"},
         {"codex_exec": {"argv": ["sh", "-c", "echo dispatch-contract"]}},
     )
     assert impl.read_status() == "done"
-    for port in ("route", "summary", "execution_result"):
+    for port in ("summary", "execution_result"):
         assert port in out_impl
         assert isinstance(out_impl[port], dict)
         assert "_runtime" not in out_impl[port]
     assert "_runtime" in out_impl
     assert "revision" in out_impl["_runtime"]["ports"]["execution_result"]
 
-    rev = ReviewDispatchPipeNode()
+    rev = ReviewWithClaudePipeNode()
     out_rev = rev.execute(
         {"task_type": "review", "task_prompt": "x"},
         {"claude_code_exec": {"argv": ["sh", "-c", "echo review-pipe"]}},
     )
     assert rev.read_status() == "done"
-    for port in ("route", "summary", "execution_result"):
+    for port in ("summary", "execution_result"):
         assert port in out_rev
         assert "_runtime" not in out_rev[port]
     assert "_runtime" in out_rev
     assert "revision" in out_rev["_runtime"]["ports"]["execution_result"]
 
 
-def test_examples_dispatch_yaml_nested_argv_matches_readme():
+def test_fixed_provider_pipe_resolves_relative_cwd_against_workspace(tmp_path):
+    from nodeflow.nodes.dispatch.implement_with_codex_pipe import ImplementWithCodexPipeNode
+    from nodeflow.nodes.dispatch.review_with_claude_pipe import ReviewWithClaudePipeNode
+
+    workspace = tmp_path / "workspace"
+    subdir = workspace / "sub"
+    subdir.mkdir(parents=True)
+
+    impl = ImplementWithCodexPipeNode()
+    out_impl = impl.execute(
+        {"task_type": "implement", "task_prompt": "hello"},
+        {
+            "_workspace_dir": str(workspace),
+            "codex_exec": {"argv": ["sh", "-c", "pwd"], "cwd": "sub"},
+        },
+    )
+    assert impl.read_status() == "done"
+    assert (out_impl["execution_result"]["stdout"] or "").strip() == str(subdir.resolve())
+
+    rev = ReviewWithClaudePipeNode()
+    out_rev = rev.execute(
+        {"task_type": "review", "task_prompt": "hello"},
+        {
+            "_workspace_dir": str(workspace),
+            "claude_code_exec": {"argv": ["sh", "-c", "pwd"], "cwd": "sub"},
+        },
+    )
+    assert rev.read_status() == "done"
+    assert (out_rev["execution_result"]["stdout"] or "").strip() == str(subdir.resolve())
+
+
+def test_fixed_provider_pipe_requires_task_type_input():
+    from nodeflow.nodes.dispatch.implement_with_codex_pipe import ImplementWithCodexPipeNode
+    from nodeflow.nodes.dispatch.review_with_claude_pipe import ReviewWithClaudePipeNode
+
+    impl = ImplementWithCodexPipeNode()
+    out_impl = impl.execute(
+        {"task_prompt": "x"},
+        {"codex_exec": {"argv": ["sh", "-c", "echo should-not-run"]}},
+    )
+    assert out_impl == {}
+    assert impl.read_status() == "fatal"
+
+    rev = ReviewWithClaudePipeNode()
+    out_rev = rev.execute(
+        {"task_prompt": "x"},
+        {"claude_code_exec": {"argv": ["sh", "-c", "echo should-not-run"]}},
+    )
+    assert out_rev == {}
+    assert rev.read_status() == "fatal"
+
+
+def test_examples_fixed_provider_yaml_nested_argv_matches_readme():
     """Sample pipelines under examples/pipelines must include nested exec argv."""
     repo = Path(__file__).resolve().parents[1]
     for filename, inputs in (
-        ("review_dispatch.yaml", {"task_type": "review", "task_prompt": "x"}),
-        ("implement_dispatch.yaml", {"task_type": "implement", "task_prompt": "x"}),
+        ("review_with_claude.yaml", {"task_type": "review", "task_prompt": "x"}),
+        ("implement_with_codex.yaml", {"task_type": "implement", "task_prompt": "x"}),
     ):
         path = repo / "examples/pipelines" / filename
         assert path.is_file(), f"missing {path}"
@@ -93,3 +147,84 @@ def test_examples_dispatch_yaml_nested_argv_matches_readme():
         assert root.read_status() == "done"
         assert "execution_result" in out
         assert "_runtime" not in out["execution_result"]
+
+
+def test_loader_rejects_missing_id_or_type(tmp_path):
+    yaml_path = tmp_path / "bad.yaml"
+    yaml_path.write_text(
+        """
+version: "1.5"
+graph:
+  nodes:
+    - type: python_route_by_task_type
+      inputs:
+        task_type: ${inputs.task_type}
+      params: {}
+  final: route
+"""
+    )
+    with pytest.raises(ValueError, match="id is required"):
+        load_pipeline(str(tmp_path), str(yaml_path))
+
+
+def test_loader_rejects_unknown_final_node(tmp_path):
+    yaml_path = tmp_path / "bad_final.yaml"
+    yaml_path.write_text(
+        """
+version: "1.5"
+graph:
+  nodes:
+    - id: route
+      type: python_route_by_task_type
+      inputs:
+        task_type: ${inputs.task_type}
+      params: {}
+  final: missing
+"""
+    )
+    with pytest.raises(ValueError, match="unknown node id"):
+        load_pipeline(str(tmp_path), str(yaml_path))
+
+
+def test_loader_rejects_invalid_reference_syntax(tmp_path):
+    yaml_path = tmp_path / "bad_ref.yaml"
+    yaml_path.write_text(
+        """
+version: "1.5"
+graph:
+  nodes:
+    - id: route
+      type: python_route_by_task_type
+      inputs:
+        task_type: ${inputs.task_type.extra}
+      params: {}
+  final: route
+"""
+    )
+    with pytest.raises(ValueError, match="invalid reference syntax"):
+        load_pipeline(str(tmp_path), str(yaml_path))
+
+
+def test_loader_rejects_forward_reference(tmp_path):
+    yaml_path = tmp_path / "bad_forward_ref.yaml"
+    yaml_path.write_text(
+        """
+version: "1.5"
+graph:
+  nodes:
+    - id: a
+      type: python_summarize_result
+      inputs:
+        execution_result: ${b.execution_result}
+      params: {}
+    - id: b
+      type: codex_exec
+      inputs:
+        prompt: ${inputs.task_prompt}
+      params:
+        argv: ["sh", "-c", "echo x"]
+  final: b
+"""
+    )
+    with pytest.raises(ValueError, match="before it is available"):
+        load_pipeline(str(tmp_path), str(yaml_path))

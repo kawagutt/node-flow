@@ -1,9 +1,4 @@
-"""ImplementDispatchPipeNode — route → Codex exec → summarize (reusable subgraph).
-
-Graph wiring (child ids, bindings, param keys) lives in this class; the same
-structure could later be moved to external config without changing exec
-contract semantics.
-"""
+"""ImplementWithCodexPipeNode — Codex exec -> summarize fixed provider pipe."""
 
 from __future__ import annotations
 
@@ -19,24 +14,21 @@ from nodeflow.core.base_node import (
 from nodeflow.core.node_kinds import PipeNode, reset_children_for_graph
 from nodeflow.core.runner import Runner
 from nodeflow.nodes.exec.codex_exec import CodexExecNode
-from nodeflow.nodes.routing.python_route_by_task_type import PythonRouteByTaskTypeNode
 from nodeflow.nodes.summarize.python_summarize_result import PythonSummarizeResultNode
 
 
-class ImplementDispatchPipeNode(PipeNode):
-    """Fixed subgraph for implement path."""
+class ImplementWithCodexPipeNode(PipeNode):
+    """Fixed implement flow without dynamic routing semantics."""
 
     def __init__(self) -> None:
         super().__init__()
-        self._graph_node_order = ["route", "exec", "summarize"]
+        self._graph_node_order = ["exec", "summarize"]
         self._nodes: Dict[str, BaseNode] = {
-            "route": PythonRouteByTaskTypeNode(),
             "exec": CodexExecNode(),
             "summarize": PythonSummarizeResultNode(),
         }
         self._node_input_bindings = {
-            "route": {"task_type": ("inputs", "task_type")},
-            "exec": {"prompt": ("inputs", "task_prompt")},
+            "exec": {"prompt": ("inputs", "task_prompt"), "task_type": ("inputs", "task_type")},
             "summarize": {"execution_result": ("node", "exec", "execution_result")},
         }
 
@@ -49,12 +41,14 @@ class ImplementDispatchPipeNode(PipeNode):
         reset_children_for_graph(self._nodes)
         pipe_params = dict(params) if params else {}
         pipe_inputs = dict(inputs) if inputs else {}
+        workspace_dir = pipe_params.get("_workspace_dir")
 
         resolved_node_params = {
-            "route": dict(pipe_params.get("route") or {}),
             "exec": dict(pipe_params.get("codex_exec") or {}),
             "summarize": dict(pipe_params.get("python_summarize_result") or {}),
         }
+        if isinstance(workspace_dir, str):
+            resolved_node_params["exec"].setdefault("_workspace_dir", workspace_dir)
         latest_output: Dict[str, Dict[str, Any]] = {}
         runner = Runner(
             graph_node_order=self._graph_node_order,
@@ -80,8 +74,6 @@ class ImplementDispatchPipeNode(PipeNode):
                 raise NodeExecutionFailure("invalid execution state")
 
         out: Dict[str, Any] = {}
-        if "route" in latest_output:
-            out["route"] = latest_output["route"].get("route", {})
         if "summarize" in latest_output:
             out["summary"] = latest_output["summarize"].get("summary", {})
         if "exec" in latest_output:

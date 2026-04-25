@@ -134,9 +134,7 @@ class BaseNode:
         self._status = "executing"
         context = ExecutionContext()
         self._current_context = context
-        self._limit_state["calls"] += (
-            1  # run 開始前にのみ増加（pre_limit では増やさない）
-        )
+        self._limit_state["calls"] += 1  # run 開始前にのみ増加（pre_limit では増やさない）
 
         try:
             frozen_params = _freeze(params)
@@ -197,10 +195,7 @@ class BaseNode:
         if not isinstance(limit_cfg, dict):
             return False
         max_tokens = limit_cfg.get("max_tokens")
-        if (
-            isinstance(max_tokens, int)
-            and self._limit_state.get("tokens", 0) >= max_tokens
-        ):
+        if isinstance(max_tokens, int) and self._limit_state.get("tokens", 0) >= max_tokens:
             return True
         return False
 

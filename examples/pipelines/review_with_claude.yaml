@@ -1,14 +1,14 @@
-# Example: reusable review_dispatch pipe — nested exec argv is required (no defaults).
+# Example: fixed review_with_claude pipe — nested exec argv is required (no defaults).
 version: "1.5"
-name: review_dispatch_sample
+name: review_with_claude_sample
 graph:
   nodes:
-    - id: rd
-      type: review_dispatch
+    - id: rwc
+      type: review_with_claude
       inputs:
         task_type: ${inputs.task_type}
         task_prompt: ${inputs.task_prompt}
       params:
         claude_code_exec:
           argv: ["sh", "-c", "echo review-sample"]
-  final: rd
+  final: rwc

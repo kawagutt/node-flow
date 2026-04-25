@@ -108,6 +108,10 @@ class PipeNode(BaseNode):
             )
             for nid in self._graph_node_order
         }
+        workspace_dir = pipe_params.get("_workspace_dir")
+        if isinstance(workspace_dir, str):
+            for node_params in resolved_node_params.values():
+                node_params.setdefault("_workspace_dir", workspace_dir)
         latest_output: Dict[str, Dict[str, Any]] = {}
         runner = Runner(
             graph_node_order=self._graph_node_order,
