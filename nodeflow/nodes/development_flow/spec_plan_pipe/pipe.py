@@ -66,6 +66,10 @@ class SpecPlanPipeNode(PipeNode):
         resolved_node_params["write_checkpoint"].setdefault("stage", "spec_plan")
         resolved_node_params["write_checkpoint"].setdefault("next_action_default", "approve")
         resolved_node_params["write_checkpoint"].setdefault("next_action_on_failure", "revise_spec")
+        resolved_node_params["write_checkpoint"].setdefault("write_spec_plan_candidate", True)
+        resolved_node_params["write_checkpoint"].setdefault(
+            "spec_plan_candidate_suffix", "approved_candidate"
+        )
         rr = pipe_inputs.get("repo_root")
         if isinstance(rr, str):
             resolved_node_params["write_checkpoint"]["_repo_root_for_paths"] = rr

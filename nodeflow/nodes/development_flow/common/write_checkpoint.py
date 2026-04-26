@@ -10,6 +10,7 @@ from typing import Any, Dict, List
 
 from nodeflow.core.base_node import ExecutionContext
 from nodeflow.core.node_kinds import PythonActionNode
+from nodeflow.nodes.development_flow.common.json_stdout import loads_first_json_object
 
 
 class WriteCheckpointNode(PythonActionNode):
@@ -62,7 +63,6 @@ class WriteCheckpointNode(PythonActionNode):
             merged_raw["review_result"] = review_result
 
         artifacts: List[Dict[str, Any]] = list(request.get("artifacts") or [])
-        artifacts.append({"path": str(file_path), "kind": "checkpoint"})
 
         child_ok_values: List[bool] = []
         if execution_result is not None:
@@ -90,7 +90,29 @@ class WriteCheckpointNode(PythonActionNode):
         else:
             next_action = str(request.get("next_action") or next_action_default)
 
-        stage_result = {
+        approved_candidate_path: str | None = None
+        if (
+            bool(params.get("write_spec_plan_candidate"))
+            and stage == "spec_plan"
+            and final_ok
+            and execution_result is not None
+        ):
+            stdout = execution_result.get("stdout")
+            if isinstance(stdout, str):
+                obj = loads_first_json_object(stdout)
+                if isinstance(obj, dict) and "spec" in obj and "plan" in obj:
+                    suffix = str(params.get("spec_plan_candidate_suffix") or "approved_candidate")
+                    candidate_path = checkpoint_dir / f"{run_id}_{suffix}.json"
+                    slim = {"spec": obj["spec"], "plan": obj["plan"]}
+                    candidate_path.write_text(
+                        json.dumps(slim, ensure_ascii=False, indent=2), encoding="utf-8"
+                    )
+                    artifacts.append({"path": str(candidate_path), "kind": "spec_plan_candidate"})
+                    approved_candidate_path = str(candidate_path)
+
+        artifacts.append({"path": str(file_path), "kind": "checkpoint"})
+
+        stage_result: Dict[str, Any] = {
             "ok": final_ok,
             "stage": stage,
             "summary": str(
@@ -107,6 +129,8 @@ class WriteCheckpointNode(PythonActionNode):
             ),
             "raw_results": merged_raw,
         }
+        if approved_candidate_path:
+            stage_result["approved_candidate_path"] = approved_candidate_path
 
         payload = {
             "written_at": datetime.now(timezone.utc).isoformat(),

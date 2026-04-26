@@ -10,6 +10,11 @@ from typing import Any, Dict, List
 
 from nodeflow.core.base_node import ExecutionContext, NodeExecutionFailure
 from nodeflow.core.node_kinds import PythonActionNode
+from nodeflow.nodes.development_flow.common.git_untracked import (
+    filter_status_short,
+    filtered_untracked_paths,
+    untracked_file_excerpts,
+)
 
 
 def _git_required(repo_root: Path, argv: List[str]) -> str:
@@ -39,9 +44,18 @@ class CollectRepoContextNode(PythonActionNode):
         task_prompt = str(inputs.get("task_prompt") or "")
         base_ref = str(inputs.get("base_ref") or "HEAD")
         max_diff_chars = int(params.get("max_diff_chars", 4000))
+        excerpt_max_files = int(params.get("untracked_excerpt_max_files", 10))
+        excerpt_max_bytes = int(params.get("untracked_excerpt_max_bytes", 2000))
+
+        raw_ignored = params.get("ignored_untracked_prefixes")
+        if isinstance(raw_ignored, (list, tuple)):
+            ignored_prefixes: List[str] = [str(p) for p in raw_ignored]
+        else:
+            ignored_prefixes = [".nodeflow/"]
 
         _git_required(repo_root, ["rev-parse", "--show-toplevel"])
-        status_short = _git_required(repo_root, ["status", "--short"])
+        status_short_raw = _git_required(repo_root, ["status", "--short"])
+        status_short = filter_status_short(status_short_raw, ignored_prefixes)
 
         proc = subprocess.run(
             ["git", "diff", base_ref],
@@ -68,10 +82,22 @@ class CollectRepoContextNode(PythonActionNode):
                 line.strip() for line in (names_proc.stdout or "").splitlines() if line.strip()
             ][:50]
 
+        rc_untracked, untracked_files = filtered_untracked_paths(repo_root, ignored_prefixes)
+        untracked_excerpts = untracked_file_excerpts(
+            repo_root,
+            untracked_files,
+            max_files=excerpt_max_files,
+            max_bytes=excerpt_max_bytes,
+        )
+
         repo_context_block = (
             f"Repository status (git status --short):\n{status_short or '(clean)'}\n\n"
             f"Changed files (up to 50):\n{json.dumps(changed_files, ensure_ascii=False)}\n\n"
-            f"Diff excerpt vs {base_ref}:\n{diff_excerpt or '(empty)'}\n"
+            f"Diff excerpt vs {base_ref}:\n{diff_excerpt or '(empty)'}\n\n"
+            "## Untracked paths (git ls-files --others --exclude-standard)\n"
+            f"{json.dumps(untracked_files, ensure_ascii=False)}\n\n"
+            "## Untracked file excerpts (text only; may be truncated)\n"
+            f"{json.dumps(untracked_excerpts, ensure_ascii=False, indent=2)}\n"
         )
 
         codex_body = (
@@ -94,7 +120,11 @@ class CollectRepoContextNode(PythonActionNode):
                     "base_ref": base_ref,
                     "changed_files": changed_files,
                     "status_short": status_short,
+                    "status_short_raw": status_short_raw,
                     "diff_excerpt": diff_excerpt,
+                    "untracked_files": untracked_files,
+                    "untracked_file_excerpts": untracked_excerpts,
+                    "untracked_ls_returncode": rc_untracked,
                 },
                 "task_prompt": task_prompt,
             },
@@ -106,7 +136,11 @@ class CollectRepoContextNode(PythonActionNode):
                 "base_ref": base_ref,
                 "changed_files": changed_files,
                 "status_short": status_short,
+                "status_short_raw": status_short_raw,
                 "diff_excerpt": diff_excerpt,
+                "untracked_files": untracked_files,
+                "untracked_file_excerpts": untracked_excerpts,
+                "untracked_ls_returncode": rc_untracked,
             },
             "codex_task_prompt": {"text": codex_body},
             "task_meta": {"task_type": "spec_plan"},

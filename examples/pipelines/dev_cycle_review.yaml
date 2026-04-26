@@ -19,7 +19,7 @@ graph:
       params:
         review_diff_focused:
           argv:
-            - python
+            - python3
             - -c
             - |
               import json, sys
@@ -27,7 +27,7 @@ graph:
               print(json.dumps({"ok": True, "blocking_findings": [], "non_blocking_findings": [], "spec_revision_needed": False}))
         review_spec_conformance:
           argv:
-            - python
+            - python3
             - -c
             - |
               import json, sys

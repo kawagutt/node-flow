@@ -99,10 +99,11 @@ Each stage pipe’s root output exposes a `stage_result` port (dict) with at lea
 - `ok` (bool) — **`false` if any bound child signal failed** (`execution_result.ok`, `test_result.ok`, `diff_result.ok`, `review_result.ok` when passed to `write_checkpoint`), combined with optional `request.ok` from upstream checkpoint metadata.
 - `stage` — one of `spec_plan`, `implement`, `review`
 - `summary` (string)
-- `artifacts` — list of `{ "path", "kind" }`
+- `artifacts` — list of `{ "path", "kind" }` (spec_plan may list **`spec_plan_candidate`** before the main **`checkpoint`**).
 - `next_action` — e.g. `approve`, `review`, `rework_implementation`, `revise_spec`, `merge`, `stop`. When **`ok` is false**, `WriteCheckpointNode` **does not read** `request.next_action` (avoids a stale `"approve"`); it uses **`request.next_action_on_failure`** (set by `aggregate_reviews`) or **`params.next_action_on_failure`** (`implement_pipe` / `spec_plan_pipe` setdefaults), else **`stop`**.
 - `human_decision_required` (bool)
 - `raw_results` (dict)
+- **`approved_candidate_path`** (optional, spec_plan only) — path to a slim JSON file `{ "spec", "plan" }` parsed from the draft executor stdout, suitable as **`approved_checkpoint_path`** for `implement_pipe` / `review_pipe` without hand-editing the full stage checkpoint.
 
 Checkpoint files default under `.nodeflow/checkpoints/` (override via `write_checkpoint` params). If `checkpoint_dir` is relative, it is resolved under **`repo_root`** (pipeline input passed into `write_checkpoint` as `_repo_root_for_paths`) when set, else under CLI **`-w` / `_workspace_dir`**. JSON is written with **`ensure_ascii=False`** so non-ASCII prompts remain readable.
 
@@ -115,8 +116,8 @@ Checkpoint files default under `.nodeflow/checkpoints/` (override via `write_che
 Keys are **child node ids** inside the composite pipe. Typical nesting:
 
 - **`codex_exec`** (spec/implement) or **`review_diff_focused`** / **`review_spec_conformance`** — `argv`, `timeout`, `cwd`, … (same as standalone `codex_exec`).
-- **`write_checkpoint`** — `checkpoint_dir`, `run_id`, `stage`, `next_action_default`, `summary_default`, etc.
-- **`collect_repo_context`** — e.g. `max_diff_chars`.
+- **`write_checkpoint`** — `checkpoint_dir`, `run_id`, `stage`, `next_action_default`, `summary_default`, **`write_spec_plan_candidate`** (default **true** in `spec_plan_pipe`; writes `{run_id}_{spec_plan_candidate_suffix}.json`), **`spec_plan_candidate_suffix`** (default `approved_candidate`), etc.
+- **`collect_repo_context`** — `max_diff_chars`, `untracked_excerpt_max_files`, `untracked_excerpt_max_bytes`, `ignored_untracked_prefixes` (same defaults as `collect_diff`).
 - **`collect_diff`** — `max_chars` (optional; default truncates long diffs), `ignored_untracked_prefixes` (optional; default skips `.nodeflow/`).
 - **`build_diff_review_prompt`** / **`build_spec_review_prompt`** — `max_diff_chars` clipping inside the prompt.
 - **`aggregate_reviews`** — `spec_revision_needed_default` (bool).
@@ -127,9 +128,9 @@ Keys are **child node ids** inside the composite pipe. Typical nesting:
 
 ## Control flow (outer driver)
 
-1. Run `dev_cycle_spec_plan`; inspect `stage_result` and checkpoint JSON.
-2. Human produces an **approved** single JSON file with `spec` + `plan` (or copies from tool output).
-3. Run `dev_cycle_implement` with `-i approved_checkpoint_path=…`.
+1. Run `dev_cycle_spec_plan`; inspect `stage_result` and checkpoint JSON. When the draft stdout parses as `{ "spec", "plan" }`, **`approved_candidate_path`** points at a ready-made file for the next stage.
+2. Human may rename or edit that file, or produce another **approved** JSON with top-level `spec` + `plan`.
+3. Run `dev_cycle_implement` with `-i approved_checkpoint_path=…` (often the candidate path from step 1).
 4. Run `dev_cycle_review` with the same `approved_checkpoint_path`; interpret `stage_result.next_action` outside NodeFlow.
 
 ## CLI examples

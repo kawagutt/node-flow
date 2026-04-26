@@ -17,7 +17,7 @@ graph:
       params:
         codex_exec:
           argv:
-            - python
+            - python3
             - -c
             - |
               import json, sys

@@ -19,14 +19,14 @@ graph:
       params:
         codex_exec:
           argv:
-            - python
+            - python3
             - -c
             - |
               import sys
               sys.stdin.read()
               print("hermetic implement stub ok")
         run_tests:
-          argv: ["python", "-c", "print('hermetic tests ok')"]
+          argv: ["python3", "-c", "print('hermetic tests ok')"]
         write_checkpoint:
           checkpoint_dir: .nodeflow/checkpoints
           run_id: "002"

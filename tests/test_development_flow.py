@@ -8,12 +8,16 @@ import sys
 from pathlib import Path
 
 from nodeflow.execution.loader import load_pipeline
+from nodeflow.execution.run import load_and_kick_pipeline
 from nodeflow.nodes.development_flow.common.collect_diff import CollectDiffNode
 from nodeflow.nodes.development_flow.common.write_checkpoint import WriteCheckpointNode
 from nodeflow.nodes.development_flow.review_pipe.aggregate_reviews import AggregateReviewsNode
 from nodeflow.nodes.development_flow.review_pipe.review_parse import (
     parse_review_contract_from_execution_result,
     validate_review_contract_payload,
+)
+from nodeflow.nodes.development_flow.spec_plan_pipe.collect_repo_context import (
+    CollectRepoContextNode,
 )
 from nodeflow.nodes.exec.codex_exec import CodexExecNode
 
@@ -194,6 +198,9 @@ def test_collect_diff_ignores_nodeflow_untracked_by_default(tmp_path: Path) -> N
     assert "visible.txt" in dr.get("untracked_files", [])
     assert ".nodeflow/checkpoints/x.json" not in dr.get("untracked_files", [])
     assert all(not p.startswith(".nodeflow/") for p in dr.get("untracked_files", []))
+    assert "?? visible.txt" in (dr.get("status_short") or "")
+    assert ".nodeflow/" not in (dr.get("status_short") or "")
+    assert "?? .nodeflow/" in (dr.get("status_short_raw") or "")
 
 
 def test_validate_review_contract_payload_requires_schema() -> None:
@@ -260,3 +267,136 @@ def test_aggregate_reviews_schema_parse_failure_blocks() -> None:
     rr = out["review_result"]
     assert rr["ok"] is False
     assert any(b.get("id") == "R_DIFF_PARSE" for b in rr["blocking_findings"])
+
+
+def _git_repo_with_commit(repo: Path) -> None:
+    subprocess.run(["git", "init", "-b", "main"], cwd=str(repo), check=True, capture_output=True)
+    (repo / "README.md").write_text("base\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=str(repo), check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "init"],
+        cwd=str(repo),
+        check=True,
+        capture_output=True,
+    )
+
+
+def test_collect_repo_context_includes_untracked_excerpts(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo_with_commit(repo)
+    (repo / "draft.py").write_text("# new untracked\n", encoding="utf-8")
+
+    node = CollectRepoContextNode()
+    out = node.execute(
+        {"repo_root": str(repo), "base_ref": "HEAD", "task_prompt": "Add feature"},
+        {},
+    )
+    text = out["codex_task_prompt"]["text"]
+    assert "Untracked paths" in text
+    assert "draft.py" in text
+    assert "Untracked file excerpts" in text
+    rc = out["repo_context"].get("untracked_ls_returncode")
+    assert rc == 0
+
+
+def test_collect_repo_context_filters_ignored_untracked_from_status(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo_with_commit(repo)
+    (repo / ".nodeflow" / "checkpoints").mkdir(parents=True)
+    (repo / ".nodeflow" / "checkpoints" / "x.json").write_text("{}", encoding="utf-8")
+    (repo / "visible.txt").write_text("u\n", encoding="utf-8")
+
+    node = CollectRepoContextNode()
+    out = node.execute({"repo_root": str(repo), "base_ref": "HEAD", "task_prompt": "t"}, {})
+    rc = out["repo_context"]
+    assert "visible.txt" in (rc.get("status_short") or "")
+    assert ".nodeflow/" not in (rc.get("status_short") or "")
+    assert "?? .nodeflow/" in (rc.get("status_short_raw") or "")
+
+
+def test_write_spec_plan_writes_approved_candidate(tmp_path: Path) -> None:
+    cp = tmp_path / "checkpoints"
+    slim = {"spec": "# SPEC\nx", "plan": "# PLAN\ny"}
+    stdout = json.dumps(slim)
+    node = WriteCheckpointNode()
+    out = node.execute(
+        {
+            "request": {
+                "stage": "spec_plan",
+                "summary": "draft done",
+                "artifacts": [],
+                "human_decision_required": True,
+            },
+            "execution_result": {
+                "ok": True,
+                "stdout": stdout,
+                "stderr": "",
+                "executor": "codex",
+                "provider": "codex",
+                "raw_response": {},
+                "artifacts": [],
+                "provider_meta": {},
+            },
+        },
+        {
+            "checkpoint_dir": str(cp),
+            "run_id": "001",
+            "write_spec_plan_candidate": True,
+            "spec_plan_candidate_suffix": "approved_candidate",
+        },
+    )
+    sr = out["stage_result"]
+    assert sr.get("approved_candidate_path")
+    loaded = json.loads(Path(sr["approved_candidate_path"]).read_text(encoding="utf-8"))
+    assert loaded == slim
+    kinds = [a.get("kind") for a in sr.get("artifacts", [])]
+    assert "spec_plan_candidate" in kinds
+    assert "checkpoint" in kinds
+
+
+def test_dev_cycle_example_pipelines_smoke(tmp_path: Path) -> None:
+    repo_pkg = Path(__file__).resolve().parents[1]
+    work = tmp_path / "workspace"
+    work.mkdir()
+    _git_repo_with_commit(work)
+
+    spec_yaml = str(repo_pkg / "examples" / "pipelines" / "dev_cycle_spec_plan.yaml")
+    out1 = load_and_kick_pipeline(
+        str(work),
+        spec_yaml,
+        {"task_prompt": "smoke", "repo_root": str(work), "base_ref": "HEAD"},
+    )
+    sr1 = out1["stage_result"]
+    assert sr1.get("ok") is True
+    cand = sr1.get("approved_candidate_path")
+    assert cand and Path(cand).is_file()
+    approved = json.loads(Path(cand).read_text(encoding="utf-8"))
+    assert "spec" in approved and "plan" in approved
+
+    impl_yaml = str(repo_pkg / "examples" / "pipelines" / "dev_cycle_implement.yaml")
+    out2 = load_and_kick_pipeline(
+        str(work),
+        impl_yaml,
+        {
+            "approved_checkpoint_path": ".nodeflow/checkpoints/001_approved_candidate.json",
+            "repo_root": str(work),
+            "base_ref": "HEAD",
+            "task_type": "implement",
+        },
+    )
+    assert out2["stage_result"].get("ok") is True
+
+    review_yaml = str(repo_pkg / "examples" / "pipelines" / "dev_cycle_review.yaml")
+    out3 = load_and_kick_pipeline(
+        str(work),
+        review_yaml,
+        {
+            "approved_checkpoint_path": ".nodeflow/checkpoints/001_approved_candidate.json",
+            "repo_root": str(work),
+            "base_ref": "HEAD",
+            "task_type": "review",
+        },
+    )
+    assert out3["stage_result"].get("ok") is True

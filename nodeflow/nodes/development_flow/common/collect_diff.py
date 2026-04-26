@@ -2,50 +2,18 @@
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List
 
 from nodeflow.core.base_node import ExecutionContext
 from nodeflow.core.node_kinds import PythonActionNode
-
-
-def _untracked_path_ignored(rel: str, prefixes: Sequence[str]) -> bool:
-    for x in prefixes:
-        base = x.rstrip("/")
-        if rel == base or rel.startswith(base + "/"):
-            return True
-    return False
-
-
-def _run_git(repo_root: Path, argv: List[str]) -> tuple[int, str]:
-    proc = subprocess.run(
-        ["git", *argv],
-        cwd=str(repo_root),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    out = (proc.stdout or proc.stderr or "").strip()
-    return proc.returncode, out
-
-
-def _read_text_excerpt(path: Path, max_bytes: int) -> tuple[str, bool]:
-    try:
-        total = path.stat().st_size
-    except OSError:
-        return "", False
-    try:
-        raw = path.read_bytes()[:max_bytes]
-    except OSError:
-        return "", False
-    truncated_file = total > max_bytes or len(raw) >= max_bytes
-    try:
-        text = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        return f"<binary or non-utf8, {len(raw)} bytes>", truncated_file
-    return text, truncated_file
+from nodeflow.nodes.development_flow.common.git_untracked import (
+    filter_status_short,
+    filtered_untracked_paths,
+    run_git,
+    untracked_file_excerpts,
+)
 
 
 class CollectDiffNode(PythonActionNode):
@@ -69,37 +37,20 @@ class CollectDiffNode(PythonActionNode):
         else:
             ignored_prefixes = [".nodeflow/"]
 
-        rc_diff, diff_text_full = _run_git(repo_root, ["diff", base_ref])
-        rc_status, status_short = _run_git(repo_root, ["status", "--short"])
-        rc_untracked, untracked_out = _run_git(
-            repo_root, ["ls-files", "--others", "--exclude-standard"]
-        )
-        untracked_files = [
-            line.strip()
-            for line in untracked_out.splitlines()
-            if line.strip() and not _untracked_path_ignored(line.strip(), ignored_prefixes)
-        ]
+        rc_diff, diff_text_full = run_git(repo_root, ["diff", base_ref])
+        rc_status, status_short_raw = run_git(repo_root, ["status", "--short"])
+        status_short = filter_status_short(status_short_raw, ignored_prefixes)
+        rc_untracked, untracked_files = filtered_untracked_paths(repo_root, ignored_prefixes)
 
         diff_text = diff_text_full[:max_chars]
         truncated = len(diff_text_full) > max_chars
 
-        excerpts: List[Dict[str, Any]] = []
-        for rel in untracked_files[:excerpt_max_files]:
-            fp = (repo_root / rel).resolve()
-            try:
-                fp.relative_to(repo_root)
-            except ValueError:
-                continue
-            if not fp.is_file():
-                continue
-            content, trunc = _read_text_excerpt(fp, excerpt_max_bytes)
-            excerpts.append(
-                {
-                    "path": rel,
-                    "content": content[:8000],
-                    "truncated": trunc or len(content) >= 8000,
-                }
-            )
+        excerpts = untracked_file_excerpts(
+            repo_root,
+            untracked_files,
+            max_files=excerpt_max_files,
+            max_bytes=excerpt_max_bytes,
+        )
 
         ok = rc_diff == 0 and rc_status == 0 and rc_untracked == 0
 
@@ -111,6 +62,7 @@ class CollectDiffNode(PythonActionNode):
                 "diff": diff_text,
                 "truncated": truncated,
                 "status_short": status_short,
+                "status_short_raw": status_short_raw,
                 "untracked_files": untracked_files,
                 "untracked_file_excerpts": excerpts,
                 "git_returncodes": {
