@@ -1,0 +1,60 @@
+{
+  "default": {
+    "spec_plan": {
+      "codex_exec": {
+        "argv": ["codex", "exec", "--model", "gpt-5.5-medium", "--", "cat"]
+      }
+    },
+    "implement": {
+      "codex_exec": {
+        "argv": ["codex", "exec", "--model", "gpt-5.5-medium", "--", "cat"]
+      }
+    },
+    "review": {
+      "review_diff_focused": {
+        "argv": ["codex", "exec", "--model", "gpt-5.5-medium", "--", "cat"]
+      },
+      "review_wide_scan": {
+        "argv": ["codex", "exec", "--model", "gpt-5.5-medium", "--", "cat"]
+      },
+      "review_test_focused": {
+        "argv": ["codex", "exec", "--model", "gpt-5.5-medium", "--", "cat"]
+      },
+      "review_spec_conformance": {
+        "argv": ["codex", "exec", "--model", "gpt-5.5-medium", "--", "cat"]
+      },
+      "review_spec_revision": {
+        "argv": ["codex", "exec", "--model", "gpt-5.5-medium", "--", "cat"]
+      }
+    }
+  },
+  "high_quality": {
+    "spec_plan": {
+      "codex_exec": {
+        "argv": ["codex", "exec", "--model", "claude-opus-4-7-thinking-xhigh", "--", "cat"]
+      }
+    },
+    "implement": {
+      "codex_exec": {
+        "argv": ["codex", "exec", "--model", "gpt-5.5-medium", "--", "cat"]
+      }
+    },
+    "review": {
+      "review_diff_focused": {
+        "argv": ["codex", "exec", "--model", "claude-4.6-sonnet-medium-thinking", "--", "cat"]
+      },
+      "review_wide_scan": {
+        "argv": ["codex", "exec", "--model", "claude-4.6-sonnet-medium-thinking", "--", "cat"]
+      },
+      "review_test_focused": {
+        "argv": ["codex", "exec", "--model", "gpt-5.3-codex-high-fast", "--", "cat"]
+      },
+      "review_spec_conformance": {
+        "argv": ["codex", "exec", "--model", "claude-4.6-sonnet-medium-thinking", "--", "cat"]
+      },
+      "review_spec_revision": {
+        "argv": ["codex", "exec", "--model", "claude-opus-4-7-thinking-xhigh", "--", "cat"]
+      }
+    }
+  }
+}

@@ -291,6 +291,16 @@ node の出力トップレベルにおいて、**予約される runtime 名**�
 * **exact input set** は executor ごとに異なってよい（CLI 引数、API ボディ等）。
 * **output の意味論**は **Common Result** に従い、implementation kind はその意味を変えない。
 
+### 9.5 Development flow built-ins（P0/P2 profile）
+
+本仕様の taxonomy / port contract に従う concrete として、開発ループ向け built-in pipe（`spec_plan_pipe` / `implement_pipe` / `review_pipe` / `development_flow_pipe`）を追加してよい。
+
+* stage pipe（`spec_plan_pipe` / `implement_pipe` / `review_pipe`）は、単発実行の `stage_result` を返し、checkpoint artifact を生成する。
+* top-level `development_flow_pipe` は、`start` / `approve` / `rework_implementation` / `revise_spec` / `merge` / `force_merge` の action で checkpoint/resume を外部運用する。
+* `flow_result.ok` は stage 成功を示す値であり、merge 許可そのものは `flow_result.merge_ready` および `allowed_actions` / `next_action` で判定する。
+* `force_merge` では監査用情報（例: previous checkpoint path, human comment）を保持できる設計が推奨される。
+* これらは concrete の contract であり、`PipeNode` 本体の責務（配線・公開）を広げるものではない（[§10](#10-pipenode-contract)）。
+
 ---
 
 ## 10. PipeNode Contract

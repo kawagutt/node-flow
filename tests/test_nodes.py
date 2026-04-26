@@ -64,7 +64,11 @@ def test_codex_exec_runs_with_valid_argv():
     pl = out["execution_result"]
     assert pl["ok"] is True
     assert pl["executor"] == "codex"
-    assert pl["raw_response"] == {"returncode": 0, "args": ["echo", "codex-ok"]}
+    assert pl["raw_response"] == {
+        "returncode": 0,
+        "args": ["echo", "codex-ok"],
+        "stdin_used": False,
+    }
     assert "revision" in out["_runtime"]["ports"]["execution_result"]
 
 

@@ -67,7 +67,7 @@ not exposed on final node outputs by default.
 ## YAML (v1.5)
 
 - `version` must be **`"1.5"`**.
-- **`graph.nodes`**: each entry has `id`, `type`, `inputs`, `params`. **`type`** values are **registry keys** for concrete nodes (for example: `python_route_by_task_type`, `python_summarize_result`, `codex_exec`, `claude_code_exec`, `kimi_exec`, `qwen_exec`, `review_with_claude`, `implement_with_codex`). There is **no** built-in YAML `type` for the root wrapper; the loader builds the root **`PipeNode`** internally. **CLI exec nodes** (`codex_exec`, `claude_code_exec`) require a **non-empty `params.argv`** list (subprocess precondition). For **`review_with_claude`** / **`implement_with_codex`**, put **nested exec params on that graph node’s `params`** (the same `params` object the loader passes into the composite), e.g. `claude_code_exec: { argv: [...] }` or `codex_exec: { argv: [...] }`—there are **no implicit default argv** in those pipes. These fixed-provider pipes expect both `task_prompt` and `task_type` inputs; `task_type` is forwarded to exec result context. See **`examples/pipelines/review_with_claude.yaml`** and **`examples/pipelines/implement_with_codex.yaml`**.
+- **`graph.nodes`**: each entry has `id`, `type`, `inputs`, `params`. **`type`** values are **registry keys** for concrete nodes (for example: `python_route_by_task_type`, `python_summarize_result`, `codex_exec`, `claude_code_exec`, `kimi_exec`, `qwen_exec`, `review_with_claude`, `implement_with_codex`, `spec_plan_pipe`, `implement_pipe`, `review_pipe`, `development_flow_pipe`). There is **no** built-in YAML `type` for the root wrapper; the loader builds the root **`PipeNode`** internally. **CLI exec nodes** (`codex_exec`, `claude_code_exec`) require a **non-empty `params.argv`** list (subprocess precondition). For **`review_with_claude`** / **`implement_with_codex`**, put **nested exec params on that graph node’s `params`** (the same `params` object the loader passes into the composite), e.g. `claude_code_exec: { argv: [...] }` or `codex_exec: { argv: [...] }`—there are **no implicit default argv** in those pipes. These fixed-provider pipes expect both `task_prompt` and `task_type` inputs; `task_type` is forwarded to exec result context. See **`examples/pipelines/review_with_claude.yaml`** and **`examples/pipelines/implement_with_codex.yaml`**.
 - **`graph.final`**: id of the terminal node whose output is exposed as the pipeline result.
 - Nodes are executed in declaration order; `${node.port}` references are allowed only for nodes declared earlier (forward references are rejected).
 
@@ -86,6 +86,15 @@ graph:
 ```
 
 Fixed provider pipe examples with nested `argv` are under **`examples/pipelines/`** (`review_with_claude.yaml`, `implement_with_codex.yaml`).
+
+## Development flow nodes and examples (P0/P2)
+
+Development flow is intentionally split into two layers:
+
+- **Implementation (`nodeflow/nodes/`)**: built-in reusable node types and registry keys, including top-level `development_flow_pipe` and stage pipes.
+- **Usage examples (`examples/`)**: runnable samples/templates that instantiate those node types; no orchestration logic lives in example YAML files.
+
+Naming and concrete file examples live in **[`nodeflow/nodes/development_flow/README.md`](nodeflow/nodes/development_flow/README.md)**.
 
 `execution.loader.load_node_pipeline()` is a raw loader for version + top-level shape checks.
 Use `execution.loader.load_pipeline()` for executable graph validation.
@@ -108,7 +117,8 @@ nodeflow/
 │   ├── routing/
 │   ├── summarize/
 │   ├── exec/
-│   └── dispatch/
+│   ├── dispatch/
+│   └── development_flow/          # stage pipes; see development_flow/README.md
 └── execution/            # YAML load + run entrypoints
 ```
 
