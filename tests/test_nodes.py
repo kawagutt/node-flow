@@ -15,14 +15,14 @@ def test_python_route_review_default():
     out = node.execute({"task_type": "review"}, {})
     assert node.read_status() == "done"
     assert out["route"]["executor"] == "claude_code"
-    assert out["route"]["recommended_pipe_type"] == "review_with_claude"
+    assert "recommended_pipe_type" not in out["route"]
 
 
 def test_python_route_implement_path():
     node = PythonRouteByTaskTypeNode()
     out = node.execute({"task_type": "implement", "needs_repo_write": True}, {})
     assert out["route"]["executor"] == "codex"
-    assert out["route"]["recommended_pipe_type"] == "implement_with_codex"
+    assert "recommended_pipe_type" not in out["route"]
 
 
 def test_python_summarize_reads_execution_result():

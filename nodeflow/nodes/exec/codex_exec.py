@@ -102,7 +102,7 @@ class CodexExecNode(CliActionNode):
                     task_type=task_type,
                     summary="subprocess timeout",
                     stdout=exc.stdout or None if hasattr(exc, "stdout") else None,
-                    stderr=exc.stderr or None if hasattr(exc, "stderr") else str(exc),
+                    stderr=getattr(exc, "stderr", None) or str(exc),
                     raw_response={"error": "timeout", "cmd": argv},
                     artifacts=[],
                     provider_meta={"argv": argv, "cwd": resolved_cwd},

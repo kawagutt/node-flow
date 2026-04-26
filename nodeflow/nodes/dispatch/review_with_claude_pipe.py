@@ -41,6 +41,10 @@ class ReviewWithClaudePipeNode(PipeNode):
         reset_children_for_graph(self._nodes)
         pipe_params = dict(params) if params else {}
         pipe_inputs = dict(inputs) if inputs else {}
+        if not isinstance(pipe_inputs.get("task_prompt"), str):
+            raise NodeExecutionFailure("inputs.task_prompt is required")
+        if not isinstance(pipe_inputs.get("task_type"), str):
+            raise NodeExecutionFailure("inputs.task_type is required")
         workspace_dir = pipe_params.get("_workspace_dir")
 
         resolved_node_params = {

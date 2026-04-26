@@ -122,6 +122,7 @@ def test_fixed_provider_pipe_requires_task_type_input():
     )
     assert out_impl == {}
     assert impl.read_status() == "fatal"
+    assert "inputs.task_type is required" in str(impl.read_error())
 
     rev = ReviewWithClaudePipeNode()
     out_rev = rev.execute(
@@ -130,6 +131,7 @@ def test_fixed_provider_pipe_requires_task_type_input():
     )
     assert out_rev == {}
     assert rev.read_status() == "fatal"
+    assert "inputs.task_type is required" in str(rev.read_error())
 
 
 def test_examples_fixed_provider_yaml_nested_argv_matches_readme():
