@@ -7,10 +7,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.execution.loader import load_pipeline
 from nodeflow.execution.run import load_and_kick_pipeline
 from nodeflow.nodes.development_flow.common.collect_diff import CollectDiffNode
+from nodeflow.nodes.development_flow.common.load_checkpoint import LoadCheckpointNode
 from nodeflow.nodes.development_flow.common.write_checkpoint import WriteCheckpointNode
+from nodeflow.nodes.development_flow.development_flow_pipe import DevelopmentFlowPipeNode
 from nodeflow.nodes.development_flow.review_pipe.aggregate_reviews import AggregateReviewsNode
 from nodeflow.nodes.development_flow.review_pipe.review_parse import (
     parse_review_contract_from_execution_result,
@@ -28,6 +31,11 @@ def test_dev_cycle_example_yamls_load():
         "dev_cycle_spec_plan.yaml",
         "dev_cycle_implement.yaml",
         "dev_cycle_review.yaml",
+        "dev_cycle_spec_plan_codex_template.yaml",
+        "dev_cycle_implement_codex_template.yaml",
+        "dev_cycle_review_codex_template.yaml",
+        "development_flow_hermetic.yaml",
+        "development_flow_codex_template.yaml",
     ):
         path = repo / "examples" / "pipelines" / name
         load_pipeline(str(repo), str(path))
@@ -134,6 +142,9 @@ def test_write_checkpoint_ok_reflects_child_and_next_action_on_failure(tmp_path:
     sr2 = out2["stage_result"]
     assert sr2["ok"] is True
     assert sr2["next_action"] == "review"
+    checkpoint_path = Path(sr2["artifacts"][-1]["path"])
+    payload = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "development_flow.v1"
 
 
 def test_codex_exec_passes_prompt_to_stdin(tmp_path: Path) -> None:
@@ -269,6 +280,34 @@ def test_aggregate_reviews_schema_parse_failure_blocks() -> None:
     assert any(b.get("id") == "R_DIFF_PARSE" for b in rr["blocking_findings"])
 
 
+def test_aggregate_reviews_missing_review_input_blocks() -> None:
+    node = AggregateReviewsNode()
+    valid = json.dumps(
+        {
+            "ok": True,
+            "blocking_findings": [],
+            "non_blocking_findings": [],
+            "spec_revision_needed": False,
+        }
+    )
+    er_ok = {"ok": True, "stdout": valid, "stderr": "", "raw_response": {}}
+    out = node.execute(
+        {
+            "review_diff": er_ok,
+            # review_wide missing
+            "review_tests": er_ok,
+            "review_spec": er_ok,
+            "review_spec_revision": er_ok,
+            "test_result": {"ok": True},
+            "diff_result": {"ok": True, "diff": "x", "untracked_files": []},
+        },
+        {},
+    )
+    rr = out["review_result"]
+    assert rr["ok"] is False
+    assert any(b.get("id") == "R_WIDE_MISSING" for b in rr["blocking_findings"])
+
+
 def _git_repo_with_commit(repo: Path) -> None:
     subprocess.run(["git", "init", "-b", "main"], cwd=str(repo), check=True, capture_output=True)
     (repo / "README.md").write_text("base\n", encoding="utf-8")
@@ -400,3 +439,913 @@ def test_dev_cycle_example_pipelines_smoke(tmp_path: Path) -> None:
         },
     )
     assert out3["stage_result"].get("ok") is True
+
+
+def test_development_flow_pipe_checkpoint_resume(tmp_path: Path) -> None:
+    repo = tmp_path / "workspace"
+    repo.mkdir()
+    _git_repo_with_commit(repo)
+
+    node = DevelopmentFlowPipeNode()
+    start_out = node.execute(
+        {
+            "action": "start",
+            "task_prompt": "build feature",
+            "repo_root": str(repo),
+            "base_ref": "HEAD",
+        },
+        {
+            "spec_plan_pipe": {
+                "codex_exec": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'spec':'s','plan':'p'}))",
+                    ]
+                },
+                "write_checkpoint": {
+                    "checkpoint_dir": str(repo / ".nodeflow" / "checkpoints"),
+                    "run_id": "001",
+                },
+            },
+            "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
+        },
+    )
+    fr = start_out["flow_result"]
+    assert fr["state"] == "awaiting_approval"
+    assert Path(fr["flow_checkpoint_path"]).is_file()
+    approved = fr.get("approved_candidate_path")
+    assert isinstance(approved, str) and approved
+
+    node.reset_status()
+    approve_out = node.execute(
+        {
+            "action": "approve",
+            "repo_root": str(repo),
+            "base_ref": "HEAD",
+            "flow_checkpoint_path": fr["flow_checkpoint_path"],
+        },
+        {
+            "implement_pipe": {
+                "codex_exec": {
+                    "argv": ["python3", "-c", "import sys; sys.stdin.read(); print('ok')"]
+                },
+                "run_tests": {"argv": ["python3", "-c", "print('tests ok')"]},
+                "write_checkpoint": {
+                    "checkpoint_dir": str(repo / ".nodeflow" / "checkpoints"),
+                    "run_id": "002",
+                },
+            },
+            "review_pipe": {
+                "review_diff_focused": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'ok':True,'blocking_findings':[],'non_blocking_findings':[],'spec_revision_needed':False}))",
+                    ]
+                },
+                "review_wide_scan": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'ok':True,'blocking_findings':[],'non_blocking_findings':[],'spec_revision_needed':False}))",
+                    ]
+                },
+                "review_test_focused": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'ok':True,'blocking_findings':[],'non_blocking_findings':[],'spec_revision_needed':False}))",
+                    ]
+                },
+                "review_spec_conformance": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'ok':True,'blocking_findings':[],'non_blocking_findings':[],'spec_revision_needed':False}))",
+                    ]
+                },
+                "review_spec_revision": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'ok':True,'blocking_findings':[],'non_blocking_findings':[],'spec_revision_needed':False}))",
+                    ]
+                },
+                "write_checkpoint": {
+                    "checkpoint_dir": str(repo / ".nodeflow" / "checkpoints"),
+                    "run_id": "003",
+                },
+            },
+            "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
+        },
+    )
+    afr = approve_out["flow_result"]
+    assert afr["state"] == "awaiting_review_decision"
+    assert Path(afr["flow_checkpoint_path"]).is_file()
+    assert afr["merge_ready"] is True
+    assert "merge" in afr["allowed_actions"]
+    disk = json.loads(Path(afr["flow_checkpoint_path"]).read_text(encoding="utf-8"))
+    assert disk["flow_result"]["flow_checkpoint_path"] == afr["flow_checkpoint_path"]
+
+    node.reset_status()
+    merge_out = node.execute(
+        {
+            "action": "merge",
+            "repo_root": str(repo),
+            "flow_checkpoint_path": afr["flow_checkpoint_path"],
+        },
+        {"flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")}},
+    )
+    assert merge_out["flow_result"]["state"] == "merged"
+
+
+def test_development_flow_merge_rejects_wrong_state(tmp_path: Path) -> None:
+    repo = tmp_path / "workspace"
+    repo.mkdir()
+    _git_repo_with_commit(repo)
+    node = DevelopmentFlowPipeNode()
+    start_out = node.execute(
+        {
+            "action": "start",
+            "task_prompt": "t",
+            "repo_root": str(repo),
+            "base_ref": "HEAD",
+        },
+        {
+            "spec_plan_pipe": {
+                "codex_exec": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'spec':'s','plan':'p'}))",
+                    ]
+                },
+                "write_checkpoint": {
+                    "checkpoint_dir": str(repo / ".nodeflow" / "checkpoints"),
+                    "run_id": "s1",
+                },
+            },
+            "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
+        },
+    )
+    fp = start_out["flow_result"]["flow_checkpoint_path"]
+    node.reset_status()
+    node.execute(
+        {"action": "merge", "repo_root": str(repo), "flow_checkpoint_path": fp},
+        {"flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")}},
+    )
+    assert node.read_status() == "fatal"
+    assert isinstance(node.read_error(), NodeExecutionFailure)
+    assert "awaiting_review_decision" in str(node.read_error())
+
+
+def test_development_flow_force_merge(tmp_path: Path) -> None:
+    repo = tmp_path / "workspace"
+    repo.mkdir()
+    _git_repo_with_commit(repo)
+    node = DevelopmentFlowPipeNode()
+    start_out = node.execute(
+        {
+            "action": "start",
+            "task_prompt": "t",
+            "repo_root": str(repo),
+            "base_ref": "HEAD",
+        },
+        {
+            "spec_plan_pipe": {
+                "codex_exec": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'spec':'s','plan':'p'}))",
+                    ]
+                },
+                "write_checkpoint": {
+                    "checkpoint_dir": str(repo / ".nodeflow" / "checkpoints"),
+                    "run_id": "s2",
+                },
+            },
+            "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
+        },
+    )
+    fp = start_out["flow_result"]["flow_checkpoint_path"]
+    node.reset_status()
+    out = node.execute(
+        {
+            "action": "force_merge",
+            "repo_root": str(repo),
+            "flow_checkpoint_path": fp,
+            "human_comment_text": "manual override due hotfix",
+        },
+        {"flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")}},
+    )
+    assert out["flow_result"]["state"] == "merged"
+    assert out["flow_result"]["forced"] is True
+    assert out["flow_result"]["previous_flow_checkpoint_path"] == fp
+    assert out["flow_result"]["force_merge_reason"] == "manual override due hotfix"
+
+
+def test_development_flow_implement_fail_marks_flow_not_ok(tmp_path: Path) -> None:
+    repo = tmp_path / "workspace"
+    repo.mkdir()
+    _git_repo_with_commit(repo)
+    node = DevelopmentFlowPipeNode()
+    start_out = node.execute(
+        {
+            "action": "start",
+            "task_prompt": "t",
+            "repo_root": str(repo),
+            "base_ref": "HEAD",
+        },
+        {
+            "spec_plan_pipe": {
+                "codex_exec": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'spec':'s','plan':'p'}))",
+                    ]
+                },
+                "write_checkpoint": {
+                    "checkpoint_dir": str(repo / ".nodeflow" / "checkpoints"),
+                    "run_id": "s3",
+                },
+            },
+            "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
+        },
+    )
+    fp = start_out["flow_result"]["flow_checkpoint_path"]
+    node.reset_status()
+    approve_out = node.execute(
+        {
+            "action": "approve",
+            "repo_root": str(repo),
+            "base_ref": "HEAD",
+            "flow_checkpoint_path": fp,
+        },
+        {
+            "implement_pipe": {
+                "codex_exec": {"argv": ["python3", "-c", "import sys; sys.exit(1)"]},
+                "run_tests": {"argv": ["python3", "-c", "print('t')"]},
+                "write_checkpoint": {
+                    "checkpoint_dir": str(repo / ".nodeflow" / "checkpoints"),
+                    "run_id": "i3",
+                },
+            },
+            "review_pipe": {
+                "review_diff_focused": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'ok':True,'blocking_findings':[],'non_blocking_findings':[],'spec_revision_needed':False}))",
+                    ]
+                },
+                "review_wide_scan": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'ok':True,'blocking_findings':[],'non_blocking_findings':[],'spec_revision_needed':False}))",
+                    ]
+                },
+                "review_test_focused": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'ok':True,'blocking_findings':[],'non_blocking_findings':[],'spec_revision_needed':False}))",
+                    ]
+                },
+                "review_spec_conformance": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'ok':True,'blocking_findings':[],'non_blocking_findings':[],'spec_revision_needed':False}))",
+                    ]
+                },
+                "review_spec_revision": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'ok':True,'blocking_findings':[],'non_blocking_findings':[],'spec_revision_needed':False}))",
+                    ]
+                },
+                "write_checkpoint": {
+                    "checkpoint_dir": str(repo / ".nodeflow" / "checkpoints"),
+                    "run_id": "r3",
+                },
+            },
+            "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
+        },
+    )
+    assert approve_out["flow_result"]["ok"] is False
+    assert approve_out["flow_result"]["merge_ready"] is False
+    assert "merge" not in approve_out["flow_result"]["allowed_actions"]
+    approve_fp = approve_out["flow_result"]["flow_checkpoint_path"]
+
+    node.reset_status()
+    node.execute(
+        {
+            "action": "merge",
+            "repo_root": str(repo),
+            "flow_checkpoint_path": approve_fp,
+        },
+        {"flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")}},
+    )
+    assert node.read_status() == "fatal"
+    assert isinstance(node.read_error(), NodeExecutionFailure)
+    assert "flow_result.ok == true" in str(node.read_error())
+
+
+def test_development_flow_review_revise_spec_hides_merge_action(tmp_path: Path) -> None:
+    repo = tmp_path / "workspace"
+    repo.mkdir()
+    _git_repo_with_commit(repo)
+    node = DevelopmentFlowPipeNode()
+    start_out = node.execute(
+        {
+            "action": "start",
+            "task_prompt": "t",
+            "repo_root": str(repo),
+            "base_ref": "HEAD",
+        },
+        {
+            "spec_plan_pipe": {
+                "codex_exec": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'spec':'s','plan':'p'}))",
+                    ]
+                },
+                "write_checkpoint": {
+                    "checkpoint_dir": str(repo / ".nodeflow" / "checkpoints"),
+                    "run_id": "s4",
+                },
+            },
+            "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
+        },
+    )
+    fp = start_out["flow_result"]["flow_checkpoint_path"]
+    node.reset_status()
+    approve_out = node.execute(
+        {
+            "action": "approve",
+            "repo_root": str(repo),
+            "base_ref": "HEAD",
+            "flow_checkpoint_path": fp,
+        },
+        {
+            "implement_pipe": {
+                "codex_exec": {
+                    "argv": ["python3", "-c", "import sys; sys.stdin.read(); print('ok')"]
+                },
+                "run_tests": {"argv": ["python3", "-c", "print('t')"]},
+                "write_checkpoint": {
+                    "checkpoint_dir": str(repo / ".nodeflow" / "checkpoints"),
+                    "run_id": "i4",
+                },
+            },
+            "review_pipe": {
+                "review_diff_focused": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'ok':True,'blocking_findings':[],'non_blocking_findings':[],'spec_revision_needed':False}))",
+                    ]
+                },
+                "review_wide_scan": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'ok':True,'blocking_findings':[],'non_blocking_findings':[],'spec_revision_needed':False}))",
+                    ]
+                },
+                "review_test_focused": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'ok':True,'blocking_findings':[],'non_blocking_findings':[],'spec_revision_needed':False}))",
+                    ]
+                },
+                "review_spec_conformance": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'ok':True,'blocking_findings':[],'non_blocking_findings':[],'spec_revision_needed':False}))",
+                    ]
+                },
+                "review_spec_revision": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'ok':True,'blocking_findings':[],'non_blocking_findings':[],'spec_revision_needed':True}))",
+                    ]
+                },
+                "write_checkpoint": {
+                    "checkpoint_dir": str(repo / ".nodeflow" / "checkpoints"),
+                    "run_id": "r4",
+                },
+            },
+            "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
+        },
+    )
+    afr = approve_out["flow_result"]
+    assert afr["ok"] is True
+    assert afr["merge_ready"] is False
+    assert afr["next_action"] == "revise_spec"
+    assert "merge" not in afr["allowed_actions"]
+    assert "revise_spec" in afr["allowed_actions"]
+
+
+def test_development_flow_revise_spec_restores_task_prompt_from_checkpoint(tmp_path: Path) -> None:
+    repo = tmp_path / "workspace"
+    repo.mkdir()
+    _git_repo_with_commit(repo)
+
+    review_cp = repo / ".nodeflow" / "checkpoints" / "prev_review.json"
+    review_cp.parent.mkdir(parents=True, exist_ok=True)
+    review_cp.write_text(
+        json.dumps(
+            {
+                "stage_result": {
+                    "raw_results": {
+                        "review_result": {
+                            "ok": True,
+                            "blocking_findings": [],
+                            "non_blocking_findings": [],
+                            "spec_revision_needed": True,
+                        }
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    flow_cp = repo / ".nodeflow" / "checkpoints" / "prev_flow.json"
+    flow_cp.write_text(
+        json.dumps(
+            {
+                "flow_result": {
+                    "state": "awaiting_review_decision",
+                    "review_checkpoint_path": str(review_cp),
+                    "stage_result": {
+                        "raw_results": {
+                            "task_prompt": "restore-this-task",
+                        }
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    node = DevelopmentFlowPipeNode()
+    out = node.execute(
+        {
+            "action": "revise_spec",
+            "task_prompt": "",
+            "repo_root": str(repo),
+            "base_ref": "HEAD",
+            "flow_checkpoint_path": str(flow_cp),
+        },
+        {
+            "spec_plan_pipe": {
+                "codex_exec": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'spec':'s','plan':'p'}))",
+                    ]
+                },
+                "write_checkpoint": {
+                    "checkpoint_dir": str(repo / ".nodeflow" / "checkpoints"),
+                    "run_id": "rev1",
+                },
+            },
+            "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
+        },
+    )
+    raw = out["flow_result"]["stage_result"]["raw_results"]
+    assert raw.get("task_prompt") == "restore-this-task"
+
+
+def test_development_flow_revise_spec_restores_task_prompt_from_real_flow(tmp_path: Path) -> None:
+    repo = tmp_path / "workspace2"
+    repo.mkdir()
+    _git_repo_with_commit(repo)
+    node = DevelopmentFlowPipeNode()
+    start_out = node.execute(
+        {
+            "action": "start",
+            "task_prompt": "keep-this-task-prompt",
+            "repo_root": str(repo),
+            "base_ref": "HEAD",
+        },
+        {
+            "spec_plan_pipe": {
+                "codex_exec": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'spec':'s','plan':'p'}))",
+                    ]
+                },
+                "write_checkpoint": {
+                    "checkpoint_dir": str(repo / ".nodeflow" / "checkpoints"),
+                    "run_id": "s5",
+                },
+            },
+            "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
+        },
+    )
+    start_fp = start_out["flow_result"]["flow_checkpoint_path"]
+    node.reset_status()
+    approve_out = node.execute(
+        {
+            "action": "approve",
+            "repo_root": str(repo),
+            "base_ref": "HEAD",
+            "flow_checkpoint_path": start_fp,
+        },
+        {
+            "implement_pipe": {
+                "codex_exec": {
+                    "argv": ["python3", "-c", "import sys; sys.stdin.read(); print('ok')"]
+                },
+                "run_tests": {"argv": ["python3", "-c", "print('t')"]},
+                "write_checkpoint": {
+                    "checkpoint_dir": str(repo / ".nodeflow" / "checkpoints"),
+                    "run_id": "i5",
+                },
+            },
+            "review_pipe": {
+                "review_diff_focused": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'ok':True,'blocking_findings':[],'non_blocking_findings':[],'spec_revision_needed':False}))",
+                    ]
+                },
+                "review_wide_scan": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'ok':True,'blocking_findings':[],'non_blocking_findings':[],'spec_revision_needed':False}))",
+                    ]
+                },
+                "review_test_focused": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'ok':True,'blocking_findings':[],'non_blocking_findings':[],'spec_revision_needed':False}))",
+                    ]
+                },
+                "review_spec_conformance": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'ok':True,'blocking_findings':[],'non_blocking_findings':[],'spec_revision_needed':False}))",
+                    ]
+                },
+                "review_spec_revision": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'ok':True,'blocking_findings':[],'non_blocking_findings':[],'spec_revision_needed':True}))",
+                    ]
+                },
+                "write_checkpoint": {
+                    "checkpoint_dir": str(repo / ".nodeflow" / "checkpoints"),
+                    "run_id": "r5",
+                },
+            },
+            "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
+        },
+    )
+    approve_fp = approve_out["flow_result"]["flow_checkpoint_path"]
+    node.reset_status()
+    revise_out = node.execute(
+        {
+            "action": "revise_spec",
+            "task_prompt": "",
+            "repo_root": str(repo),
+            "base_ref": "HEAD",
+            "flow_checkpoint_path": approve_fp,
+        },
+        {
+            "spec_plan_pipe": {
+                "codex_exec": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'spec':'s2','plan':'p2'}))",
+                    ]
+                },
+                "write_checkpoint": {
+                    "checkpoint_dir": str(repo / ".nodeflow" / "checkpoints"),
+                    "run_id": "rev2",
+                },
+            },
+            "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
+        },
+    )
+    revised_raw = revise_out["flow_result"]["stage_result"]["raw_results"]
+    assert revised_raw.get("task_prompt") == "keep-this-task-prompt"
+
+
+def test_development_flow_approve_requires_awaiting_approval(tmp_path: Path) -> None:
+    repo = tmp_path / "workspace3"
+    repo.mkdir()
+    _git_repo_with_commit(repo)
+    cp = repo / ".nodeflow" / "checkpoints" / "wrong.json"
+    cp.parent.mkdir(parents=True, exist_ok=True)
+    cp.write_text(
+        json.dumps(
+            {"flow_result": {"state": "awaiting_review_decision", "approved_candidate_path": "x"}}
+        ),
+        encoding="utf-8",
+    )
+    node = DevelopmentFlowPipeNode()
+    node.execute(
+        {
+            "action": "approve",
+            "repo_root": str(repo),
+            "base_ref": "HEAD",
+            "flow_checkpoint_path": str(cp),
+        },
+        {
+            "implement_pipe": {
+                "codex_exec": {"argv": ["python3", "-c", "print('x')"]},
+                "run_tests": {"argv": ["python3", "-c", "print('t')"]},
+            },
+            "review_pipe": {"review_diff_focused": {"argv": ["python3", "-c", "print('{}')"]}},
+            "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
+        },
+    )
+    assert node.read_status() == "fatal"
+    assert isinstance(node.read_error(), NodeExecutionFailure)
+    assert "approve requires previous state awaiting_approval" in str(node.read_error())
+
+
+def test_development_flow_rework_requires_awaiting_review_decision(tmp_path: Path) -> None:
+    repo = tmp_path / "workspace4"
+    repo.mkdir()
+    _git_repo_with_commit(repo)
+    cp = repo / ".nodeflow" / "checkpoints" / "wrong2.json"
+    cp.parent.mkdir(parents=True, exist_ok=True)
+    cp.write_text(
+        json.dumps({"flow_result": {"state": "awaiting_approval", "approved_candidate_path": "x"}}),
+        encoding="utf-8",
+    )
+    node = DevelopmentFlowPipeNode()
+    node.execute(
+        {
+            "action": "rework_implementation",
+            "repo_root": str(repo),
+            "base_ref": "HEAD",
+            "flow_checkpoint_path": str(cp),
+        },
+        {
+            "implement_pipe": {
+                "codex_exec": {"argv": ["python3", "-c", "print('x')"]},
+                "run_tests": {"argv": ["python3", "-c", "print('t')"]},
+            },
+            "review_pipe": {"review_diff_focused": {"argv": ["python3", "-c", "print('{}')"]}},
+            "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
+        },
+    )
+    assert node.read_status() == "fatal"
+    assert isinstance(node.read_error(), NodeExecutionFailure)
+    assert "rework_implementation requires previous state awaiting_review_decision" in str(
+        node.read_error()
+    )
+
+
+def test_development_flow_profile_unknown_raises(tmp_path: Path) -> None:
+    repo = tmp_path / "r"
+    repo.mkdir()
+    _git_repo_with_commit(repo)
+    profiles = tmp_path / "p.json"
+    profiles.write_text(json.dumps({"default": {"spec_plan": {}}}), encoding="utf-8")
+    node = DevelopmentFlowPipeNode()
+    node.execute(
+        {"action": "start", "task_prompt": "x", "repo_root": str(repo), "base_ref": "HEAD"},
+        {
+            "model_profiles_path": str(profiles),
+            "cost_profiles_path": str(profiles),
+            "model_profile": "nope",
+            "cost_profile": "default",
+            "spec_plan_pipe": {
+                "codex_exec": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'spec':'s','plan':'p'}))",
+                    ]
+                },
+                "write_checkpoint": {
+                    "checkpoint_dir": str(repo / ".nodeflow" / "cp"),
+                    "run_id": "x",
+                },
+            },
+            "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "cp")},
+        },
+    )
+    assert node.read_status() == "fatal"
+    assert isinstance(node.read_error(), NodeExecutionFailure)
+    assert "unknown profile" in str(node.read_error())
+
+
+def test_development_flow_profile_partial_config_fails_fast(tmp_path: Path) -> None:
+    repo = tmp_path / "r2"
+    repo.mkdir()
+    _git_repo_with_commit(repo)
+    node = DevelopmentFlowPipeNode()
+    node.execute(
+        {"action": "start", "task_prompt": "x", "repo_root": str(repo), "base_ref": "HEAD"},
+        {
+            "model_profiles_path": str(tmp_path / "m.json"),
+            "spec_plan_pipe": {
+                "codex_exec": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'spec':'s','plan':'p'}))",
+                    ]
+                },
+                "write_checkpoint": {
+                    "checkpoint_dir": str(repo / ".nodeflow" / "cp"),
+                    "run_id": "x2",
+                },
+            },
+            "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "cp")},
+        },
+    )
+    assert node.read_status() == "fatal"
+    assert isinstance(node.read_error(), NodeExecutionFailure)
+    assert "must be set together" in str(node.read_error())
+
+
+def test_development_flow_start_propagates_child_fatal(tmp_path: Path) -> None:
+    repo = tmp_path / "workspace"
+    repo.mkdir()
+    _git_repo_with_commit(repo)
+    node = DevelopmentFlowPipeNode()
+    node.execute(
+        {
+            "action": "start",
+            "task_prompt": "t",
+            "repo_root": str(repo),
+            "base_ref": "HEAD",
+        },
+        {
+            # spec_plan_pipe child should become fatal and parent must propagate fatal.
+            "spec_plan_pipe": {},
+            "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
+        },
+    )
+    assert node.read_status() == "fatal"
+    assert isinstance(node.read_error(), NodeExecutionFailure)
+    assert "spec_plan_pipe fatal" in str(node.read_error())
+
+
+def test_load_checkpoint_includes_rework_context(tmp_path: Path) -> None:
+    stub = tmp_path / "ap.json"
+    stub.write_text(json.dumps({"spec": "S", "plan": "P"}), encoding="utf-8")
+    node = LoadCheckpointNode()
+    out = node.execute(
+        {
+            "approved_checkpoint_path": str(stub),
+            "repo_root": str(tmp_path),
+            "rework_context": "fix tests per review",
+        },
+        {},
+    )
+    assert "## Rework context" in out["codex_task_prompt"]["text"]
+    assert "fix tests" in out["codex_task_prompt"]["text"]
+
+
+def test_load_checkpoint_two_file_legacy_is_rejected(tmp_path: Path) -> None:
+    node = LoadCheckpointNode()
+    node.execute(
+        {
+            "approved_spec_path": str(tmp_path / "spec.json"),
+            "approved_plan_path": str(tmp_path / "plan.json"),
+            "repo_root": str(tmp_path),
+        },
+        {},
+    )
+    assert node.read_status() == "fatal"
+    assert isinstance(node.read_error(), NodeExecutionFailure)
+    assert "approved_checkpoint_path is required" in str(node.read_error())
+
+
+def test_development_flow_invalid_explicit_flow_checkpoint_fails_fast(tmp_path: Path) -> None:
+    repo = tmp_path / "workspace"
+    repo.mkdir()
+    _git_repo_with_commit(repo)
+    bad = repo / ".nodeflow" / "checkpoints" / "bad.json"
+    bad.parent.mkdir(parents=True, exist_ok=True)
+    bad.write_text("{not-json", encoding="utf-8")
+    node = DevelopmentFlowPipeNode()
+    node.execute(
+        {
+            "action": "start",
+            "task_prompt": "x",
+            "repo_root": str(repo),
+            "base_ref": "HEAD",
+            "flow_checkpoint_path": str(bad),
+        },
+        {
+            "spec_plan_pipe": {
+                "codex_exec": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'spec':'s','plan':'p'}))",
+                    ]
+                },
+                "write_checkpoint": {
+                    "checkpoint_dir": str(repo / ".nodeflow" / "checkpoints"),
+                    "run_id": "badcp",
+                },
+            },
+            "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
+        },
+    )
+    assert node.read_status() == "fatal"
+    assert isinstance(node.read_error(), NodeExecutionFailure)
+    assert "start does not accept flow_checkpoint_path" in str(node.read_error())
+
+
+def test_development_flow_start_rejects_flow_checkpoint_path_even_when_valid(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "workspace_valid_cp"
+    repo.mkdir()
+    _git_repo_with_commit(repo)
+    cp = repo / ".nodeflow" / "checkpoints" / "valid.json"
+    cp.parent.mkdir(parents=True, exist_ok=True)
+    cp.write_text(json.dumps({"flow_result": {"state": "awaiting_approval"}}), encoding="utf-8")
+    node = DevelopmentFlowPipeNode()
+    node.execute(
+        {
+            "action": "start",
+            "task_prompt": "x",
+            "repo_root": str(repo),
+            "base_ref": "HEAD",
+            "flow_checkpoint_path": str(cp),
+        },
+        {
+            "spec_plan_pipe": {
+                "codex_exec": {
+                    "argv": [
+                        "python3",
+                        "-c",
+                        "import json,sys; sys.stdin.read(); print(json.dumps({'spec':'s','plan':'p'}))",
+                    ]
+                },
+                "write_checkpoint": {
+                    "checkpoint_dir": str(repo / ".nodeflow" / "checkpoints"),
+                    "run_id": "fresh",
+                },
+            },
+            "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
+        },
+    )
+    assert node.read_status() == "fatal"
+    assert isinstance(node.read_error(), NodeExecutionFailure)
+    assert "start does not accept flow_checkpoint_path" in str(node.read_error())
+
+
+def test_run_tests_requires_argv() -> None:
+    from nodeflow.nodes.development_flow.implement_pipe.run_tests import RunTestsNode
+
+    node = RunTestsNode()
+    node.execute({"repo_root": "."}, {})
+    assert node.read_status() == "fatal"
+    assert isinstance(node.read_error(), NodeExecutionFailure)
+    assert "run_tests.argv must be a non-empty list[str]" in str(node.read_error())
+
+
+def test_development_flow_hermetic_yaml_start(tmp_path: Path) -> None:
+    repo_pkg = Path(__file__).resolve().parents[1]
+    work = tmp_path / "ws"
+    work.mkdir()
+    _git_repo_with_commit(work)
+    yml = str(repo_pkg / "examples" / "pipelines" / "development_flow_hermetic.yaml")
+    out = load_and_kick_pipeline(
+        str(work),
+        yml,
+        {
+            "action": "start",
+            "task_prompt": "hello",
+            "repo_root": str(work),
+            "base_ref": "HEAD",
+            "flow_checkpoint_path": "",
+            "approved_checkpoint_path": "",
+            "human_comment_path": "",
+            "human_comment_text": "",
+        },
+    )
+    assert out["flow_result"]["state"] == "awaiting_approval"

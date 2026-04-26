@@ -24,6 +24,15 @@ from nodeflow.nodes.development_flow.review_pipe.build_diff_review_prompt import
 from nodeflow.nodes.development_flow.review_pipe.build_spec_review_prompt import (
     BuildSpecReviewPromptNode,
 )
+from nodeflow.nodes.development_flow.review_pipe.build_spec_revision_review_prompt import (
+    BuildSpecRevisionReviewPromptNode,
+)
+from nodeflow.nodes.development_flow.review_pipe.build_test_review_prompt import (
+    BuildTestReviewPromptNode,
+)
+from nodeflow.nodes.development_flow.review_pipe.build_wide_scan_review_prompt import (
+    BuildWideScanReviewPromptNode,
+)
 from nodeflow.nodes.exec.codex_exec import CodexExecNode
 
 
@@ -37,8 +46,14 @@ class ReviewPipeNode(PipeNode):
             "collect_diff",
             "build_diff_review_prompt",
             "review_diff_focused",
+            "build_wide_scan_review_prompt",
+            "review_wide_scan",
+            "build_test_review_prompt",
+            "review_test_focused",
             "build_spec_review_prompt",
             "review_spec_conformance",
+            "build_spec_revision_review_prompt",
+            "review_spec_revision",
             "aggregate_reviews",
             "write_checkpoint",
         ]
@@ -47,8 +62,14 @@ class ReviewPipeNode(PipeNode):
             "collect_diff": CollectDiffNode(),
             "build_diff_review_prompt": BuildDiffReviewPromptNode(),
             "review_diff_focused": CodexExecNode(),
+            "build_wide_scan_review_prompt": BuildWideScanReviewPromptNode(),
+            "review_wide_scan": CodexExecNode(),
+            "build_test_review_prompt": BuildTestReviewPromptNode(),
+            "review_test_focused": CodexExecNode(),
             "build_spec_review_prompt": BuildSpecReviewPromptNode(),
             "review_spec_conformance": CodexExecNode(),
+            "build_spec_revision_review_prompt": BuildSpecRevisionReviewPromptNode(),
+            "review_spec_revision": CodexExecNode(),
             "aggregate_reviews": AggregateReviewsNode(),
             "write_checkpoint": WriteCheckpointNode(),
         }
@@ -69,6 +90,22 @@ class ReviewPipeNode(PipeNode):
                 "prompt": ("node", "build_diff_review_prompt", "codex_task_prompt", "text"),
                 "task_type": ("inputs", "task_type"),
             },
+            "build_wide_scan_review_prompt": {
+                "diff_result": ("node", "collect_diff", "diff_result"),
+                "base_ref": ("inputs", "base_ref"),
+            },
+            "review_wide_scan": {
+                "prompt": ("node", "build_wide_scan_review_prompt", "codex_task_prompt", "text"),
+                "task_type": ("inputs", "task_type"),
+            },
+            "build_test_review_prompt": {
+                "diff_result": ("node", "collect_diff", "diff_result"),
+                "base_ref": ("inputs", "base_ref"),
+            },
+            "review_test_focused": {
+                "prompt": ("node", "build_test_review_prompt", "codex_task_prompt", "text"),
+                "task_type": ("inputs", "task_type"),
+            },
             "build_spec_review_prompt": {
                 "approved_spec_plan": ("node", "load_checkpoint", "approved_spec_plan"),
                 "diff_result": ("node", "collect_diff", "diff_result"),
@@ -78,9 +115,26 @@ class ReviewPipeNode(PipeNode):
                 "prompt": ("node", "build_spec_review_prompt", "codex_task_prompt", "text"),
                 "task_type": ("inputs", "task_type"),
             },
+            "build_spec_revision_review_prompt": {
+                "approved_spec_plan": ("node", "load_checkpoint", "approved_spec_plan"),
+                "diff_result": ("node", "collect_diff", "diff_result"),
+                "base_ref": ("inputs", "base_ref"),
+            },
+            "review_spec_revision": {
+                "prompt": (
+                    "node",
+                    "build_spec_revision_review_prompt",
+                    "codex_task_prompt",
+                    "text",
+                ),
+                "task_type": ("inputs", "task_type"),
+            },
             "aggregate_reviews": {
                 "review_diff": ("node", "review_diff_focused", "execution_result"),
+                "review_wide": ("node", "review_wide_scan", "execution_result"),
+                "review_tests": ("node", "review_test_focused", "execution_result"),
                 "review_spec": ("node", "review_spec_conformance", "execution_result"),
+                "review_spec_revision": ("node", "review_spec_revision", "execution_result"),
                 "diff_result": ("node", "collect_diff", "diff_result"),
             },
             "write_checkpoint": {
@@ -105,8 +159,18 @@ class ReviewPipeNode(PipeNode):
             "collect_diff": dict(pipe_params.get("collect_diff") or {}),
             "build_diff_review_prompt": dict(pipe_params.get("build_diff_review_prompt") or {}),
             "review_diff_focused": dict(pipe_params.get("review_diff_focused") or {}),
+            "build_wide_scan_review_prompt": dict(
+                pipe_params.get("build_wide_scan_review_prompt") or {}
+            ),
+            "review_wide_scan": dict(pipe_params.get("review_wide_scan") or {}),
+            "build_test_review_prompt": dict(pipe_params.get("build_test_review_prompt") or {}),
+            "review_test_focused": dict(pipe_params.get("review_test_focused") or {}),
             "build_spec_review_prompt": dict(pipe_params.get("build_spec_review_prompt") or {}),
             "review_spec_conformance": dict(pipe_params.get("review_spec_conformance") or {}),
+            "build_spec_revision_review_prompt": dict(
+                pipe_params.get("build_spec_revision_review_prompt") or {}
+            ),
+            "review_spec_revision": dict(pipe_params.get("review_spec_revision") or {}),
             "aggregate_reviews": dict(pipe_params.get("aggregate_reviews") or {}),
             "write_checkpoint": dict(pipe_params.get("write_checkpoint") or {}),
         }
@@ -118,9 +182,12 @@ class ReviewPipeNode(PipeNode):
         workspace_dir = pipe_params.get("_workspace_dir")
         if isinstance(workspace_dir, str):
             resolved_node_params["review_diff_focused"].setdefault("_workspace_dir", workspace_dir)
+            resolved_node_params["review_wide_scan"].setdefault("_workspace_dir", workspace_dir)
+            resolved_node_params["review_test_focused"].setdefault("_workspace_dir", workspace_dir)
             resolved_node_params["review_spec_conformance"].setdefault(
                 "_workspace_dir", workspace_dir
             )
+            resolved_node_params["review_spec_revision"].setdefault("_workspace_dir", workspace_dir)
 
         latest_output: Dict[str, Dict[str, Any]] = {}
         runner = Runner(

@@ -1,0 +1,68 @@
+{
+  "default": {
+    "spec_plan": {
+      "collect_repo_context": {
+        "max_diff_chars": 4000,
+        "untracked_excerpt_max_files": 10
+      }
+    },
+    "implement": {
+      "collect_diff": {
+        "max_chars": 8000
+      }
+    },
+    "review": {
+      "collect_diff": {
+        "max_chars": 12000
+      },
+      "build_diff_review_prompt": {
+        "max_diff_chars": 12000
+      },
+      "build_spec_review_prompt": {
+        "max_diff_chars": 12000
+      },
+      "build_wide_scan_review_prompt": {
+        "max_diff_chars": 12000
+      },
+      "build_test_review_prompt": {
+        "max_diff_chars": 12000
+      },
+      "build_spec_revision_review_prompt": {
+        "max_diff_chars": 12000
+      }
+    }
+  },
+  "low_cost": {
+    "spec_plan": {
+      "collect_repo_context": {
+        "max_diff_chars": 1500,
+        "untracked_excerpt_max_files": 4
+      }
+    },
+    "implement": {
+      "collect_diff": {
+        "max_chars": 3000
+      }
+    },
+    "review": {
+      "collect_diff": {
+        "max_chars": 4000
+      },
+      "build_diff_review_prompt": {
+        "max_diff_chars": 4000
+      },
+      "build_spec_review_prompt": {
+        "max_diff_chars": 4000
+      },
+      "build_wide_scan_review_prompt": {
+        "max_diff_chars": 4000
+      },
+      "build_test_review_prompt": {
+        "max_diff_chars": 4000
+      },
+      "build_spec_revision_review_prompt": {
+        "max_diff_chars": 4000
+      }
+    }
+  }
+}

@@ -1,0 +1,96 @@
+# Runnable hermetic example: full development_flow_pipe (no Codex binary).
+version: "1.5"
+name: development_flow_hermetic
+inputs:
+  action: {}
+  task_prompt: {}
+  repo_root: {}
+  base_ref: {}
+  flow_checkpoint_path: {}
+  approved_checkpoint_path: {}
+  human_comment_path: {}
+  human_comment_text: {}
+graph:
+  nodes:
+    - id: flow
+      type: development_flow_pipe
+      inputs:
+        action: ${inputs.action}
+        task_prompt: ${inputs.task_prompt}
+        repo_root: ${inputs.repo_root}
+        base_ref: ${inputs.base_ref}
+        flow_checkpoint_path: ${inputs.flow_checkpoint_path}
+        approved_checkpoint_path: ${inputs.approved_checkpoint_path}
+        human_comment_path: ${inputs.human_comment_path}
+        human_comment_text: ${inputs.human_comment_text}
+      params:
+        flow_checkpoint:
+          checkpoint_dir: .nodeflow/checkpoints
+        spec_plan_pipe:
+          codex_exec:
+            argv:
+              - python3
+              - -c
+              - |
+                import json, sys
+                body = sys.stdin.read() or ""
+                print(json.dumps({"spec": "# SPEC\n" + body[:800], "plan": "# PLAN\nhermetic flow"}))
+          write_checkpoint:
+            run_id: "flow_spec"
+        implement_pipe:
+          codex_exec:
+            argv:
+              - python3
+              - -c
+              - |
+                import sys
+                sys.stdin.read()
+                print("hermetic implement ok")
+          run_tests:
+            argv: ["python3", "-c", "print('hermetic tests ok')"]
+          write_checkpoint:
+            run_id: "flow_impl"
+        review_pipe:
+          review_diff_focused:
+            argv:
+              - python3
+              - -c
+              - |
+                import json, sys
+                sys.stdin.read()
+                print(json.dumps({"ok": True, "blocking_findings": [], "non_blocking_findings": [], "spec_revision_needed": False}))
+          review_wide_scan:
+            argv:
+              - python3
+              - -c
+              - |
+                import json, sys
+                sys.stdin.read()
+                print(json.dumps({"ok": True, "blocking_findings": [], "non_blocking_findings": [], "spec_revision_needed": False}))
+          review_test_focused:
+            argv:
+              - python3
+              - -c
+              - |
+                import json, sys
+                sys.stdin.read()
+                print(json.dumps({"ok": True, "blocking_findings": [], "non_blocking_findings": [], "spec_revision_needed": False}))
+          review_spec_conformance:
+            argv:
+              - python3
+              - -c
+              - |
+                import json, sys
+                sys.stdin.read()
+                print(json.dumps({"ok": True, "blocking_findings": [], "non_blocking_findings": [], "spec_revision_needed": False}))
+          review_spec_revision:
+            argv:
+              - python3
+              - -c
+              - |
+                import json, sys
+                sys.stdin.read()
+                print(json.dumps({"ok": True, "blocking_findings": [], "non_blocking_findings": [], "spec_revision_needed": False}))
+          write_checkpoint:
+            run_id: "flow_review"
+  final: flow

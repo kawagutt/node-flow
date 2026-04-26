@@ -42,6 +42,7 @@ class CollectRepoContextNode(PythonActionNode):
     ) -> Dict[str, Any]:
         repo_root = Path(str(inputs.get("repo_root") or ".")).resolve()
         task_prompt = str(inputs.get("task_prompt") or "")
+        revision_context = inputs.get("revision_context")
         base_ref = str(inputs.get("base_ref") or "HEAD")
         max_diff_chars = int(params.get("max_diff_chars", 4000))
         excerpt_max_files = int(params.get("untracked_excerpt_max_files", 10))
@@ -100,10 +101,20 @@ class CollectRepoContextNode(PythonActionNode):
             f"{json.dumps(untracked_excerpts, ensure_ascii=False, indent=2)}\n"
         )
 
+        revision_block = ""
+        if revision_context:
+            revision_text = (
+                revision_context
+                if isinstance(revision_context, str)
+                else json.dumps(revision_context, ensure_ascii=False, indent=2)
+            )
+            revision_block = f"## Revision context\n{revision_text}\n\n"
+
         codex_body = (
             "Draft SPEC and PLAN for the following task.\n\n"
             f"## Task\n{task_prompt}\n\n"
             f"## Base ref\n{base_ref}\n\n"
+            f"{revision_block}"
             "## Repository context\n"
             f"{repo_context_block}\n"
         )
@@ -127,6 +138,7 @@ class CollectRepoContextNode(PythonActionNode):
                     "untracked_ls_returncode": rc_untracked,
                 },
                 "task_prompt": task_prompt,
+                "revision_context": revision_context,
             },
         }
 

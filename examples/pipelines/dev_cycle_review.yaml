@@ -25,7 +25,31 @@ graph:
               import json, sys
               sys.stdin.read()
               print(json.dumps({"ok": True, "blocking_findings": [], "non_blocking_findings": [], "spec_revision_needed": False}))
+        review_wide_scan:
+          argv:
+            - python3
+            - -c
+            - |
+              import json, sys
+              sys.stdin.read()
+              print(json.dumps({"ok": True, "blocking_findings": [], "non_blocking_findings": [], "spec_revision_needed": False}))
+        review_test_focused:
+          argv:
+            - python3
+            - -c
+            - |
+              import json, sys
+              sys.stdin.read()
+              print(json.dumps({"ok": True, "blocking_findings": [], "non_blocking_findings": [], "spec_revision_needed": False}))
         review_spec_conformance:
+          argv:
+            - python3
+            - -c
+            - |
+              import json, sys
+              sys.stdin.read()
+              print(json.dumps({"ok": True, "blocking_findings": [], "non_blocking_findings": [], "spec_revision_needed": False}))
+        review_spec_revision:
           argv:
             - python3
             - -c

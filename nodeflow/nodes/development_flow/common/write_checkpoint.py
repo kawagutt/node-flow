@@ -133,6 +133,7 @@ class WriteCheckpointNode(PythonActionNode):
             stage_result["approved_candidate_path"] = approved_candidate_path
 
         payload = {
+            "schema_version": str(params.get("checkpoint_schema_version") or "development_flow.v1"),
             "written_at": datetime.now(timezone.utc).isoformat(),
             "stage_result": stage_result,
         }

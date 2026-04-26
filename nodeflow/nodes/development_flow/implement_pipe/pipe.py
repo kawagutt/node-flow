@@ -44,6 +44,7 @@ class ImplementPipeNode(PipeNode):
             "load_checkpoint": {
                 "approved_checkpoint_path": ("inputs", "approved_checkpoint_path"),
                 "repo_root": ("inputs", "repo_root"),
+                "rework_context": ("inputs", "rework_context"),
             },
             "implement_with_codex": {
                 "prompt": ("node", "load_checkpoint", "codex_task_prompt", "text"),
@@ -72,6 +73,7 @@ class ImplementPipeNode(PipeNode):
         reset_children_for_graph(self._nodes)
         pipe_params = dict(params) if params else {}
         pipe_inputs = dict(inputs) if inputs else {}
+        pipe_inputs.setdefault("rework_context", "")
 
         resolved_node_params = {
             "load_checkpoint": dict(pipe_params.get("load_checkpoint") or {}),

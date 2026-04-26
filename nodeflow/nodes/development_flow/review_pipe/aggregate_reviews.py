@@ -114,12 +114,13 @@ class AggregateReviewsNode(PythonActionNode):
         params: MappingProxyType,
         context: ExecutionContext,
     ) -> Dict[str, Any]:
-        review_diff = (
-            inputs.get("review_diff") if isinstance(inputs.get("review_diff"), dict) else {}
-        )
-        review_spec = (
-            inputs.get("review_spec") if isinstance(inputs.get("review_spec"), dict) else {}
-        )
+        review_map = {
+            "diff": ("review_diff", "diff"),
+            "wide": ("review_wide", "diff"),
+            "tests": ("review_tests", "tests"),
+            "spec": ("review_spec", "spec"),
+            "spec_revision": ("review_spec_revision", "spec"),
+        }
         test_result = (
             inputs.get("test_result") if isinstance(inputs.get("test_result"), dict) else {}
         )
@@ -131,17 +132,23 @@ class AggregateReviewsNode(PythonActionNode):
         non_blocking_findings: List[Dict[str, Any]] = []
         spec_flags: List[bool] = []
 
-        b1, nb1, s1, _ = _consume_review(review_diff, label="diff", default_area="diff")
-        blocking_findings.extend(b1)
-        non_blocking_findings.extend(nb1)
-        if s1 is not None:
-            spec_flags.append(s1)
-
-        b2, nb2, s2, _ = _consume_review(review_spec, label="spec", default_area="spec")
-        blocking_findings.extend(b2)
-        non_blocking_findings.extend(nb2)
-        if s2 is not None:
-            spec_flags.append(s2)
+        for label, (input_key, area) in review_map.items():
+            er = inputs.get(input_key)
+            if not isinstance(er, dict):
+                blocking_findings.append(
+                    {
+                        "id": f"R_{label.upper()}_MISSING",
+                        "area": "review",
+                        "summary": f"{label} review result is missing",
+                        "suggested_fix": f"wire {input_key} output into aggregate_reviews inputs",
+                    }
+                )
+                continue
+            b, nb, s, _ = _consume_review(er, label=label, default_area=area)
+            blocking_findings.extend(b)
+            non_blocking_findings.extend(nb)
+            if s is not None:
+                spec_flags.append(s)
 
         if test_result.get("ok") is False:
             blocking_findings.append(

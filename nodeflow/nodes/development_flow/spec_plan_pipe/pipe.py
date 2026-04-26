@@ -37,6 +37,7 @@ class SpecPlanPipeNode(PipeNode):
                 "task_prompt": ("inputs", "task_prompt"),
                 "repo_root": ("inputs", "repo_root"),
                 "base_ref": ("inputs", "base_ref"),
+                "revision_context": ("inputs", "revision_context"),
             },
             "draft_spec_plan": {
                 "prompt": ("node", "collect_repo_context", "codex_task_prompt", "text"),
@@ -57,6 +58,7 @@ class SpecPlanPipeNode(PipeNode):
         reset_children_for_graph(self._nodes)
         pipe_params = dict(params) if params else {}
         pipe_inputs = dict(inputs) if inputs else {}
+        pipe_inputs.setdefault("revision_context", "")
 
         resolved_node_params = {
             "collect_repo_context": dict(pipe_params.get("collect_repo_context") or {}),

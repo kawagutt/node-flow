@@ -7,7 +7,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Dict
 
-from nodeflow.core.base_node import ExecutionContext
+from nodeflow.core.base_node import ExecutionContext, NodeExecutionFailure
 from nodeflow.core.node_kinds import PythonActionNode
 
 
@@ -23,7 +23,7 @@ class RunTestsNode(PythonActionNode):
         repo_root = Path(str(inputs.get("repo_root") or ".")).resolve()
         argv = params.get("argv")
         if not isinstance(argv, list) or not argv or not all(isinstance(x, str) for x in argv):
-            argv = ["python", "-m", "pytest", "-q"]
+            raise NodeExecutionFailure("run_tests.argv must be a non-empty list[str]")
 
         timeout = float(params.get("timeout", 300))
         try:
