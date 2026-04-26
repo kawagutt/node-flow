@@ -1,15 +1,14 @@
-version: "1.2"
+version: "1.5"
 name: hello_pipeline
-inputs: {}
+inputs:
+  task_type: {}
 outputs: {}
-params:
-  limit:
-    max_total_node_calls: 100
+params: {}
 graph:
   nodes:
-    - id: hello
-      type: hello
-      inputs: {}
-      params:
-        message: "Hello, NodeFlow!"
-  final: hello
+    - id: route
+      type: python_route_by_task_type
+      inputs:
+        task_type: ${inputs.task_type}
+      params: {}
+  final: route

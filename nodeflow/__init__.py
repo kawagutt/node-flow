@@ -1,5 +1,7 @@
 """
-NodeFlow v1.2 - Everything is a Node workflow execution engine.
+NodeFlow — dispatcher-oriented workflow engine (see doc/nodeflow_spec.md).
 """
 
-__version__ = "1.2.0"
+__version__ = "1.5.0"
+
+import nodeflow.nodes  # noqa: F401, E402 — built-in node registration

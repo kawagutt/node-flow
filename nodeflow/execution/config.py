@@ -1,12 +1,12 @@
 """
-設定管理モジュール（YAML読み込み、deep merge）。
-load_yaml / deep_merge は v1.2 でも使用。load_node_config / load_global_config は v1.11 互換・レガシー用（v1.2 Runner は loader を使用）。
+設定管理モジュール（YAML読み込み、deep merge）。execution 層 — ファイル IO。
 """
 
 import copy
-import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
+import yaml
 
 
 def load_yaml(file_path: str) -> Dict[str, Any]:
@@ -46,7 +46,7 @@ def load_node_config(
     """
     Node config を読み込んで deep merge。
 
-    優先順位（仕様 §6）:
+    優先順位:
     1. DEFAULT_CONFIG（Node クラスから取得し default_config で渡す）
     2. nodes/<node>/config.yaml
     3. Pipeline step config
