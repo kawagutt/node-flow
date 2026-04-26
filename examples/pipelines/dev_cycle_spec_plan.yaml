@@ -1,0 +1,29 @@
+# Development flow P0: stage 1 (spec/plan) single-run pipeline.
+# Hermetic `codex_exec`: reads stdin from collect_repo_context; no Codex CLI required.
+version: "1.5"
+name: dev_cycle_spec_plan
+inputs:
+  task_prompt: {}
+  repo_root: {}
+  base_ref: {}
+graph:
+  nodes:
+    - id: spec_plan
+      type: spec_plan_pipe
+      inputs:
+        task_prompt: ${inputs.task_prompt}
+        repo_root: ${inputs.repo_root}
+        base_ref: ${inputs.base_ref}
+      params:
+        codex_exec:
+          argv:
+            - python
+            - -c
+            - |
+              import json, sys
+              body = sys.stdin.read() or ""
+              print(json.dumps({"spec": "# SPEC\n" + body[:800], "plan": "# PLAN\nstub from hermetic runner"}))
+        write_checkpoint:
+          checkpoint_dir: .nodeflow/checkpoints
+          run_id: "001"
+  final: spec_plan

@@ -83,6 +83,11 @@ class CodexExecNode(CliActionNode):
             task_type = str(task_type)
         resolved_cwd = self._resolve_cwd(p)
 
+        prompt = inputs.get("prompt")
+        stdin: str | None = None
+        if isinstance(prompt, str) and prompt.strip():
+            stdin = prompt
+
         try:
             proc = subprocess.run(
                 argv,
@@ -91,6 +96,7 @@ class CodexExecNode(CliActionNode):
                 timeout=float(timeout),
                 check=False,
                 cwd=resolved_cwd,
+                input=stdin,
             )
         except subprocess.TimeoutExpired as exc:
             return {
@@ -103,7 +109,7 @@ class CodexExecNode(CliActionNode):
                     summary="subprocess timeout",
                     stdout=exc.stdout or None if hasattr(exc, "stdout") else None,
                     stderr=getattr(exc, "stderr", None) or str(exc),
-                    raw_response={"error": "timeout", "cmd": argv},
+                    raw_response={"error": "timeout", "cmd": argv, "stdin_used": bool(stdin)},
                     artifacts=[],
                     provider_meta={"argv": argv, "cwd": resolved_cwd},
                     next_hint=None,
@@ -114,6 +120,7 @@ class CodexExecNode(CliActionNode):
         raw_response = {
             "returncode": proc.returncode,
             "args": argv,
+            "stdin_used": bool(stdin),
         }
         return {
             "execution_result": _execution_result_payload(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from nodeflow.core.registry import registry
+from nodeflow.nodes.development_flow import ImplementPipeNode, ReviewPipeNode, SpecPlanPipeNode
 from nodeflow.nodes.dispatch.implement_with_codex_pipe import ImplementWithCodexPipeNode
 from nodeflow.nodes.dispatch.review_with_claude_pipe import ReviewWithClaudePipeNode
 from nodeflow.nodes.exec.claude_code_exec import ClaudeCodeExecNode
@@ -23,6 +24,10 @@ def register_builtin_nodes() -> None:
     # Preferred v1.5 names for fixed provider pipes (no dynamic dispatch in PipeNode).
     registry.register("review_with_claude", ReviewWithClaudePipeNode, override=True)
     registry.register("implement_with_codex", ImplementWithCodexPipeNode, override=True)
+    # Development flow stage pipes (single-run; human checkpoint via artifacts).
+    registry.register("spec_plan_pipe", SpecPlanPipeNode, override=True)
+    registry.register("implement_pipe", ImplementPipeNode, override=True)
+    registry.register("review_pipe", ReviewPipeNode, override=True)
 
 
 register_builtin_nodes()

@@ -1,0 +1,39 @@
+# Development flow P0: stage 3 (review) single-run pipeline.
+# Hermetic reviewers: stdin is the built prompt; stdout must be the JSON contract (see development_flow README).
+version: "1.5"
+name: dev_cycle_review
+inputs:
+  approved_checkpoint_path: {}
+  repo_root: {}
+  base_ref: {}
+  task_type: {}
+graph:
+  nodes:
+    - id: review
+      type: review_pipe
+      inputs:
+        approved_checkpoint_path: ${inputs.approved_checkpoint_path}
+        repo_root: ${inputs.repo_root}
+        base_ref: ${inputs.base_ref}
+        task_type: ${inputs.task_type}
+      params:
+        review_diff_focused:
+          argv:
+            - python
+            - -c
+            - |
+              import json, sys
+              sys.stdin.read()
+              print(json.dumps({"ok": True, "blocking_findings": [], "non_blocking_findings": [], "spec_revision_needed": False}))
+        review_spec_conformance:
+          argv:
+            - python
+            - -c
+            - |
+              import json, sys
+              sys.stdin.read()
+              print(json.dumps({"ok": True, "blocking_findings": [], "non_blocking_findings": [], "spec_revision_needed": False}))
+        write_checkpoint:
+          checkpoint_dir: .nodeflow/checkpoints
+          run_id: "003"
+  final: review
