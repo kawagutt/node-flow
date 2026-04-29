@@ -96,6 +96,13 @@ Development flow is intentionally split into two layers:
 
 Naming and concrete file examples live in **[`nodeflow/nodes/development_flow/README.md`](nodeflow/nodes/development_flow/README.md)**.
 
+For `development_flow_pipe`, `repo_root` means the target project repository (not the node-flow repository). The flow distinguishes:
+- `source_repo_root`: target repository passed as `repo_root`
+- `workspace_root`: execution root for implementation/review. Currently only `current_repo` is supported; future versions may add git worktree support.
+- `artifact_root`: preferred per-run root under `.nodeflow/runs/<run_dir_name>/` for stage checkpoints (`spec_plan/`, `implement/`, `review/`) and `summary/` when the orchestrator passes `artifact_root` into stage pipes; top-level flow JSON may still use `flow_checkpoint.checkpoint_dir` (see `nodeflow/nodes/development_flow/README.md`).
+
+`.nodeflow/` should usually be git-ignored. Fresh `prepare_workspace` / `start` clean checks skip paths under `.nodeflow/` by default so generated metadata does not block runs.
+
 `execution.loader.load_node_pipeline()` is a raw loader for version + top-level shape checks.
 Use `execution.loader.load_pipeline()` for executable graph validation.
 

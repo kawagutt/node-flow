@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Dict
 
@@ -9,11 +10,10 @@ from nodeflow.core.base_node import (
     BaseNode,
     ExecutionContext,
     NodeExecutionFailure,
-    NodeExecutionLimit,
 )
 from nodeflow.core.node_kinds import PipeNode, reset_children_for_graph
 from nodeflow.core.runner import Runner
-from nodeflow.nodes.development_flow.common.pipe_helpers import raise_child_fatal_if_any
+from nodeflow.nodes.development_flow.common.pipe_helpers import run_until_node_done
 from nodeflow.nodes.development_flow.common.write_checkpoint import WriteCheckpointNode
 from nodeflow.nodes.development_flow.spec_plan_pipe.collect_repo_context import (
     CollectRepoContextNode,
@@ -75,8 +75,25 @@ class SpecPlanPipeNode(PipeNode):
         rr = pipe_inputs.get("repo_root")
         if isinstance(rr, str):
             resolved_node_params["write_checkpoint"]["_repo_root_for_paths"] = rr
+        art = pipe_inputs.get("artifact_root")
+        if isinstance(art, str) and art.strip():
+            write_checkpoint_raw_params = pipe_params.get("write_checkpoint")
+            checkpoint_dir_explicit = isinstance(write_checkpoint_raw_params, dict) and (
+                "checkpoint_dir" in write_checkpoint_raw_params
+            )
+            if checkpoint_dir_explicit:
+                raise NodeExecutionFailure(
+                    "spec_plan_pipe: artifact_root and write_checkpoint.checkpoint_dir cannot both be set"
+                )
+            resolved_node_params["write_checkpoint"]["checkpoint_dir"] = str(
+                (Path(art.strip()) / "spec_plan").resolve()
+            )
         workspace_dir = pipe_params.get("_workspace_dir")
-        if isinstance(workspace_dir, str):
+        if not isinstance(workspace_dir, str) or not workspace_dir.strip():
+            rr_for_workspace = pipe_inputs.get("repo_root")
+            if isinstance(rr_for_workspace, str) and rr_for_workspace.strip():
+                workspace_dir = rr_for_workspace
+        if isinstance(workspace_dir, str) and workspace_dir.strip():
             resolved_node_params["draft_spec_plan"].setdefault("_workspace_dir", workspace_dir)
 
         latest_output: Dict[str, Dict[str, Any]] = {}
@@ -90,16 +107,12 @@ class SpecPlanPipeNode(PipeNode):
             latest_output=latest_output,
         )
 
-        while True:
-            progressed = runner.step()
-            statuses = [self._nodes[nid].read_status() for nid in self._graph_node_order]
-            raise_child_fatal_if_any(graph_node_order=self._graph_node_order, nodes=self._nodes)
-            if "limit" in statuses:
-                raise NodeExecutionLimit("child limit")
-            if self._nodes["write_checkpoint"].read_status() == "done":
-                break
-            if not progressed:
-                raise NodeExecutionFailure("invalid execution state")
+        run_until_node_done(
+            runner=runner,
+            graph_node_order=self._graph_node_order,
+            nodes=self._nodes,
+            done_node_id="write_checkpoint",
+        )
 
         out: Dict[str, Any] = {}
         if "write_checkpoint" in latest_output:

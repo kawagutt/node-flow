@@ -31,7 +31,7 @@ class CollectDiffNode(PythonActionNode):
         excerpt_max_files = int(params.get("untracked_excerpt_max_files", 10))
         excerpt_max_bytes = int(params.get("untracked_excerpt_max_bytes", 2000))
 
-        raw_ignored = params.get("ignored_untracked_prefixes")
+        raw_ignored = params.get("ignored_changed_file_prefixes")
         if isinstance(raw_ignored, (list, tuple)):
             ignored_prefixes: List[str] = [str(p) for p in raw_ignored]
         else:
