@@ -15,7 +15,10 @@ from nodeflow.nodes.development_flow.common.check_source_workspace import (
     CheckSourceWorkspaceNode,
 )
 from nodeflow.nodes.development_flow.common.collect_diff import CollectDiffNode
-from nodeflow.nodes.development_flow.common.git_status import status_has_non_ignored_changes
+from nodeflow.nodes.development_flow.common.git_status import (
+    status_has_non_ignored_changes,
+    status_violates_start_policy,
+)
 from nodeflow.nodes.development_flow.common.load_checkpoint import LoadCheckpointNode
 from nodeflow.nodes.development_flow.common.prepare_development_run_context import (
     PrepareDevelopmentRunContextNode,
@@ -1677,6 +1680,66 @@ def test_status_has_non_ignored_changes_rename_from_src_to_nodeflow_is_dirty() -
 def test_status_has_non_ignored_changes_rename_inside_nodeflow_is_ignored() -> None:
     status = "R  .nodeflow/a.json -> .nodeflow/b.json\n"
     assert status_has_non_ignored_changes(status, [".nodeflow/"]) is False
+
+
+def test_status_violates_start_policy_tracked_change_is_forbidden() -> None:
+    status = " M src/a.py\n"
+    assert (
+        status_violates_start_policy(
+            status,
+            ignored_prefixes=[".nodeflow/"],
+            fail_on_tracked_changes=True,
+            fail_on_untracked=False,
+            allowed_untracked_prefixes=[],
+            blocked_untracked_globs=[],
+        )
+        is True
+    )
+
+
+def test_status_violates_start_policy_untracked_is_allowed_by_default() -> None:
+    status = "?? notes/todo.txt\n"
+    assert (
+        status_violates_start_policy(
+            status,
+            ignored_prefixes=[".nodeflow/"],
+            fail_on_tracked_changes=True,
+            fail_on_untracked=False,
+            allowed_untracked_prefixes=[],
+            blocked_untracked_globs=[],
+        )
+        is False
+    )
+
+
+def test_status_violates_start_policy_blocked_untracked_glob_is_forbidden() -> None:
+    status = "?? src/new_module.py\n"
+    assert (
+        status_violates_start_policy(
+            status,
+            ignored_prefixes=[".nodeflow/"],
+            fail_on_tracked_changes=True,
+            fail_on_untracked=False,
+            allowed_untracked_prefixes=[],
+            blocked_untracked_globs=["src/**", "*.py"],
+        )
+        is True
+    )
+
+
+def test_status_violates_start_policy_allowed_untracked_prefix_overrides_fail_flag() -> None:
+    status = "?? docs/notes.md\n"
+    assert (
+        status_violates_start_policy(
+            status,
+            ignored_prefixes=[".nodeflow/"],
+            fail_on_tracked_changes=True,
+            fail_on_untracked=True,
+            allowed_untracked_prefixes=["docs/"],
+            blocked_untracked_globs=[],
+        )
+        is False
+    )
 
 
 def test_approve_current_repo_uses_source_repo_as_workspace(tmp_path: Path) -> None:

@@ -26,6 +26,16 @@ graph:
         development_name: ${inputs.development_name}
         run_id: ${inputs.run_id}
       params:
+        check_source_workspace:
+          fail_on_tracked_changes: true
+          fail_on_untracked: false
+          ignored_dirty_prefixes:
+            - .nodeflow/
+          blocked_untracked_globs:
+            - src/**
+            - nodeflow/**
+            - tests/**
+            - "*.py"
         prepare_development_run_context:
           branch_prefix: feat/nodeflow
           artifact_root_dir: .nodeflow/runs

@@ -12,7 +12,7 @@ from nodeflow.core.node_kinds import PythonActionNode
 from nodeflow.nodes.development_flow.common.git_repo import resolve_git_toplevel
 from nodeflow.nodes.development_flow.common.git_status import (
     default_ignored_dirty_prefixes,
-    status_has_non_ignored_changes,
+    status_violates_start_policy,
 )
 
 
@@ -59,7 +59,30 @@ class CheckSourceWorkspaceNode(PythonActionNode):
             prefixes = [str(x) for x in ignored_prefixes if isinstance(x, str)]
         else:
             prefixes = default_ignored_dirty_prefixes()
-        if status_has_non_ignored_changes((status_cp.stdout or ""), prefixes):
+        fail_on_tracked_changes = bool(params.get("fail_on_tracked_changes", True))
+        fail_on_untracked = bool(params.get("fail_on_untracked", False))
+        allowed_untracked_prefixes_raw = params.get("allowed_untracked_prefixes")
+        if isinstance(allowed_untracked_prefixes_raw, list):
+            allowed_untracked_prefixes = [
+                str(x) for x in allowed_untracked_prefixes_raw if isinstance(x, str)
+            ]
+        else:
+            allowed_untracked_prefixes = []
+        blocked_untracked_globs_raw = params.get("blocked_untracked_globs")
+        if isinstance(blocked_untracked_globs_raw, list):
+            blocked_untracked_globs = [
+                str(x) for x in blocked_untracked_globs_raw if isinstance(x, str)
+            ]
+        else:
+            blocked_untracked_globs = []
+        if status_violates_start_policy(
+            (status_cp.stdout or ""),
+            ignored_prefixes=prefixes,
+            fail_on_tracked_changes=fail_on_tracked_changes,
+            fail_on_untracked=fail_on_untracked,
+            allowed_untracked_prefixes=allowed_untracked_prefixes,
+            blocked_untracked_globs=blocked_untracked_globs,
+        ):
             raise NodeExecutionFailure(
                 "source repository is dirty; commit/stash changes before starting development_flow"
             )
