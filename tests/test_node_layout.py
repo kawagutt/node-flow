@@ -22,7 +22,7 @@ FORBIDDEN_DIR_NAMES = {
 
 # Existing violations allowed in this PR. Remove entries in later phases.
 ALLOWED_EXISTING_FORBIDDEN_DIRS = {
-    "nodeflow/nodes/development_flow/common",
+    "nodeflow/workflows/development_flow/common",
 }
 
 # Existing directories that do not yet follow node_<name>.py.
@@ -30,17 +30,16 @@ ALLOWED_EXISTING_FORBIDDEN_DIRS = {
 ALLOWED_EXISTING_MISSING_NODE_FILE = {
     "nodeflow/nodes",
     "nodeflow/nodes/base",
-    "nodeflow/nodes/development_flow",
-    "nodeflow/nodes/development_flow/actions",
-    "nodeflow/nodes/development_flow/common",
-    "nodeflow/nodes/development_flow/development_flow_pipe",
-    "nodeflow/nodes/development_flow/implement_pipe",
-    "nodeflow/nodes/development_flow/review_pipe",
-    "nodeflow/nodes/development_flow/spec_plan_pipe",
-    "nodeflow/nodes/dispatch",
     "nodeflow/nodes/exec",
     "nodeflow/nodes/routing",
     "nodeflow/nodes/summarize",
+    "nodeflow/workflows",
+    "nodeflow/workflows/development_flow",
+    "nodeflow/workflows/development_flow/common",
+    "nodeflow/workflows/development_flow/development_flow_pipe",
+    "nodeflow/workflows/development_flow/implement_pipe",
+    "nodeflow/workflows/development_flow/review_pipe",
+    "nodeflow/workflows/development_flow/spec_plan_pipe",
 }
 
 

@@ -11,37 +11,37 @@ from pathlib import Path
 from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.core.loader import load_pipeline
 from nodeflow.core.run import load_and_kick_pipeline
-from nodeflow.nodes.development_flow.common.check_source_workspace import (
+from nodeflow.nodes.exec.codex_exec import CodexExecNode
+from nodeflow.workflows.development_flow.common.check_source_workspace import (
     CheckSourceWorkspaceNode,
 )
-from nodeflow.nodes.development_flow.common.collect_diff import CollectDiffNode
-from nodeflow.nodes.development_flow.common.git_status import (
+from nodeflow.workflows.development_flow.common.collect_diff import CollectDiffNode
+from nodeflow.workflows.development_flow.common.git_status import (
     status_has_non_ignored_changes,
     status_violates_start_policy,
 )
-from nodeflow.nodes.development_flow.common.load_checkpoint import LoadCheckpointNode
-from nodeflow.nodes.development_flow.common.prepare_development_run_context import (
+from nodeflow.workflows.development_flow.common.load_checkpoint import LoadCheckpointNode
+from nodeflow.workflows.development_flow.common.prepare_development_run_context import (
     PrepareDevelopmentRunContextNode,
 )
-from nodeflow.nodes.development_flow.common.prepare_workspace import PrepareWorkspaceNode
-from nodeflow.nodes.development_flow.common.write_checkpoint import WriteCheckpointNode
-from nodeflow.nodes.development_flow.common.write_development_summary import (
+from nodeflow.workflows.development_flow.common.prepare_workspace import PrepareWorkspaceNode
+from nodeflow.workflows.development_flow.common.write_checkpoint import WriteCheckpointNode
+from nodeflow.workflows.development_flow.common.write_development_summary import (
     WriteDevelopmentSummaryNode,
 )
-from nodeflow.nodes.development_flow.development_flow_pipe import DevelopmentFlowPipeNode
-from nodeflow.nodes.development_flow.implement_pipe import ImplementPipeNode
-from nodeflow.nodes.development_flow.review_pipe import ReviewPipeNode
-from nodeflow.nodes.development_flow.review_pipe.aggregate_reviews import AggregateReviewsNode
-from nodeflow.nodes.development_flow.review_pipe.prompt_common import extract_diff_context
-from nodeflow.nodes.development_flow.review_pipe.review_parse import (
+from nodeflow.workflows.development_flow.development_flow_pipe import DevelopmentFlowPipeNode
+from nodeflow.workflows.development_flow.implement_pipe import ImplementPipeNode
+from nodeflow.workflows.development_flow.review_pipe import ReviewPipeNode
+from nodeflow.workflows.development_flow.review_pipe.aggregate_reviews import AggregateReviewsNode
+from nodeflow.workflows.development_flow.review_pipe.prompt_common import extract_diff_context
+from nodeflow.workflows.development_flow.review_pipe.review_parse import (
     parse_review_contract_from_execution_result,
     validate_review_contract_payload,
 )
-from nodeflow.nodes.development_flow.spec_plan_pipe import SpecPlanPipeNode
-from nodeflow.nodes.development_flow.spec_plan_pipe.collect_repo_context import (
+from nodeflow.workflows.development_flow.spec_plan_pipe import SpecPlanPipeNode
+from nodeflow.workflows.development_flow.spec_plan_pipe.collect_repo_context import (
     CollectRepoContextNode,
 )
-from nodeflow.nodes.exec.codex_exec import CodexExecNode
 
 
 def test_dev_cycle_example_yamls_load():
@@ -1574,7 +1574,7 @@ def test_development_flow_start_rejects_flow_checkpoint_path_even_when_valid(
 
 
 def test_run_tests_requires_argv() -> None:
-    from nodeflow.nodes.development_flow.implement_pipe.run_tests import RunTestsNode
+    from nodeflow.workflows.development_flow.implement_pipe.run_tests import RunTestsNode
 
     node = RunTestsNode()
     node.execute({"repo_root": "."}, {})

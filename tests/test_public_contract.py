@@ -56,8 +56,12 @@ def test_runner_has_no_resolve_role_method():
 
 def test_fixed_provider_pipe_bundles_child_domain_only():
     """Custom PipeNode.run() must not leak child _runtime into bundled domain ports."""
-    from nodeflow.nodes.dispatch.implement_with_codex_pipe import ImplementWithCodexPipeNode
-    from nodeflow.nodes.dispatch.review_with_claude_pipe import ReviewWithClaudePipeNode
+    from nodeflow.workflows.implement_with_codex.node_implement_with_codex import (
+        ImplementWithCodexPipeNode,
+    )
+    from nodeflow.workflows.review_with_claude.node_review_with_claude import (
+        ReviewWithClaudePipeNode,
+    )
 
     impl = ImplementWithCodexPipeNode()
     out_impl = impl.execute(
@@ -86,8 +90,12 @@ def test_fixed_provider_pipe_bundles_child_domain_only():
 
 
 def test_fixed_provider_pipe_resolves_relative_cwd_against_workspace(tmp_path):
-    from nodeflow.nodes.dispatch.implement_with_codex_pipe import ImplementWithCodexPipeNode
-    from nodeflow.nodes.dispatch.review_with_claude_pipe import ReviewWithClaudePipeNode
+    from nodeflow.workflows.implement_with_codex.node_implement_with_codex import (
+        ImplementWithCodexPipeNode,
+    )
+    from nodeflow.workflows.review_with_claude.node_review_with_claude import (
+        ReviewWithClaudePipeNode,
+    )
 
     workspace = tmp_path / "workspace"
     subdir = workspace / "sub"
@@ -117,8 +125,12 @@ def test_fixed_provider_pipe_resolves_relative_cwd_against_workspace(tmp_path):
 
 
 def test_fixed_provider_pipe_requires_task_type_input():
-    from nodeflow.nodes.dispatch.implement_with_codex_pipe import ImplementWithCodexPipeNode
-    from nodeflow.nodes.dispatch.review_with_claude_pipe import ReviewWithClaudePipeNode
+    from nodeflow.workflows.implement_with_codex.node_implement_with_codex import (
+        ImplementWithCodexPipeNode,
+    )
+    from nodeflow.workflows.review_with_claude.node_review_with_claude import (
+        ReviewWithClaudePipeNode,
+    )
 
     impl = ImplementWithCodexPipeNode()
     out_impl = impl.execute(

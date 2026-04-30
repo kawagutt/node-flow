@@ -11,7 +11,7 @@ NodeFlow wires **routing**, **external execution**, and **summarization** into r
 - **Role** (`route_by_task_type`, `summarize_result`, `exec`, …) is a **class attribute**, not an inheritance axis.
 - **Runner** stays minimal: it only runs `execute` in graph order; **no routing, provider selection, or role interpretation** inside the Runner.
 
-Runtime primitives (`BaseNode.execute`, limits, `_runtime` / `_usage`, `ExecutionContext`) and **taxonomy** (`PipeNode`, `ActionNode`, …) live in **`nodeflow/core/`**. Concrete dispatcher nodes live in **`nodeflow/nodes/`** under **role/purpose** folders (`routing/`, `summarize/`, `exec/`, `dispatch/`).
+Runtime primitives (`BaseNode.execute`, limits, `_runtime` / `_usage`, `ExecutionContext`) and **taxonomy** (`PipeNode`, `ActionNode`, …) live in **`nodeflow/core/`**. Reusable building-block nodes live in **`nodeflow/nodes/`** under **role/purpose** folders (`routing/`, `summarize/`, `exec/`). Packaged composite workflows (`development_flow`, fixed-provider pipes) live in **`nodeflow/workflows/`**.
 
 ## Install
 
@@ -89,17 +89,20 @@ Fixed provider pipe examples with nested `argv` are under **`examples/pipelines/
 
 ## Development flow nodes and examples (P0/P2)
 
-Development flow is intentionally split into two layers:
+Development flow is intentionally split into:
 
-- **Implementation (`nodeflow/nodes/`)**: built-in reusable node types and registry keys, including top-level `development_flow_pipe` and stage pipes.
+- **Reusable nodes (`nodeflow/nodes/`)**: `exec`, `routing`, `summarize`, and other building-block registry types.
+- **Packaged workflows (`nodeflow/workflows/`)**: `development_flow`, `review_with_claude`, `implement_with_codex` (composite nodes; same YAML `type` registry keys as before).
 - **Usage examples (`examples/`)**: runnable samples/templates that instantiate those node types; no orchestration logic lives in example YAML files.
 
-Naming and concrete file examples live in **[`nodeflow/nodes/development_flow/README.md`](nodeflow/nodes/development_flow/README.md)**.
+Naming and concrete file examples live in **[`nodeflow/workflows/development_flow/README.md`](nodeflow/workflows/development_flow/README.md)**.
+
+**Import path note:** workflow node classes moved from `nodeflow.nodes.development_flow` / `nodeflow.nodes.dispatch` to `nodeflow.workflows.*`. YAML registry keys are unchanged.
 
 For `development_flow_pipe`, `repo_root` means the target project repository (not the node-flow repository). The flow distinguishes:
 - `source_repo_root`: target repository passed as `repo_root`
 - `workspace_root`: execution root for implementation/review. Currently only `current_repo` is supported; future versions may add git worktree support.
-- `artifact_root`: preferred per-run root under `.nodeflow/runs/<run_dir_name>/` for stage checkpoints (`spec_plan/`, `implement/`, `review/`) and `summary/` when the orchestrator passes `artifact_root` into stage pipes; top-level flow JSON may still use `flow_checkpoint.checkpoint_dir` (see `nodeflow/nodes/development_flow/README.md`).
+- `artifact_root`: preferred per-run root under `.nodeflow/runs/<run_dir_name>/` for stage checkpoints (`spec_plan/`, `implement/`, `review/`) and `summary/` when the orchestrator passes `artifact_root` into stage pipes; top-level flow JSON may still use `flow_checkpoint.checkpoint_dir` (see `nodeflow/workflows/development_flow/README.md`).
 
 `.nodeflow/` should usually be git-ignored. Fresh `prepare_workspace` / `start` clean checks skip paths under `.nodeflow/` by default so generated metadata does not block runs.
 
@@ -123,12 +126,14 @@ nodeflow/
 │   ├── loader.py         # pipeline YAML parse + root PipeNode assembly
 │   ├── config.py         # YAML IO helpers (load_yaml, deep merge)
 │   └── run.py            # load_and_kick_pipeline entry
-├── nodes/                # concrete nodes only (by role / purpose)
+├── nodes/                # reusable building-block nodes (by role / purpose)
 │   ├── routing/
 │   ├── summarize/
-│   ├── exec/
-│   ├── dispatch/
-│   └── development_flow/          # stage pipes; see development_flow/README.md
+│   └── exec/
+└── workflows/            # packaged composite workflows (development_flow, fixed-provider pipes)
+    ├── development_flow/ # see workflows/development_flow/README.md
+    ├── review_with_claude/
+    └── implement_with_codex/
 ```
 
 ## Custom nodes

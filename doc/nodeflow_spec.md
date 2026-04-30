@@ -474,7 +474,8 @@ node の出力トップレベルにおいて、**予約される runtime 名**�
 ### 15.1 方針
 
 * **`core/`** — **`BaseNode`**、**taxonomy**（`PipeNode` / `ActionNode` と implementation kind）、**`Runner`**、**registry**。
-* **`nodes/`** — **concrete のみ**。第一分類軸は **role または purpose**（`routing/`、`summarize/`、`exec/`、`dispatch/` 等）。
+* **`nodes/`** — **再利用可能な building-block concrete のみ**。第一分類軸は **role または purpose**（`routing/`、`summarize/`、`exec/` 等）。
+* **`workflows/`** — **ユーザー向けの複合 workflow**（例: `development_flow`、固定プロバイダの合成 Pipe）。`nodes/` に混在させない。
 * **`Action/` と `Pipe/` をディレクトリ分類の第一軸にしない**。
 * **特定の concrete クラス名**を **標準ディレクトリ構成の前提**にしない（説明用・実験用の合成 node に依存したレイアウトを強制しない）。
 * **`PipeNode` は special concrete を仕様上要求しない**。
@@ -501,14 +502,18 @@ nodeflow/
     routing/
     summarize/
     exec/
-    dispatch/
+
+  workflows/
+    development_flow/
+    review_with_claude/
+    implement_with_codex/
 ```
 
 **`core/loader.py` / `core/run.py` / `core/config.py`** — **`core/runner.py`**（graph の step 実行）とは別に、**pipeline 読み込み・組み立て・ルート `execute` のキック**と YAML ファイル IO を置く。`loader` / `run` / `config` の役割分担はリポジトリ任せ。
 
 ### 15.3 ルール
 
-* **taxonomy（抽象の node kind）** は **`core/`**（上記 `node_kinds/` 等）。**concrete** は **`nodes/`** のみ。
+* **taxonomy（抽象の node kind）** は **`core/`**（上記 `node_kinds/` 等）。**building-block concrete** は **`nodes/`**、**パッケージされた複合 workflow** は **`workflows/`**。
 * **`core/`** に **アプリ concrete** を置かない。
 * **built-in registration** は **一箇所に集約**する。
 * **直列 subgraph** は **`PipeNode` の能力**として表現し、**特別な concrete 名を仕様が要求しない**。

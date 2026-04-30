@@ -3,20 +3,24 @@
 from __future__ import annotations
 
 from nodeflow.core.registry import registry
-from nodeflow.nodes.development_flow import (
-    DevelopmentFlowPipeNode,
-    ImplementPipeNode,
-    ReviewPipeNode,
-    SpecPlanPipeNode,
-)
-from nodeflow.nodes.dispatch.implement_with_codex_pipe import ImplementWithCodexPipeNode
-from nodeflow.nodes.dispatch.review_with_claude_pipe import ReviewWithClaudePipeNode
 from nodeflow.nodes.exec.claude_code_exec import ClaudeCodeExecNode
 from nodeflow.nodes.exec.codex_exec import CodexExecNode
 from nodeflow.nodes.exec.kimi_exec import KimiExecNode
 from nodeflow.nodes.exec.qwen_exec import QwenExecNode
 from nodeflow.nodes.routing.python_route_by_task_type import PythonRouteByTaskTypeNode
 from nodeflow.nodes.summarize.python_summarize_result import PythonSummarizeResultNode
+from nodeflow.workflows.development_flow import (
+    DevelopmentFlowPipeNode,
+    ImplementPipeNode,
+    ReviewPipeNode,
+    SpecPlanPipeNode,
+)
+from nodeflow.workflows.implement_with_codex.node_implement_with_codex import (
+    ImplementWithCodexPipeNode,
+)
+from nodeflow.workflows.review_with_claude.node_review_with_claude import (
+    ReviewWithClaudePipeNode,
+)
 
 
 def register_builtin_nodes() -> None:
