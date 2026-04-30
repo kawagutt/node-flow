@@ -6,31 +6,22 @@ import json
 import re
 import subprocess
 import sys
+from fnmatch import fnmatch
 from pathlib import Path
 
 from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.core.loader import load_pipeline
 from nodeflow.core.run import load_and_kick_pipeline
 from nodeflow.nodes.exec.codex_exec import CodexExecNode
-from nodeflow.workflows.development_flow.common.check_source_workspace import (
-    CheckSourceWorkspaceNode,
-)
-from nodeflow.workflows.development_flow.common.collect_diff import CollectDiffNode
-from nodeflow.workflows.development_flow.common.git_status import (
-    status_has_non_ignored_changes,
-    status_violates_start_policy,
-)
-from nodeflow.workflows.development_flow.common.load_checkpoint import LoadCheckpointNode
-from nodeflow.workflows.development_flow.common.prepare_development_run_context import (
+from nodeflow.nodes.git.collect_diff import CollectDiffNode
+from nodeflow.workflows.development_flow.check_source_workspace import CheckSourceWorkspaceNode
+from nodeflow.workflows.development_flow.implement import ImplementPipeNode
+from nodeflow.workflows.development_flow.load_checkpoint import LoadCheckpointNode
+from nodeflow.workflows.development_flow.node_development_flow import DevelopmentFlowPipeNode
+from nodeflow.workflows.development_flow.prepare_development_run_context import (
     PrepareDevelopmentRunContextNode,
 )
-from nodeflow.workflows.development_flow.common.prepare_workspace import PrepareWorkspaceNode
-from nodeflow.workflows.development_flow.common.write_checkpoint import WriteCheckpointNode
-from nodeflow.workflows.development_flow.common.write_development_summary import (
-    WriteDevelopmentSummaryNode,
-)
-from nodeflow.workflows.development_flow.implement import ImplementPipeNode
-from nodeflow.workflows.development_flow.node_development_flow import DevelopmentFlowPipeNode
+from nodeflow.workflows.development_flow.prepare_workspace import PrepareWorkspaceNode
 from nodeflow.workflows.development_flow.review import ReviewPipeNode
 from nodeflow.workflows.development_flow.review.aggregate_reviews import AggregateReviewsNode
 from nodeflow.workflows.development_flow.review.prompt_common import extract_diff_context
@@ -42,6 +33,87 @@ from nodeflow.workflows.development_flow.spec_plan import SpecPlanPipeNode
 from nodeflow.workflows.development_flow.spec_plan.collect_repo_context import (
     CollectRepoContextNode,
 )
+from nodeflow.workflows.development_flow.write_checkpoint import WriteCheckpointNode
+from nodeflow.workflows.development_flow.write_development_summary import (
+    WriteDevelopmentSummaryNode,
+)
+
+
+def default_ignored_dirty_prefixes():
+    return [".nodeflow/"]
+
+
+def _is_ignored(path: str, ignored_prefixes: list[str]) -> bool:
+    return any(path.startswith(prefix) for prefix in ignored_prefixes)
+
+
+def _parse_porcelain_v1_line(line: str) -> dict[str, str]:
+    xy = line[:2] if len(line) >= 2 else ""
+    path_part = line[3:].strip() if len(line) >= 3 else line.strip()
+    if path_part.startswith('"') and path_part.endswith('"'):
+        path_part = path_part[1:-1]
+    if " -> " in path_part:
+        old_path, new_path = path_part.split(" -> ", 1)
+        old_path = old_path.strip().strip('"')
+        new_path = new_path.strip().strip('"')
+        return {"xy": xy, "path": new_path, "old_path": old_path, "new_path": new_path}
+    return {"xy": xy, "path": path_part, "old_path": path_part, "new_path": path_part}
+
+
+def status_has_non_ignored_changes(status_text: str, ignored_prefixes: list[str]) -> bool:
+    for raw in status_text.splitlines():
+        line = raw.rstrip("\r\n")
+        if not line:
+            continue
+        parsed = _parse_porcelain_v1_line(line)
+        old_path = parsed["old_path"]
+        new_path = parsed["new_path"]
+        if old_path != new_path:
+            if _is_ignored(old_path, ignored_prefixes) and _is_ignored(
+                new_path, ignored_prefixes
+            ):
+                continue
+            return True
+        if _is_ignored(parsed["path"], ignored_prefixes):
+            continue
+        return True
+    return False
+
+
+def status_violates_start_policy(
+    status_text: str,
+    *,
+    ignored_prefixes: list[str],
+    fail_on_tracked_changes: bool,
+    fail_on_untracked: bool,
+    allowed_untracked_prefixes: list[str],
+    blocked_untracked_globs: list[str],
+) -> bool:
+    for raw in status_text.splitlines():
+        line = raw.rstrip("\r\n")
+        if not line:
+            continue
+        parsed = _parse_porcelain_v1_line(line)
+        xy = parsed["xy"]
+        path = parsed["path"]
+        old_path = parsed["old_path"]
+        new_path = parsed["new_path"]
+        if _is_ignored(old_path, ignored_prefixes) and _is_ignored(new_path, ignored_prefixes):
+            continue
+
+        is_untracked = xy == "??"
+        if is_untracked:
+            if any(fnmatch(path, pattern) for pattern in blocked_untracked_globs):
+                return True
+            if any(path.startswith(prefix) for prefix in allowed_untracked_prefixes):
+                continue
+            if fail_on_untracked:
+                return True
+            continue
+
+        if fail_on_tracked_changes:
+            return True
+    return False
 
 
 def test_dev_cycle_example_yamls_load():

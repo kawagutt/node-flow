@@ -21,9 +21,7 @@ FORBIDDEN_DIR_NAMES = {
 }
 
 # Existing violations allowed in this PR. Remove entries in later phases.
-ALLOWED_EXISTING_FORBIDDEN_DIRS = {
-    "nodeflow/workflows/development_flow/common",
-}
+ALLOWED_EXISTING_FORBIDDEN_DIRS: set[str] = set()
 
 # Existing directories that do not yet follow node_<name>.py.
 # This test is forward-looking in Phase 0-2.
@@ -31,10 +29,10 @@ ALLOWED_EXISTING_MISSING_NODE_FILE = {
     "nodeflow/nodes",
     "nodeflow/nodes/base",
     "nodeflow/nodes/exec",
+    "nodeflow/nodes/git",
     "nodeflow/nodes/routing",
     "nodeflow/nodes/summarize",
     "nodeflow/workflows",
-    "nodeflow/workflows/development_flow/common",
 }
 
 

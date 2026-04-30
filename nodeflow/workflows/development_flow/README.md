@@ -44,17 +44,12 @@ Fixture for implement/review inputs:
 nodeflow/workflows/development_flow/
   README.md                 # this file
   __init__.py
-  common/
-    collect_diff.py         # git diff <base_ref>, status --short, untracked + text excerpts
-    load_checkpoint.py      # approved_checkpoint_path (single-file); paths vs repo_root
-    write_checkpoint.py     # merges child ok into stage_result.ok; next_action_on_failure
-    pipe_helpers.py         # shared fatal-child reporting
-    check_source_workspace.py
-    git_repo.py
-    git_status.py
-    prepare_workspace.py
-    prepare_development_run_context.py
-    write_development_summary.py
+  check_source_workspace/   # node_check_source_workspace.py
+  load_checkpoint/          # node_load_checkpoint.py
+  write_checkpoint/           # node_write_checkpoint.py
+  prepare_workspace/          # node_prepare_workspace.py
+  prepare_development_run_context/
+  write_development_summary/
   node_development_flow.py  # top-level orchestration with checkpoint/resume actions
   profiles.py               # model/cost profile loading + merge helpers
   state_machine.py          # merge gate + allowed_actions helpers
@@ -75,7 +70,7 @@ nodeflow/workflows/development_flow/
     build_spec_revision_review_prompt.py
 ```
 
-`PipeNode` subclasses only wire children; semantics live in the `ActionNode` modules under each folder (or under `common/`).
+`PipeNode` subclasses only wire children; semantics live in the `ActionNode` modules under each folder (including root-level subnodes such as `write_checkpoint/`).
 
 ## Approved checkpoint (P0)
 

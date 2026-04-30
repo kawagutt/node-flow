@@ -4,20 +4,19 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from nodeflow.core.base_node import (
     BaseNode,
     ExecutionContext,
     NodeExecutionFailure,
+    NodeExecutionLimit,
 )
 from nodeflow.core.node_kinds import PipeNode, reset_children_for_graph
 from nodeflow.core.runner import Runner
 from nodeflow.nodes.exec.codex_exec import CodexExecNode
-from nodeflow.workflows.development_flow.common.collect_diff import CollectDiffNode
-from nodeflow.workflows.development_flow.common.load_checkpoint import LoadCheckpointNode
-from nodeflow.workflows.development_flow.common.pipe_helpers import run_until_node_done
-from nodeflow.workflows.development_flow.common.write_checkpoint import WriteCheckpointNode
+from nodeflow.nodes.git.collect_diff import CollectDiffNode
+from nodeflow.workflows.development_flow.load_checkpoint import LoadCheckpointNode
 from nodeflow.workflows.development_flow.review.aggregate_reviews import AggregateReviewsNode
 from nodeflow.workflows.development_flow.review.build_diff_review_prompt import (
     BuildDiffReviewPromptNode,
@@ -34,6 +33,37 @@ from nodeflow.workflows.development_flow.review.build_test_review_prompt import 
 from nodeflow.workflows.development_flow.review.build_wide_scan_review_prompt import (
     BuildWideScanReviewPromptNode,
 )
+from nodeflow.workflows.development_flow.write_checkpoint import WriteCheckpointNode
+
+
+def _raise_child_fatal_if_any(
+    *,
+    graph_node_order: List[str],
+    nodes: Dict[str, BaseNode],
+    prefix: str = "child fatal",
+) -> None:
+    fatal_children = [nid for nid in graph_node_order if nodes[nid].read_status() == "fatal"]
+    if fatal_children:
+        raise NodeExecutionFailure(f"{prefix}: {fatal_children}")
+
+
+def _run_until_node_done(
+    *,
+    runner: Runner,
+    graph_node_order: List[str],
+    nodes: Dict[str, BaseNode],
+    done_node_id: str,
+) -> None:
+    while True:
+        progressed = runner.step()
+        statuses = [nodes[nid].read_status() for nid in graph_node_order]
+        _raise_child_fatal_if_any(graph_node_order=graph_node_order, nodes=nodes)
+        if "limit" in statuses:
+            raise NodeExecutionLimit("child limit")
+        if nodes[done_node_id].read_status() == "done":
+            return
+        if not progressed:
+            raise NodeExecutionFailure("invalid execution state")
 
 
 class ReviewPipeNode(PipeNode):
@@ -217,7 +247,7 @@ class ReviewPipeNode(PipeNode):
             latest_output=latest_output,
         )
 
-        run_until_node_done(
+        _run_until_node_done(
             runner=runner,
             graph_node_order=self._graph_node_order,
             nodes=self._nodes,

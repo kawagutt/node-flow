@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from types import MappingProxyType
@@ -10,7 +11,36 @@ from typing import Any, Dict, List
 
 from nodeflow.core.base_node import ExecutionContext
 from nodeflow.core.node_kinds import PythonActionNode
-from nodeflow.workflows.development_flow.common.json_stdout import loads_first_json_object
+
+
+def _extract_first_json_object(text: str) -> str | None:
+    if not text or not text.strip():
+        return None
+    s = text.strip()
+    fence = re.search(r"```(?:json)?\s*([\s\S]*?)```", s, re.IGNORECASE)
+    if fence:
+        s = fence.group(1).strip()
+
+    decoder = json.JSONDecoder()
+    for i, ch in enumerate(s):
+        if ch != "{":
+            continue
+        try:
+            _, end = decoder.raw_decode(s[i:])
+        except json.JSONDecodeError:
+            continue
+        return s[i : i + end]
+    return None
+
+
+def _loads_first_json_object(text: str) -> Any | None:
+    blob = _extract_first_json_object(text)
+    if not blob:
+        return None
+    try:
+        return json.loads(blob)
+    except json.JSONDecodeError:
+        return None
 
 
 class WriteCheckpointNode(PythonActionNode):
@@ -99,7 +129,7 @@ class WriteCheckpointNode(PythonActionNode):
         ):
             stdout = execution_result.get("stdout")
             if isinstance(stdout, str):
-                obj = loads_first_json_object(stdout)
+                obj = _loads_first_json_object(stdout)
                 if isinstance(obj, dict) and "spec" in obj and "plan" in obj:
                     suffix = str(params.get("spec_plan_candidate_suffix") or "approved_candidate")
                     candidate_path = checkpoint_dir / f"{run_id}_{suffix}.json"

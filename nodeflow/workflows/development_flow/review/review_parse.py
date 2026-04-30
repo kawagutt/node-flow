@@ -3,9 +3,28 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Dict, List, Tuple
 
-from nodeflow.workflows.development_flow.common.json_stdout import extract_first_json_object
+
+def _extract_first_json_object(text: str) -> str | None:
+    if not text or not text.strip():
+        return None
+    s = text.strip()
+    fence = re.search(r"```(?:json)?\s*([\s\S]*?)```", s, re.IGNORECASE)
+    if fence:
+        s = fence.group(1).strip()
+
+    decoder = json.JSONDecoder()
+    for i, ch in enumerate(s):
+        if ch != "{":
+            continue
+        try:
+            _, end = decoder.raw_decode(s[i:])
+        except json.JSONDecodeError:
+            continue
+        return s[i : i + end]
+    return None
 
 REVIEW_JSON_CONTRACT_TEXT = """You MUST print exactly one JSON object on stdout (no markdown fences, no extra text). Schema:
 {
@@ -42,7 +61,7 @@ def parse_review_contract_from_execution_result(er: Dict[str, Any]) -> Tuple[boo
     if not isinstance(er, dict):
         return False, {}
     text = _coalesce_text(er)
-    blob = extract_first_json_object(text)
+    blob = _extract_first_json_object(text)
     if not blob:
         return False, {}
     try:

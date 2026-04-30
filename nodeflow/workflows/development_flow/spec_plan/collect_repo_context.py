@@ -10,11 +10,96 @@ from typing import Any, Dict, List
 
 from nodeflow.core.base_node import ExecutionContext, NodeExecutionFailure
 from nodeflow.core.node_kinds import PythonActionNode
-from nodeflow.workflows.development_flow.common.git_untracked import (
-    filter_status_short,
-    filtered_untracked_paths,
-    untracked_file_excerpts,
-)
+
+
+def _is_untracked_ignored(rel: str, prefixes: List[str]) -> bool:
+    for x in prefixes:
+        base = x.rstrip("/")
+        if rel == base or rel.startswith(base + "/"):
+            return True
+    return False
+
+
+def _run_git_rc_out(repo_root: Path, argv: List[str]) -> tuple[int, str]:
+    proc = subprocess.run(
+        ["git", *argv],
+        cwd=str(repo_root),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    out = (proc.stdout or proc.stderr or "").strip()
+    return proc.returncode, out
+
+
+def _filtered_untracked_paths(
+    repo_root: Path, ignored_prefixes: List[str]
+) -> tuple[int, List[str]]:
+    rc, untracked_out = _run_git_rc_out(repo_root, ["ls-files", "--others", "--exclude-standard"])
+    if rc != 0:
+        return rc, []
+    paths = [
+        line.strip()
+        for line in untracked_out.splitlines()
+        if line.strip() and not _is_untracked_ignored(line.strip(), ignored_prefixes)
+    ]
+    return rc, paths
+
+
+def _filter_status_short(status_short: str, ignored_prefixes: List[str]) -> str:
+    lines: List[str] = []
+    for line in status_short.splitlines():
+        if line.startswith("?? "):
+            rel = line[3:].strip()
+            if _is_untracked_ignored(rel, ignored_prefixes):
+                continue
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _read_text_excerpt(path: Path, max_bytes: int) -> tuple[str, bool]:
+    try:
+        total = path.stat().st_size
+    except OSError:
+        return "", False
+    try:
+        raw = path.read_bytes()[:max_bytes]
+    except OSError:
+        return "", False
+    truncated_file = total > max_bytes or len(raw) >= max_bytes
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return f"<binary or non-utf8, {len(raw)} bytes>", truncated_file
+    return text, truncated_file
+
+
+def _untracked_file_excerpts(
+    repo_root: Path,
+    untracked_files: List[str],
+    *,
+    max_files: int,
+    max_bytes: int,
+    content_clip: int = 8000,
+) -> List[Dict[str, Any]]:
+    excerpts: List[Dict[str, Any]] = []
+    for rel in untracked_files[:max_files]:
+        fp = (repo_root / rel).resolve()
+        try:
+            fp.relative_to(repo_root)
+        except ValueError:
+            continue
+        if not fp.is_file():
+            continue
+        content, trunc = _read_text_excerpt(fp, max_bytes)
+        excerpts.append(
+            {
+                "path": rel,
+                "content": content[:content_clip],
+                "truncated": trunc or len(content) >= content_clip,
+            }
+        )
+    return excerpts
 
 
 def _git_required(repo_root: Path, argv: List[str]) -> str:
@@ -56,7 +141,7 @@ class CollectRepoContextNode(PythonActionNode):
 
         _git_required(repo_root, ["rev-parse", "--show-toplevel"])
         status_short_raw = _git_required(repo_root, ["status", "--short"])
-        status_short = filter_status_short(status_short_raw, ignored_prefixes)
+        status_short = _filter_status_short(status_short_raw, ignored_prefixes)
 
         proc = subprocess.run(
             ["git", "diff", base_ref],
@@ -83,8 +168,8 @@ class CollectRepoContextNode(PythonActionNode):
                 line.strip() for line in (names_proc.stdout or "").splitlines() if line.strip()
             ][:50]
 
-        rc_untracked, untracked_files = filtered_untracked_paths(repo_root, ignored_prefixes)
-        untracked_excerpts = untracked_file_excerpts(
+        rc_untracked, untracked_files = _filtered_untracked_paths(repo_root, ignored_prefixes)
+        untracked_excerpts = _untracked_file_excerpts(
             repo_root,
             untracked_files,
             max_files=excerpt_max_files,

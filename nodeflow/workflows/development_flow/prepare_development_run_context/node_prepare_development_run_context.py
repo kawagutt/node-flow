@@ -11,7 +11,22 @@ from typing import Any, Dict
 
 from nodeflow.core.base_node import ExecutionContext, NodeExecutionFailure
 from nodeflow.core.node_kinds import PythonActionNode
-from nodeflow.workflows.development_flow.common.git_repo import resolve_git_toplevel
+
+
+def _resolve_git_toplevel(path: Path) -> Path:
+    cp = subprocess.run(
+        ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if cp.returncode != 0:
+        err = (cp.stderr or cp.stdout or "").strip() or "not a git repository"
+        raise NodeExecutionFailure(f"not a git repository: {path}: {err}")
+    raw = (cp.stdout or "").strip()
+    if not raw:
+        raise NodeExecutionFailure(f"git rev-parse --show-toplevel returned empty for {path}")
+    return Path(raw).resolve()
 
 
 class PrepareDevelopmentRunContextNode(PythonActionNode):
@@ -73,7 +88,7 @@ class PrepareDevelopmentRunContextNode(PythonActionNode):
         repo_root = Path(source_repo_root_raw).resolve()
         if not repo_root.exists():
             raise NodeExecutionFailure(f"repo_root does not exist: {repo_root}")
-        repo_root = resolve_git_toplevel(repo_root)
+        repo_root = _resolve_git_toplevel(repo_root)
         if repo_root != Path(source_repo_root_raw).resolve():
             raise NodeExecutionFailure(
                 "source_workspace_check.source_repo_root must be git top-level"

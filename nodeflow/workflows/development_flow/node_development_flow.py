@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from types import MappingProxyType
@@ -15,18 +16,12 @@ from nodeflow.core.base_node import (
     NodeExecutionLimit,
 )
 from nodeflow.core.node_kinds import PipeNode
-from nodeflow.workflows.development_flow.common.check_source_workspace import (
-    CheckSourceWorkspaceNode,
-)
-from nodeflow.workflows.development_flow.common.git_repo import resolve_git_toplevel
-from nodeflow.workflows.development_flow.common.prepare_development_run_context import (
+from nodeflow.workflows.development_flow.check_source_workspace import CheckSourceWorkspaceNode
+from nodeflow.workflows.development_flow.implement import ImplementPipeNode
+from nodeflow.workflows.development_flow.prepare_development_run_context import (
     PrepareDevelopmentRunContextNode,
 )
-from nodeflow.workflows.development_flow.common.prepare_workspace import PrepareWorkspaceNode
-from nodeflow.workflows.development_flow.common.write_development_summary import (
-    WriteDevelopmentSummaryNode,
-)
-from nodeflow.workflows.development_flow.implement import ImplementPipeNode
+from nodeflow.workflows.development_flow.prepare_workspace import PrepareWorkspaceNode
 from nodeflow.workflows.development_flow.profiles import apply_profiles_to_pipe_params
 from nodeflow.workflows.development_flow.review import ReviewPipeNode
 from nodeflow.workflows.development_flow.spec_plan import SpecPlanPipeNode
@@ -35,6 +30,25 @@ from nodeflow.workflows.development_flow.state_machine import (
     review_allowed_actions,
     validate_merge_gate,
 )
+from nodeflow.workflows.development_flow.write_development_summary import (
+    WriteDevelopmentSummaryNode,
+)
+
+
+def _resolve_git_toplevel(path: Path) -> Path:
+    cp = subprocess.run(
+        ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if cp.returncode != 0:
+        err = (cp.stderr or cp.stdout or "").strip() or "not a git repository"
+        raise NodeExecutionFailure(f"not a git repository: {path}: {err}")
+    raw = (cp.stdout or "").strip()
+    if not raw:
+        raise NodeExecutionFailure(f"git rev-parse --show-toplevel returned empty for {path}")
+    return Path(raw).resolve()
 
 
 def _as_path(base: Path, raw: str | None) -> Path | None:
@@ -62,8 +76,8 @@ def _require_same_source_repo(input_repo_root: Path, run_context: Dict[str, Any]
     saved = run_context.get("source_repo_root")
     if not isinstance(saved, str) or not saved.strip():
         raise NodeExecutionFailure("run_context.source_repo_root is required")
-    saved_root = resolve_git_toplevel(Path(saved).resolve())
-    input_root = resolve_git_toplevel(input_repo_root.resolve())
+    saved_root = _resolve_git_toplevel(Path(saved).resolve())
+    input_root = _resolve_git_toplevel(input_repo_root.resolve())
     if input_root != saved_root:
         raise NodeExecutionFailure(
             "repo_root does not match checkpoint source_repo_root: "
@@ -182,7 +196,7 @@ class DevelopmentFlowPipeNode(PipeNode):
         if not isinstance(raw_repo_root, str) or not raw_repo_root.strip():
             raise NodeExecutionFailure("repo_root is required")
         repo_root = _as_path(workspace, raw_repo_root.strip()) or Path(raw_repo_root.strip())
-        repo_root = resolve_git_toplevel(repo_root)
+        repo_root = _resolve_git_toplevel(repo_root)
 
         apply_profiles_to_pipe_params(
             p,

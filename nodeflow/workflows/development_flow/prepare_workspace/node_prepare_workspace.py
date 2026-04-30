@@ -9,11 +9,63 @@ from typing import Any, Dict, List
 
 from nodeflow.core.base_node import ExecutionContext, NodeExecutionFailure
 from nodeflow.core.node_kinds import PythonActionNode
-from nodeflow.workflows.development_flow.common.git_repo import resolve_git_toplevel
-from nodeflow.workflows.development_flow.common.git_status import (
-    default_ignored_dirty_prefixes,
-    status_has_non_ignored_changes,
-)
+
+
+def _resolve_git_toplevel(path: Path) -> Path:
+    cp = subprocess.run(
+        ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if cp.returncode != 0:
+        err = (cp.stderr or cp.stdout or "").strip() or "not a git repository"
+        raise NodeExecutionFailure(f"not a git repository: {path}: {err}")
+    raw = (cp.stdout or "").strip()
+    if not raw:
+        raise NodeExecutionFailure(f"git rev-parse --show-toplevel returned empty for {path}")
+    return Path(raw).resolve()
+
+
+def _default_ignored_dirty_prefixes() -> List[str]:
+    return [".nodeflow/"]
+
+
+def _is_ignored_path(path: str, ignored_prefixes: List[str]) -> bool:
+    return any(path.startswith(prefix) for prefix in ignored_prefixes)
+
+
+def _parse_porcelain_v1_line(line: str) -> Dict[str, str]:
+    xy = line[:2] if len(line) >= 2 else ""
+    path_part = line[3:].strip() if len(line) >= 3 else line.strip()
+    if path_part.startswith('"') and path_part.endswith('"'):
+        path_part = path_part[1:-1]
+    if " -> " in path_part:
+        old_path, new_path = path_part.split(" -> ", 1)
+        old_path = old_path.strip().strip('"')
+        new_path = new_path.strip().strip('"')
+        return {"xy": xy, "path": new_path, "old_path": old_path, "new_path": new_path}
+    return {"xy": xy, "path": path_part, "old_path": path_part, "new_path": path_part}
+
+
+def _status_has_non_ignored_changes(status_text: str, ignored_prefixes: List[str]) -> bool:
+    for raw in status_text.splitlines():
+        line = raw.rstrip("\r\n")
+        if not line:
+            continue
+        parsed = _parse_porcelain_v1_line(line)
+        old_path = parsed["old_path"]
+        new_path = parsed["new_path"]
+        if old_path != new_path:
+            if _is_ignored_path(old_path, ignored_prefixes) and _is_ignored_path(
+                new_path, ignored_prefixes
+            ):
+                continue
+            return True
+        if _is_ignored_path(parsed["path"], ignored_prefixes):
+            continue
+        return True
+    return False
 
 
 def _run_git(cwd: Path, argv: List[str]) -> subprocess.CompletedProcess[str]:
@@ -56,7 +108,7 @@ class PrepareWorkspaceNode(PythonActionNode):
             raise NodeExecutionFailure(
                 f"source_repo_root is not a git repository: {source_repo_root}"
             )
-        source_repo_root = resolve_git_toplevel(source_repo_root)
+        source_repo_root = _resolve_git_toplevel(source_repo_root)
 
         if strategy != "current_repo":
             raise NodeExecutionFailure(f"unsupported prepare_workspace.strategy: {strategy}")
@@ -76,7 +128,7 @@ class PrepareWorkspaceNode(PythonActionNode):
         run_source_repo_root_raw = str(run_context.get("source_repo_root") or "").strip()
         if not run_source_repo_root_raw:
             raise NodeExecutionFailure("run_context.source_repo_root is required")
-        run_source_repo_root = resolve_git_toplevel(Path(run_source_repo_root_raw).resolve())
+        run_source_repo_root = _resolve_git_toplevel(Path(run_source_repo_root_raw).resolve())
         if run_source_repo_root != source_repo_root:
             raise NodeExecutionFailure(
                 "source_repo_root does not match run_context.source_repo_root"
@@ -93,8 +145,8 @@ class PrepareWorkspaceNode(PythonActionNode):
             if isinstance(ignored_prefixes, list):
                 prefixes = [str(x) for x in ignored_prefixes if isinstance(x, str)]
             else:
-                prefixes = default_ignored_dirty_prefixes()
-            if status_has_non_ignored_changes((cp_status.stdout or ""), prefixes):
+                prefixes = _default_ignored_dirty_prefixes()
+            if _status_has_non_ignored_changes((cp_status.stdout or ""), prefixes):
                 raise NodeExecutionFailure(
                     "source repository is dirty; commit/stash changes before starting development_flow"
                 )

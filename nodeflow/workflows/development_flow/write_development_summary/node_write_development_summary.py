@@ -12,7 +12,10 @@ from typing import Any, Dict, List
 
 from nodeflow.core.base_node import ExecutionContext, NodeExecutionFailure
 from nodeflow.core.node_kinds import PythonActionNode
-from nodeflow.workflows.development_flow.common.git_status import default_ignored_dirty_prefixes
+
+
+def _default_ignored_dirty_prefixes() -> List[str]:
+    return [".nodeflow/"]
 
 
 def _run_git(repo_root: Path, argv: List[str]) -> subprocess.CompletedProcess[str]:
@@ -275,7 +278,7 @@ class WriteDevelopmentSummaryNode(PythonActionNode):
         if isinstance(ignored_cf, list):
             ign_prefixes = [str(x) for x in ignored_cf if isinstance(x, str)]
         else:
-            ign_prefixes = default_ignored_dirty_prefixes()
+            ign_prefixes = _default_ignored_dirty_prefixes()
         changed_files = [
             f for f in raw_changed if not any(f.startswith(prefix) for prefix in ign_prefixes)
         ]
