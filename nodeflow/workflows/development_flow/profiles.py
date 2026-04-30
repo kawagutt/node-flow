@@ -93,9 +93,8 @@ def apply_profiles_to_pipe_params(
     for stage_key in ("spec_plan", "implement", "review"):
         if stage_key not in model_layer and stage_key not in cost_layer:
             continue
-        pipe_key = f"{stage_key}_pipe"
-        p[pipe_key] = _deep_merge_dict(
-            dict(p.get(pipe_key) or {}),
+        p[stage_key] = _deep_merge_dict(
+            dict(p.get(stage_key) or {}),
             _deep_merge_dict(
                 dict(model_layer.get(stage_key) or {}),
                 dict(cost_layer.get(stage_key) or {}),

@@ -22,6 +22,7 @@ from nodeflow.workflows.development_flow.prepare_development_run_context import 
     PrepareDevelopmentRunContextNode,
 )
 from nodeflow.workflows.development_flow.prepare_workspace import PrepareWorkspaceNode
+from nodeflow.workflows.development_flow.profiles import apply_profiles_to_pipe_params
 from nodeflow.workflows.development_flow.review import ReviewPipeNode
 from nodeflow.workflows.development_flow.review.aggregate_reviews import AggregateReviewsNode
 from nodeflow.workflows.development_flow.review.prompt_common import extract_diff_context
@@ -1431,6 +1432,153 @@ def test_development_flow_profile_partial_config_fails_fast(tmp_path: Path) -> N
     assert node.read_status() == "fatal"
     assert isinstance(node.read_error(), NodeExecutionFailure)
     assert "must be set together" in str(node.read_error())
+
+
+def test_development_flow_profiles_apply_to_path_style_stage_keys(tmp_path: Path) -> None:
+    repo = tmp_path / "profile_apply_repo"
+    repo.mkdir()
+    _git_repo_with_commit(repo)
+    model_profiles = tmp_path / "model_profiles.json"
+    cost_profiles = tmp_path / "cost_profiles.json"
+    model_profiles.write_text(
+        json.dumps(
+            {
+                "default": {
+                    "spec_plan": {
+                        "codex_exec": {
+                            "argv": [
+                                "python3",
+                                "-c",
+                                "import json,sys; sys.stdin.read(); print(json.dumps({'spec':'s','plan':'p'}))",
+                            ]
+                        }
+                    },
+                    "implement": {
+                        "run_tests": {"argv": ["python3", "-c", "import sys; sys.exit(0)"]}
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    cost_profiles.write_text(
+        json.dumps(
+            {
+                "default": {
+                    "spec_plan": {"write_checkpoint": {"run_id": "profile_spec"}},
+                    "implement": {
+                        "codex_exec": {"argv": ["python3", "-c", "import sys; sys.exit(0)"]}
+                    },
+                    "review": {
+                        "review_diff_focused": {
+                            "argv": [
+                                "python3",
+                                "-c",
+                                "import json; print(json.dumps({'ok': True, 'blocking_findings': [], 'non_blocking_findings': [], 'spec_revision_needed': False, 'summary': 'ok'}))",
+                            ]
+                        },
+                        "review_wide_scan": {
+                            "argv": [
+                                "python3",
+                                "-c",
+                                "import json; print(json.dumps({'ok': True, 'blocking_findings': [], 'non_blocking_findings': [], 'spec_revision_needed': False, 'summary': 'ok'}))",
+                            ]
+                        },
+                        "review_test_focused": {
+                            "argv": [
+                                "python3",
+                                "-c",
+                                "import json; print(json.dumps({'ok': True, 'blocking_findings': [], 'non_blocking_findings': [], 'spec_revision_needed': False, 'summary': 'ok'}))",
+                            ]
+                        },
+                        "review_spec_conformance": {
+                            "argv": [
+                                "python3",
+                                "-c",
+                                "import json; print(json.dumps({'ok': True, 'blocking_findings': [], 'non_blocking_findings': [], 'spec_revision_needed': False, 'summary': 'ok'}))",
+                            ]
+                        },
+                        "review_spec_revision": {
+                            "argv": [
+                                "python3",
+                                "-c",
+                                "import json; print(json.dumps({'ok': True, 'blocking_findings': [], 'non_blocking_findings': [], 'spec_revision_needed': False, 'summary': 'ok'}))",
+                            ]
+                        },
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    node = DevelopmentFlowPipeNode()
+    start_out = node.execute(
+        {"action": "start", "task_prompt": "profile", "repo_root": str(repo)},
+        {
+            "model_profiles_path": str(model_profiles),
+            "cost_profiles_path": str(cost_profiles),
+            "model_profile": "default",
+            "cost_profile": "default",
+            "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "cp")},
+        },
+    )
+    assert node.read_status() == "done"
+    fr = start_out.get("flow_result")
+    assert isinstance(fr, dict)
+    assert fr.get("ok") is True
+    flow_checkpoint_path = fr.get("flow_checkpoint_path")
+    assert isinstance(flow_checkpoint_path, str) and flow_checkpoint_path
+
+    node.reset_status()
+    approve_out = node.execute(
+        {
+            "action": "approve",
+            "repo_root": str(repo),
+            "flow_checkpoint_path": flow_checkpoint_path,
+        },
+        {
+            "model_profiles_path": str(model_profiles),
+            "cost_profiles_path": str(cost_profiles),
+            "model_profile": "default",
+            "cost_profile": "default",
+            "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "cp")},
+        },
+    )
+    assert node.read_status() == "done"
+    afr = approve_out.get("flow_result")
+    assert isinstance(afr, dict)
+    assert afr.get("state") == "awaiting_review_decision"
+    assert isinstance(afr.get("implement_stage_result"), dict)
+    assert isinstance(afr.get("review_stage_result"), dict)
+
+
+def test_development_flow_profiles_do_not_write_legacy_stage_pipe_keys(tmp_path: Path) -> None:
+    model_profiles = tmp_path / "model_profiles.json"
+    cost_profiles = tmp_path / "cost_profiles.json"
+    model_profiles.write_text(
+        json.dumps({"default": {"spec_plan": {"x": 1}, "implement": {"y": 2}}}),
+        encoding="utf-8",
+    )
+    cost_profiles.write_text(
+        json.dumps({"default": {"review": {"z": 3}}}),
+        encoding="utf-8",
+    )
+    p: dict[str, object] = {}
+    apply_profiles_to_pipe_params(
+        p,
+        workspace=tmp_path,
+        model_profiles_path=str(model_profiles),
+        cost_profiles_path=str(cost_profiles),
+        model_profile="default",
+        cost_profile="default",
+    )
+    assert "spec_plan" in p
+    assert "implement" in p
+    assert "review" in p
+    assert "spec_plan" + "_pipe" not in p
+    assert "implement" + "_pipe" not in p
+    assert "review" + "_pipe" not in p
 
 
 def test_development_flow_start_propagates_child_fatal(tmp_path: Path) -> None:

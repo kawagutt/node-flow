@@ -97,7 +97,7 @@ Development flow is intentionally split into:
 
 Naming and concrete file examples live in **[`nodeflow/workflows/development_flow/README.md`](nodeflow/workflows/development_flow/README.md)**.
 
-**Import path note:** workflow node classes moved from `nodeflow.nodes.development_flow` / `nodeflow.nodes.dispatch` to `nodeflow.workflows.*`. YAML registry keys are unchanged.
+**Import path note:** workflow node classes live under `nodeflow.workflows.*`. Development-flow YAML registry keys are path-style only: `workflows.development_flow`, `workflows.development_flow.spec_plan`, `workflows.development_flow.implement`, and `workflows.development_flow.review`. Legacy keys are not supported.
 
 For `workflows.development_flow`, `repo_root` means the target project repository (not the node-flow repository). The flow distinguishes:
 - `source_repo_root`: target repository passed as `repo_root`

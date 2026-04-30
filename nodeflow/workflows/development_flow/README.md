@@ -1,4 +1,4 @@
-# Development flow stage pipes
+# Development flow workflow nodes
 
 Built-in nodes for a development cycle. `workflows.development_flow` orchestrates actions via checkpoint/resume, while stage nodes (`workflows.development_flow.spec_plan`, `workflows.development_flow.implement`, `workflows.development_flow.review`) execute single runs. NodeFlow does not pause in-process for human input.
 
@@ -20,6 +20,11 @@ YAML registry keys:
 | `workflows.development_flow.spec_plan`   | Collect repo context (git), run Codex (or other CLI) with that context on **stdin**, write checkpoint. |
 | `workflows.development_flow.implement`   | Load **one** approved JSON (`approved_checkpoint_path`), run implement CLI (stdin = full prompt), tests, `git diff <base_ref>`, write checkpoint. |
 | `workflows.development_flow.review`      | Load the same approved JSON, `git diff <base_ref>`, build 5 review prompts (diff / wide scan / tests / spec conformance / spec revision), run 5 review CLIs (**stdin** = prompt; **stdout** = JSON contract), aggregate, write checkpoint. |
+| `workflows.development_flow.start` | Run only the `start` action. |
+| `workflows.development_flow.revise_spec` | Run only the `revise_spec` action. |
+| `workflows.development_flow.approve` | Run only the `approve` action. |
+| `workflows.development_flow.rework` | Run only the `rework` action. |
+| `workflows.development_flow.merge` | Run only the `merge` action. |
 
 Naming convention:
 
@@ -124,7 +129,7 @@ The exact instruction text is in `review/review_parse.py` (`REVIEW_JSON_CONTRACT
 
 ## `stage_result` contract (P0)
 
-Each stage pipe’s root output exposes a `stage_result` port (dict) with at least:
+Each stage node’s root output exposes a `stage_result` port (dict) with at least:
 
 - `ok` (bool) — **`false` if any bound child signal failed** (`execution_result.ok`, `test_result.ok`, `diff_result.ok`, `review_result.ok` when passed to `write_checkpoint`), combined with optional `request.ok` from upstream checkpoint metadata.
 - `stage` — one of `spec_plan`, `implement`, `review`
@@ -143,7 +148,7 @@ Checkpoint payload has top-level `schema_version` (default: `development_flow.v1
 
 `CollectDiffNode` adds **`status_short`**, **`untracked_files`**, and **`untracked_file_excerpts`** (first N text files, truncated). Review prompts include these. **`AggregateReviewsNode`** treats non-empty **`untracked_files`** as a **blocking** finding (`R_UNTRACKED_FILES`) so merge is not suggested while important paths are still untracked. By default **`ignored_changed_file_prefixes`** is `[".nodeflow/"]` so local checkpoints under `.nodeflow/` are not counted as untracked noise (override with an explicit list, including `[]` to disable).
 
-## Params (per graph node `params` on the stage pipe)
+## Params (per graph node `params` on the stage node)
 
 Keys are **child node ids** inside the composite pipe. Typical nesting:
 
