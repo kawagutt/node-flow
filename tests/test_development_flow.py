@@ -69,9 +69,7 @@ def status_has_non_ignored_changes(status_text: str, ignored_prefixes: list[str]
         old_path = parsed["old_path"]
         new_path = parsed["new_path"]
         if old_path != new_path:
-            if _is_ignored(old_path, ignored_prefixes) and _is_ignored(
-                new_path, ignored_prefixes
-            ):
+            if _is_ignored(old_path, ignored_prefixes) and _is_ignored(new_path, ignored_prefixes):
                 continue
             return True
         if _is_ignored(parsed["path"], ignored_prefixes):
@@ -714,15 +712,32 @@ def test_development_flow_merge_rejects_wrong_state(tmp_path: Path) -> None:
     assert "awaiting_review_decision" in str(node.read_error())
 
 
-def test_development_flow_force_merge(tmp_path: Path) -> None:
-    repo = tmp_path / "workspace"
+def test_development_flow_force_merge_is_not_supported(tmp_path: Path) -> None:
+    repo = tmp_path / "workspace_force_not_supported"
     repo.mkdir()
     _git_repo_with_commit(repo)
     node = DevelopmentFlowPipeNode()
-    start_out = node.execute(
+    node.execute(
+        {
+            "action": "force_merge",
+            "repo_root": str(repo),
+        },
+        {"flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")}},
+    )
+    assert node.read_status() == "fatal"
+    assert isinstance(node.read_error(), NodeExecutionFailure)
+    assert "unsupported action: force_merge" in str(node.read_error())
+
+
+def test_development_flow_wrapper_does_not_leak_child_runtime(tmp_path: Path) -> None:
+    repo = tmp_path / "workspace_runtime_guard"
+    repo.mkdir()
+    _git_repo_with_commit(repo)
+    node = DevelopmentFlowPipeNode()
+    out = node.execute(
         {
             "action": "start",
-            "task_prompt": "t",
+            "task_prompt": "runtime check",
             "repo_root": str(repo),
         },
         {
@@ -734,84 +749,15 @@ def test_development_flow_force_merge(tmp_path: Path) -> None:
                         "import json,sys; sys.stdin.read(); print(json.dumps({'spec':'s','plan':'p'}))",
                     ]
                 },
-                "write_checkpoint": {
-                    "run_id": "s2",
-                },
+                "write_checkpoint": {"run_id": "runtime1"},
             },
             "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
         },
     )
-    start_fp = start_out["flow_result"]["flow_checkpoint_path"]
-    node.reset_status()
-    approve_out = node.execute(
-        {
-            "action": "approve",
-            "repo_root": str(repo),
-            "flow_checkpoint_path": start_fp,
-        },
-        {
-            "implement_pipe": {
-                "codex_exec": {
-                    "argv": ["python3", "-c", "import sys; sys.stdin.read(); print('ok')"]
-                },
-                "run_tests": {"argv": ["python3", "-c", "print('t')"]},
-                "write_checkpoint": {
-                    "run_id": "i2",
-                },
-            },
-            "review_pipe": _ok_review_pipe_params(repo / ".nodeflow" / "checkpoints", "r2"),
-            "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
-        },
-    )
-    fp = approve_out["flow_result"]["flow_checkpoint_path"]
-    node.reset_status()
-    out = node.execute(
-        {
-            "action": "force_merge",
-            "repo_root": str(repo),
-            "flow_checkpoint_path": fp,
-            "human_comment_text": "manual override due hotfix",
-        },
-        {"flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")}},
-    )
-    assert out["flow_result"]["state"] == "merged"
-    assert out["flow_result"]["forced"] is True
-    assert out["flow_result"]["previous_flow_checkpoint_path"] == fp
-    assert out["flow_result"]["force_merge_reason"] == "manual override due hotfix"
-    assert isinstance(out["flow_result"].get("run_context"), dict)
-    assert isinstance(out["flow_result"].get("workspace_context"), dict)
-
-
-def test_development_flow_force_merge_rejects_non_review_state(tmp_path: Path) -> None:
-    repo = tmp_path / "workspace_force_bad_state"
-    repo.mkdir()
-    _git_repo_with_commit(repo)
-    cp = repo / ".nodeflow" / "checkpoints" / "wrong_state.json"
-    cp.parent.mkdir(parents=True, exist_ok=True)
-    cp.write_text(
-        json.dumps(
-            {
-                "flow_result": {
-                    "state": "awaiting_approval",
-                    "run_context": {"source_repo_root": str(repo.resolve())},
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    node = DevelopmentFlowPipeNode()
-    node.execute(
-        {
-            "action": "force_merge",
-            "repo_root": str(repo),
-            "flow_checkpoint_path": str(cp),
-            "human_comment_text": "override",
-        },
-        {"flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")}},
-    )
-    assert node.read_status() == "fatal"
-    assert isinstance(node.read_error(), NodeExecutionFailure)
-    assert "force_merge requires previous state awaiting_review_decision" in str(node.read_error())
+    assert "_runtime" in out
+    flow_result = out.get("flow_result")
+    assert isinstance(flow_result, dict)
+    assert "_runtime" not in flow_result
 
 
 def test_development_flow_implement_fail_marks_flow_not_ok(tmp_path: Path) -> None:
@@ -1259,7 +1205,7 @@ def test_development_flow_rework_requires_awaiting_review_decision(tmp_path: Pat
     node = DevelopmentFlowPipeNode()
     node.execute(
         {
-            "action": "rework_implementation",
+            "action": "rework",
             "repo_root": str(repo),
             "flow_checkpoint_path": str(cp),
         },
@@ -1274,9 +1220,31 @@ def test_development_flow_rework_requires_awaiting_review_decision(tmp_path: Pat
     )
     assert node.read_status() == "fatal"
     assert isinstance(node.read_error(), NodeExecutionFailure)
-    assert "rework_implementation requires previous state awaiting_review_decision" in str(
-        node.read_error()
+    assert "rework requires previous state awaiting_review_decision" in str(node.read_error())
+
+
+def test_development_flow_rework_implementation_alias_routes_to_rework(tmp_path: Path) -> None:
+    repo = tmp_path / "workspace_rework_alias"
+    repo.mkdir()
+    _git_repo_with_commit(repo)
+    cp = repo / ".nodeflow" / "checkpoints" / "wrong_alias.json"
+    cp.parent.mkdir(parents=True, exist_ok=True)
+    cp.write_text(
+        json.dumps({"flow_result": {"state": "awaiting_approval", "approved_candidate_path": "x"}}),
+        encoding="utf-8",
     )
+    node = DevelopmentFlowPipeNode()
+    node.execute(
+        {
+            "action": "rework_implementation",
+            "repo_root": str(repo),
+            "flow_checkpoint_path": str(cp),
+        },
+        {},
+    )
+    assert node.read_status() == "fatal"
+    assert isinstance(node.read_error(), NodeExecutionFailure)
+    assert "rework requires previous state awaiting_review_decision" in str(node.read_error())
 
 
 def test_rework_requires_workspace_context(tmp_path: Path) -> None:
@@ -1312,14 +1280,14 @@ def test_rework_requires_workspace_context(tmp_path: Path) -> None:
     node = DevelopmentFlowPipeNode()
     node.execute(
         {
-            "action": "rework_implementation",
+            "action": "rework",
             "repo_root": str(repo),
             "flow_checkpoint_path": str(cp),
         },
         {},
     )
     assert node.read_status() == "fatal"
-    assert "workspace_context is required for rework_implementation" in str(node.read_error())
+    assert "workspace_context is required for rework" in str(node.read_error())
 
 
 def test_approve_validates_approved_checkpoint_before_prepare_workspace(tmp_path: Path) -> None:

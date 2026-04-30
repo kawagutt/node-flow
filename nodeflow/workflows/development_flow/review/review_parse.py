@@ -26,6 +26,7 @@ def _extract_first_json_object(text: str) -> str | None:
         return s[i : i + end]
     return None
 
+
 REVIEW_JSON_CONTRACT_TEXT = """You MUST print exactly one JSON object on stdout (no markdown fences, no extra text). Schema:
 {
   "ok": true or false,

@@ -14,6 +14,12 @@ from nodeflow.core.registry import (
     registry,
 )
 from nodeflow.nodes.builtins import register_builtin_nodes
+from nodeflow.workflows.development_flow.approve import ApprovePipeNode
+from nodeflow.workflows.development_flow.merge import MergePipeNode
+from nodeflow.workflows.development_flow.node_development_flow import DevelopmentFlowPipeNode
+from nodeflow.workflows.development_flow.revise_spec import ReviseSpecPipeNode
+from nodeflow.workflows.development_flow.rework import ReworkPipeNode
+from nodeflow.workflows.development_flow.start import StartPipeNode
 
 
 def test_registry_register_resolve():
@@ -132,3 +138,19 @@ graph:
     )
     with pytest.raises(UnknownNodeTypeError):
         load_pipeline(str(tmp_path), str(yaml_path))
+
+
+def test_development_flow_action_nodes_are_registered() -> None:
+    assert registry.get("workflows.development_flow.start") is StartPipeNode
+    assert registry.get("workflows.development_flow.revise_spec") is ReviseSpecPipeNode
+    assert registry.get("workflows.development_flow.approve") is ApprovePipeNode
+    assert registry.get("workflows.development_flow.rework") is ReworkPipeNode
+    assert registry.get("workflows.development_flow.merge") is MergePipeNode
+
+
+def test_development_flow_path_style_wrapper_type_is_registered() -> None:
+    assert registry.get("workflows.development_flow") is DevelopmentFlowPipeNode
+
+
+def test_development_flow_legacy_rework_implementation_type_is_not_registered() -> None:
+    assert registry.get("workflows.development_flow.rework_implementation") is None

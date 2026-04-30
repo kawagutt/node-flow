@@ -14,6 +14,7 @@ from nodeflow.core.base_node import (
     ExecutionContext,
     NodeExecutionFailure,
     NodeExecutionLimit,
+    domain_ports_from_observation,
 )
 from nodeflow.core.node_kinds import PipeNode
 from nodeflow.workflows.development_flow.check_source_workspace import CheckSourceWorkspaceNode
@@ -98,8 +99,12 @@ def _extract_stage_checkpoint_path(stage_result: Dict[str, Any]) -> str | None:
     return None
 
 
-class DevelopmentFlowPipeNode(PipeNode):
-    """Top-level orchestration: start/approve/rework/revise_spec/merge/force_merge."""
+class _DevelopmentFlowLegacyPipeNode(PipeNode):
+    """Temporary private development flow implementation.
+
+    Do not register this class directly.
+    force_merge is intentionally not exposed by DevelopmentFlowPipeNode.
+    """
 
     def __init__(self) -> None:
         super().__init__()
@@ -533,11 +538,9 @@ class DevelopmentFlowPipeNode(PipeNode):
             flow_result["flow_checkpoint_path"] = fp
             return {"flow_result": flow_result}
 
-        if action in ("approve", "rework_implementation"):
+        if action in ("approve", "rework"):
             if flow_cp_in is None or not flow_cp_in.exists():
-                raise NodeExecutionFailure(
-                    "flow_checkpoint_path is required for approve/rework_implementation"
-                )
+                raise NodeExecutionFailure("flow_checkpoint_path is required for approve/rework")
             resume_prev: Dict[str, Any] = dict(prev_flow)
             if flow_cp_in and flow_cp_in.exists():
                 wrap_ap = _read_json_required(flow_cp_in, label="flow_checkpoint_path")
@@ -547,9 +550,7 @@ class DevelopmentFlowPipeNode(PipeNode):
             if action == "approve":
                 require_state(resume_prev, "awaiting_approval", action="approve")
             else:
-                require_state(
-                    resume_prev, "awaiting_review_decision", action="rework_implementation"
-                )
+                require_state(resume_prev, "awaiting_review_decision", action="rework")
             run_context = (
                 resume_prev.get("run_context")
                 if isinstance(resume_prev.get("run_context"), dict)
@@ -563,15 +564,13 @@ class DevelopmentFlowPipeNode(PipeNode):
                 if isinstance(resume_prev.get("workspace_context"), dict)
                 else None
             )
-            if action == "rework_implementation" and prev_workspace_context is None:
-                raise NodeExecutionFailure(
-                    "workspace_context is required for rework_implementation"
-                )
+            if action == "rework" and prev_workspace_context is None:
+                raise NodeExecutionFailure("workspace_context is required for rework")
 
             frozen_base = str(run_context.get("source_base_revision") or "").strip()
             if not frozen_base:
                 raise NodeExecutionFailure(
-                    "run_context.source_base_revision is required for approve/rework_implementation"
+                    "run_context.source_base_revision is required for approve/rework"
                 )
 
             approved_path: str | None = (
@@ -588,16 +587,14 @@ class DevelopmentFlowPipeNode(PipeNode):
                     "flow checkpoint must contain approved_candidate_path or approved_checkpoint_path"
                 )
 
-            if action == "rework_implementation":
+            if action == "rework":
                 if flow_cp_in is None or not flow_cp_in.exists():
-                    raise NodeExecutionFailure(
-                        "flow_checkpoint_path is required for rework_implementation"
-                    )
+                    raise NodeExecutionFailure("flow_checkpoint_path is required for rework")
                 _read_json_required(flow_cp_in, label="flow_checkpoint_path")
                 rp = resume_prev.get("review_checkpoint_path")
                 if not isinstance(rp, str) or not rp.strip():
                     raise NodeExecutionFailure(
-                        "rework_implementation requires review_checkpoint_path in flow checkpoint"
+                        "rework requires review_checkpoint_path in flow checkpoint"
                     )
                 rc = _as_path(workspace, rp.strip())
                 if rc is None or not rc.exists():
@@ -647,7 +644,7 @@ class DevelopmentFlowPipeNode(PipeNode):
                     "artifact_root": run_context.get("artifact_root"),
                     "base_ref": base_revision,
                     "task_type": "implement",
-                    "rework_context": review_ctx if action == "rework_implementation" else None,
+                    "rework_context": review_ctx if action == "rework" else None,
                 },
                 impl_params,
             )
@@ -735,3 +732,96 @@ class DevelopmentFlowPipeNode(PipeNode):
             return {"flow_result": flow_result}
 
         raise NodeExecutionFailure(f"unsupported action: {action}")
+
+
+class DevelopmentFlowPipeNode(PipeNode):
+    """Action router for start/revise_spec/approve/rework/merge."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        # Lazy imports avoid circular references with action nodes importing this module.
+        from nodeflow.workflows.development_flow.approve import ApprovePipeNode
+        from nodeflow.workflows.development_flow.merge import MergePipeNode
+        from nodeflow.workflows.development_flow.revise_spec import ReviseSpecPipeNode
+        from nodeflow.workflows.development_flow.rework import ReworkPipeNode
+        from nodeflow.workflows.development_flow.start import StartPipeNode
+
+        self._start = StartPipeNode()
+        self._revise_spec = ReviseSpecPipeNode()
+        self._approve = ApprovePipeNode()
+        self._rework = ReworkPipeNode()
+        self._merge = MergePipeNode()
+
+    def _run_child(
+        self,
+        *,
+        child_name: str,
+        child: BaseNode,
+        inputs: Dict[str, Any],
+        params: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        child.reset_status()
+        out = child.execute(inputs, params)
+        out = domain_ports_from_observation(out)
+        status = child.read_status()
+        if status == "fatal":
+            raise NodeExecutionFailure(f"{child_name} fatal: {child.read_error()}")
+        if status == "limit":
+            raise NodeExecutionLimit(f"{child_name} limit")
+        if status != "done":
+            raise NodeExecutionFailure(f"{child_name} unexpected status: {status}")
+        return out
+
+    def run(
+        self,
+        inputs: Dict[str, Any],
+        params: MappingProxyType | Dict[str, Any],
+        context: ExecutionContext,
+    ) -> Dict[str, Any]:
+        raw_action = inputs.get("action")
+        if not isinstance(raw_action, str) or not raw_action.strip():
+            raise NodeExecutionFailure("action is required")
+        action = raw_action.strip()
+        if action == "rework_implementation":
+            action = "rework"
+
+        child_params = dict(params) if params else {}
+        child_inputs = dict(inputs)
+        child_inputs.pop("action", None)
+
+        if action == "start":
+            return self._run_child(
+                child_name="development_flow.start",
+                child=self._start,
+                inputs=child_inputs,
+                params=child_params,
+            )
+        if action == "revise_spec":
+            return self._run_child(
+                child_name="development_flow.revise_spec",
+                child=self._revise_spec,
+                inputs=child_inputs,
+                params=child_params,
+            )
+        if action == "approve":
+            return self._run_child(
+                child_name="development_flow.approve",
+                child=self._approve,
+                inputs=child_inputs,
+                params=child_params,
+            )
+        if action == "rework":
+            return self._run_child(
+                child_name="development_flow.rework",
+                child=self._rework,
+                inputs=child_inputs,
+                params=child_params,
+            )
+        if action == "merge":
+            return self._run_child(
+                child_name="development_flow.merge",
+                child=self._merge,
+                inputs=child_inputs,
+                params=child_params,
+            )
+        raise NodeExecutionFailure(f"unsupported action: {raw_action}")

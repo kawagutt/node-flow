@@ -16,7 +16,7 @@ YAML registry keys:
 
 | `type`             | Purpose |
 |--------------------|---------|
-| `development_flow_pipe` | Top-level orchestration (`start` / `approve` / `rework_implementation` / `revise_spec` / `merge` / `force_merge`) with flow checkpoint output for resume. |
+| `development_flow_pipe` | Top-level orchestration (`start` / `approve` / `rework` / `revise_spec` / `merge`) with flow checkpoint output for resume. |
 | `spec_plan_pipe`   | Collect repo context (git), run Codex (or other CLI) with that context on **stdin**, write checkpoint. |
 | `implement_pipe`   | Load **one** approved JSON (`approved_checkpoint_path`), run implement CLI (stdin = full prompt), tests, `git diff <base_ref>`, write checkpoint. |
 | `review_pipe`      | Load the same approved JSON, `git diff <base_ref>`, build 5 review prompts (diff / wide scan / tests / spec conformance / spec revision), run 5 review CLIs (**stdin** = prompt; **stdout** = JSON contract), aggregate, write checkpoint. |
@@ -50,7 +50,12 @@ nodeflow/workflows/development_flow/
   prepare_workspace/          # node_prepare_workspace.py
   prepare_development_run_context/
   write_development_summary/
-  node_development_flow.py  # top-level orchestration with checkpoint/resume actions
+  node_development_flow.py  # top-level action router
+  start/                    # node_start.py
+  revise_spec/              # node_revise_spec.py
+  approve/                  # node_approve.py
+  rework/                   # node_rework.py
+  merge/                    # node_merge.py
   profiles.py               # model/cost profile loading + merge helpers
   state_machine.py          # merge gate + allowed_actions helpers
   spec_plan/
@@ -125,7 +130,7 @@ Each stage pipe’s root output exposes a `stage_result` port (dict) with at lea
 - `stage` — one of `spec_plan`, `implement`, `review`
 - `summary` (string)
 - `artifacts` — list of `{ "path", "kind" }` (spec_plan may list **`spec_plan_candidate`** before the main **`checkpoint`**).
-- `next_action` — e.g. `approve`, `review`, `rework_implementation`, `revise_spec`, `merge`, `stop`. When **`ok` is false**, `WriteCheckpointNode` **does not read** `request.next_action` (avoids a stale `"approve"`); it uses **`request.next_action_on_failure`** (set by `aggregate_reviews`) or **`params.next_action_on_failure`** (`implement_pipe` / `spec_plan_pipe` setdefaults), else **`stop`**.
+- `next_action` — e.g. `approve`, `review`, `rework`, `revise_spec`, `merge`, `stop`. When **`ok` is false**, `WriteCheckpointNode` **does not read** `request.next_action` (avoids a stale `"approve"`); it uses **`request.next_action_on_failure`** (set by `aggregate_reviews`) or **`params.next_action_on_failure`** (`implement_pipe` / `spec_plan_pipe` setdefaults), else **`stop`**.
 - `human_decision_required` (bool)
 - `raw_results` (dict)
 - **`approved_candidate_path`** (optional, spec_plan only) — path to a slim JSON file `{ "spec", "plan" }` parsed from the draft executor stdout, suitable as **`approved_checkpoint_path`** for `implement_pipe` / `review_pipe` without hand-editing the full stage checkpoint.
@@ -164,12 +169,12 @@ Keys are **child node ids** inside the composite pipe. Typical nesting:
   This step does not create/switch branches or workspaces, but it may create a run artifact directory under `.nodeflow/runs/`. Rejects `flow_checkpoint_path` (always a fresh spec-plan run).
 - `action=revise_spec`: requires previous state `awaiting_review_decision`, `flow_checkpoint_path`, and a prior `review_checkpoint_path`; requires `run_context.source_base_revision` (from `start`). Clears `workspace_context`, then runs `spec_plan_pipe` with `revision_context` from the review. If `task_prompt` is empty, it uses `flow_result.task_prompt`; if missing, action fails fast.
 - `action=approve`: requires previous state `awaiting_approval` and `flow_checkpoint_path`; uses `approved_candidate_path` / `approved_checkpoint_path` from that checkpoint, then prepares workspace (`prepare_workspace`, `strategy=current_repo`), runs `implement_pipe` and `review_pipe`, and sets `flow_result.state=awaiting_review_decision`.
-- `action=rework_implementation`: requires previous state `awaiting_review_decision`, `flow_checkpoint_path`, a valid previous review checkpoint, and checkpoint `workspace_context`; it reuses that `workspace_context` and fails fast on inconsistency.
+- `action=rework`: requires previous state `awaiting_review_decision`, `flow_checkpoint_path`, a valid previous review checkpoint, and checkpoint `workspace_context`; it reuses that `workspace_context` and fails fast on inconsistency.
 - **`current_repo` + `revise_spec`:** `revise_spec` requires the source repository to be clean, and `HEAD` must still match `run_context.source_base_revision`. Reset or stash previous implementation edits before revising the spec.
-- **`current_repo` + `rework_implementation`:** `prepare_workspace` reuses `workspace_context` from the checkpoint and **does not** require a clean source tree, so you can iterate on the same dirty working tree while `base_revision` stays fixed.
-- After `approve` / `rework_implementation`, `write_development_summary` writes a summary artifact and proposes a commit message based on implementation diff, review result, commit template, and recent commit style.
-- `action=merge`: requires `flow_checkpoint_path` from `awaiting_review_decision`, `flow_result.ok == true`, `implement_stage_result.ok == true`, `review_stage_result.ok == true`, and `next_action == "merge"`. Otherwise use `action=force_merge` (still requires `flow_checkpoint_path`).
-- `action=force_merge`: records merged state without the strict merge gate (human override) and writes audit fields (`forced`, `previous_flow_checkpoint_path`, optional `force_merge_reason` / human comment fields).
+- **`current_repo` + `rework`:** `prepare_workspace` reuses `workspace_context` from the checkpoint and **does not** require a clean source tree, so you can iterate on the same dirty working tree while `base_revision` stays fixed.
+- After `approve` / `rework`, `write_development_summary` writes a summary artifact and proposes a commit message based on implementation diff, review result, commit template, and recent commit style.
+- `action=merge`: requires `flow_checkpoint_path` from `awaiting_review_decision`, `flow_result.ok == true`, `implement_stage_result.ok == true`, `review_stage_result.ok == true`, and `next_action == "merge"`.
+- `force_merge` is no longer supported. Use `merge` only after the merge gate is satisfied.
 
 `flow_result.ok` after implement+review is **both** `implement_stage_result.ok` and `review_stage_result.ok`.
 `flow_result.ok` means stages completed successfully; it does not by itself mean merge is allowed. Use `merge_ready` and `allowed_actions` / `next_action`.
@@ -177,10 +182,10 @@ Keys are **child node ids** inside the composite pipe. Typical nesting:
 
 `flow_result` includes `allowed_actions` (narrowed when a stage fails) and `flow_checkpoint_path` (also embedded in the written JSON payload). The next invocation passes `action` and `flow_checkpoint_path` to continue.
 For `action=start`, `flow_result` includes `run_context` (with `source_repo_root`, `source_base_revision`, `source_current_branch` frozen from that moment) and no concrete workspace yet.
-For `action=approve` / `action=rework_implementation`, `flow_result` includes `run_context`, `workspace_context`, and `development_summary` (`commit_message_suggestion` + artifact path).
-Resume actions (`approve`, `rework_implementation`, `revise_spec`, `merge`, `force_merge`) require checkpoint `flow_result.run_context.source_repo_root`; checkpoints without this field are not supported.
+For `action=approve` / `action=rework`, `flow_result` includes `run_context`, `workspace_context`, and `development_summary` (`commit_message_suggestion` + artifact path).
+Resume actions (`approve`, `rework`, `revise_spec`, `merge`) require checkpoint `flow_result.run_context.source_repo_root`; checkpoints without this field are not supported.
 
-`approve` / `rework_implementation` use `run_context.source_base_revision` (not pipeline `base_ref` at resume time) for `prepare_workspace` and stage `base_ref`, so implementation/review stay aligned with the tree as of `start`. With `strategy=current_repo`, a fresh `approve` always requires `HEAD == source_base_revision`.
+`approve` / `rework` use `run_context.source_base_revision` (not pipeline `base_ref` at resume time) for `prepare_workspace` and stage `base_ref`, so implementation/review stay aligned with the tree as of `start`. With `strategy=current_repo`, a fresh `approve` always requires `HEAD == source_base_revision`.
 For `development_flow_pipe`, invocation-time `base_ref` does not change the frozen base during resume actions. `start` freezes `HEAD` into `run_context.source_base_revision`, and resume actions always use that value.
 
 `prepare_development_run_context.branch_prefix` plus the generated slug produce names like `feat/nodeflow/001-add-config-validation` (slash after the prefix). This branch name is currently recorded as planned metadata in `run_context` / `workspace_context`; `development_flow` does not create or switch branches in current-repo mode.

@@ -10,10 +10,15 @@ from nodeflow.nodes.exec.qwen_exec import QwenExecNode
 from nodeflow.nodes.routing.python_route_by_task_type import PythonRouteByTaskTypeNode
 from nodeflow.nodes.summarize.python_summarize_result import PythonSummarizeResultNode
 from nodeflow.workflows.development_flow import (
+    ApprovePipeNode,
     DevelopmentFlowPipeNode,
     ImplementPipeNode,
+    MergePipeNode,
     ReviewPipeNode,
+    ReviseSpecPipeNode,
+    ReworkPipeNode,
     SpecPlanPipeNode,
+    StartPipeNode,
 )
 from nodeflow.workflows.implement_with_codex.node_implement_with_codex import (
     ImplementWithCodexPipeNode,
@@ -38,6 +43,12 @@ def register_builtin_nodes() -> None:
     registry.register("implement_pipe", ImplementPipeNode, override=True)
     registry.register("review_pipe", ReviewPipeNode, override=True)
     registry.register("development_flow_pipe", DevelopmentFlowPipeNode, override=True)
+    registry.register("workflows.development_flow.start", StartPipeNode, override=True)
+    registry.register("workflows.development_flow.revise_spec", ReviseSpecPipeNode, override=True)
+    registry.register("workflows.development_flow.approve", ApprovePipeNode, override=True)
+    registry.register("workflows.development_flow.rework", ReworkPipeNode, override=True)
+    registry.register("workflows.development_flow.merge", MergePipeNode, override=True)
+    registry.register("workflows.development_flow", DevelopmentFlowPipeNode, override=True)
 
 
 register_builtin_nodes()
