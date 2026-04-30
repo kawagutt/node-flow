@@ -16,7 +16,7 @@ from nodeflow.core.runner import Runner
 from nodeflow.nodes.exec.codex_exec import CodexExecNode
 from nodeflow.workflows.development_flow.common.pipe_helpers import run_until_node_done
 from nodeflow.workflows.development_flow.common.write_checkpoint import WriteCheckpointNode
-from nodeflow.workflows.development_flow.spec_plan_pipe.collect_repo_context import (
+from nodeflow.workflows.development_flow.spec_plan.collect_repo_context import (
     CollectRepoContextNode,
 )
 

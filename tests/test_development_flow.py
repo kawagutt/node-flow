@@ -29,17 +29,17 @@ from nodeflow.workflows.development_flow.common.write_checkpoint import WriteChe
 from nodeflow.workflows.development_flow.common.write_development_summary import (
     WriteDevelopmentSummaryNode,
 )
-from nodeflow.workflows.development_flow.development_flow_pipe import DevelopmentFlowPipeNode
-from nodeflow.workflows.development_flow.implement_pipe import ImplementPipeNode
-from nodeflow.workflows.development_flow.review_pipe import ReviewPipeNode
-from nodeflow.workflows.development_flow.review_pipe.aggregate_reviews import AggregateReviewsNode
-from nodeflow.workflows.development_flow.review_pipe.prompt_common import extract_diff_context
-from nodeflow.workflows.development_flow.review_pipe.review_parse import (
+from nodeflow.workflows.development_flow.implement import ImplementPipeNode
+from nodeflow.workflows.development_flow.node_development_flow import DevelopmentFlowPipeNode
+from nodeflow.workflows.development_flow.review import ReviewPipeNode
+from nodeflow.workflows.development_flow.review.aggregate_reviews import AggregateReviewsNode
+from nodeflow.workflows.development_flow.review.prompt_common import extract_diff_context
+from nodeflow.workflows.development_flow.review.review_parse import (
     parse_review_contract_from_execution_result,
     validate_review_contract_payload,
 )
-from nodeflow.workflows.development_flow.spec_plan_pipe import SpecPlanPipeNode
-from nodeflow.workflows.development_flow.spec_plan_pipe.collect_repo_context import (
+from nodeflow.workflows.development_flow.spec_plan import SpecPlanPipeNode
+from nodeflow.workflows.development_flow.spec_plan.collect_repo_context import (
     CollectRepoContextNode,
 )
 
@@ -1574,7 +1574,7 @@ def test_development_flow_start_rejects_flow_checkpoint_path_even_when_valid(
 
 
 def test_run_tests_requires_argv() -> None:
-    from nodeflow.workflows.development_flow.implement_pipe.run_tests import RunTestsNode
+    from nodeflow.workflows.development_flow.implement.run_tests import RunTestsNode
 
     node = RunTestsNode()
     node.execute({"repo_root": "."}, {})

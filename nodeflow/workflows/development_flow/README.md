@@ -55,18 +55,17 @@ nodeflow/workflows/development_flow/
     prepare_workspace.py
     prepare_development_run_context.py
     write_development_summary.py
-  development_flow_pipe/
-    pipe.py                # top-level orchestration with checkpoint/resume actions
-    profiles.py            # model/cost profile loading + merge helpers
-    state_machine.py       # merge gate + allowed_actions helpers
-  spec_plan_pipe/
-    pipe.py
+  node_development_flow.py  # top-level orchestration with checkpoint/resume actions
+  profiles.py               # model/cost profile loading + merge helpers
+  state_machine.py          # merge gate + allowed_actions helpers
+  spec_plan/
+    node_spec_plan.py
     collect_repo_context.py # git rev-parse + status + diff excerpt; builds Codex stdin body
-  implement_pipe/
-    pipe.py
+  implement/
+    node_implement.py
     run_tests.py
-  review_pipe/
-    pipe.py
+  review/
+    node_review.py
     review_parse.py         # JSON contract text + parse helpers (raw_decode); importable from other stages
     aggregate_reviews.py    # parses JSON from review stdout; merges with diff/exec signals
     build_diff_review_prompt.py
@@ -121,7 +120,7 @@ Each review subprocess should print **one JSON object** on stdout (no markdown f
 
 `AggregateReviewsNode` parses this from each review’s `execution_result` (stdout/stderr). If JSON is missing or invalid, a **blocking** parse finding is recorded. Subprocess `ok: false` still blocks as before.
 
-The exact instruction text is in `review_pipe/review_parse.py` (`REVIEW_JSON_CONTRACT_TEXT`) and is prepended by the prompt builder nodes. Other stages (e.g. `implement_pipe`) may import from `review_pipe.review_parse` if they need the same contract.
+The exact instruction text is in `review/review_parse.py` (`REVIEW_JSON_CONTRACT_TEXT`) and is prepended by the prompt builder nodes. Other stages (e.g. `implement`) may import from `nodeflow.workflows.development_flow.review.review_parse` if they need the same contract.
 
 ## `stage_result` contract (P0)
 

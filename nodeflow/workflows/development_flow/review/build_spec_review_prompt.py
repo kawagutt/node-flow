@@ -1,4 +1,4 @@
-"""Build stdin prompt dedicated to spec revision decisions."""
+"""Build stdin prompt for spec conformance review (approved spec/plan + diff)."""
 
 from __future__ import annotations
 
@@ -7,15 +7,15 @@ from typing import Any, Dict
 
 from nodeflow.core.base_node import ExecutionContext
 from nodeflow.core.node_kinds import PythonActionNode
-from nodeflow.workflows.development_flow.review_pipe.prompt_common import (
+from nodeflow.workflows.development_flow.review.prompt_common import (
     as_text,
     extract_diff_context,
     render_common_context,
 )
 
 
-class BuildSpecRevisionReviewPromptNode(PythonActionNode):
-    role = "build_spec_revision_review_prompt"
+class BuildSpecReviewPromptNode(PythonActionNode):
+    role = "build_spec_review_prompt"
 
     def run(
         self,
@@ -33,9 +33,8 @@ class BuildSpecRevisionReviewPromptNode(PythonActionNode):
         )
 
         mission = (
-            "Assess whether the approved SPEC/PLAN must be revised. "
-            'Set "spec_revision_needed": true only when the currently observed change cannot be '
-            "accepted by implementation rework alone.\n\n"
+            "Decide whether the diff conforms to the approved SPEC and PLAN. "
+            'If the change requires revising the spec (not just the code), set "spec_revision_needed": true.\n\n'
         )
         extra_sections = (
             "## Approved SPEC\n"
@@ -50,6 +49,7 @@ class BuildSpecRevisionReviewPromptNode(PythonActionNode):
             untracked=untracked,
             excerpts=excerpts,
             diff_clipped=diff_clipped,
+            diff_title="## Git diff (working tree vs base ref)",
             extra_sections=extra_sections,
         )
         return {"codex_task_prompt": {"text": text}}

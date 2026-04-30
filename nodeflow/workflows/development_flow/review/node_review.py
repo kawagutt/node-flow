@@ -18,20 +18,20 @@ from nodeflow.workflows.development_flow.common.collect_diff import CollectDiffN
 from nodeflow.workflows.development_flow.common.load_checkpoint import LoadCheckpointNode
 from nodeflow.workflows.development_flow.common.pipe_helpers import run_until_node_done
 from nodeflow.workflows.development_flow.common.write_checkpoint import WriteCheckpointNode
-from nodeflow.workflows.development_flow.review_pipe.aggregate_reviews import AggregateReviewsNode
-from nodeflow.workflows.development_flow.review_pipe.build_diff_review_prompt import (
+from nodeflow.workflows.development_flow.review.aggregate_reviews import AggregateReviewsNode
+from nodeflow.workflows.development_flow.review.build_diff_review_prompt import (
     BuildDiffReviewPromptNode,
 )
-from nodeflow.workflows.development_flow.review_pipe.build_spec_review_prompt import (
+from nodeflow.workflows.development_flow.review.build_spec_review_prompt import (
     BuildSpecReviewPromptNode,
 )
-from nodeflow.workflows.development_flow.review_pipe.build_spec_revision_review_prompt import (
+from nodeflow.workflows.development_flow.review.build_spec_revision_review_prompt import (
     BuildSpecRevisionReviewPromptNode,
 )
-from nodeflow.workflows.development_flow.review_pipe.build_test_review_prompt import (
+from nodeflow.workflows.development_flow.review.build_test_review_prompt import (
     BuildTestReviewPromptNode,
 )
-from nodeflow.workflows.development_flow.review_pipe.build_wide_scan_review_prompt import (
+from nodeflow.workflows.development_flow.review.build_wide_scan_review_prompt import (
     BuildWideScanReviewPromptNode,
 )
 

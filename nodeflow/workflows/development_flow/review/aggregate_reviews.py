@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Tuple
 
 from nodeflow.core.base_node import ExecutionContext
 from nodeflow.core.node_kinds import PythonActionNode
-from nodeflow.workflows.development_flow.review_pipe.review_parse import (
+from nodeflow.workflows.development_flow.review.review_parse import (
     parse_review_contract_from_execution_result,
     validate_review_contract_payload,
 )

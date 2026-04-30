@@ -34,12 +34,7 @@ ALLOWED_EXISTING_MISSING_NODE_FILE = {
     "nodeflow/nodes/routing",
     "nodeflow/nodes/summarize",
     "nodeflow/workflows",
-    "nodeflow/workflows/development_flow",
     "nodeflow/workflows/development_flow/common",
-    "nodeflow/workflows/development_flow/development_flow_pipe",
-    "nodeflow/workflows/development_flow/implement_pipe",
-    "nodeflow/workflows/development_flow/review_pipe",
-    "nodeflow/workflows/development_flow/spec_plan_pipe",
 }
 
 
@@ -80,4 +75,16 @@ def test_new_node_folders_have_matching_node_file():
             if not expected.exists():
                 violations.append(f"{rel} missing {expected.name}")
 
+    assert violations == []
+
+
+def test_no_development_flow_pipe_directories_remain() -> None:
+    base = ROOT / "nodeflow" / "workflows" / "development_flow"
+    violations = [p for p in base.rglob("*_pipe") if p.is_dir()]
+    assert violations == []
+
+
+def test_no_pipe_py_under_development_flow_workflows() -> None:
+    base = ROOT / "nodeflow" / "workflows" / "development_flow"
+    violations = [p for p in base.rglob("pipe.py") if p.is_file()]
     assert violations == []

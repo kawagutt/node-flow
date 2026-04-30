@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 from nodeflow.core.base_node import ExecutionContext
 from nodeflow.core.node_kinds import PythonActionNode
-from nodeflow.workflows.development_flow.review_pipe.prompt_common import (
+from nodeflow.workflows.development_flow.review.prompt_common import (
     extract_diff_context,
     render_common_context,
 )

@@ -26,17 +26,15 @@ from nodeflow.workflows.development_flow.common.prepare_workspace import Prepare
 from nodeflow.workflows.development_flow.common.write_development_summary import (
     WriteDevelopmentSummaryNode,
 )
-from nodeflow.workflows.development_flow.development_flow_pipe.profiles import (
-    apply_profiles_to_pipe_params,
-)
-from nodeflow.workflows.development_flow.development_flow_pipe.state_machine import (
+from nodeflow.workflows.development_flow.implement import ImplementPipeNode
+from nodeflow.workflows.development_flow.profiles import apply_profiles_to_pipe_params
+from nodeflow.workflows.development_flow.review import ReviewPipeNode
+from nodeflow.workflows.development_flow.spec_plan import SpecPlanPipeNode
+from nodeflow.workflows.development_flow.state_machine import (
     require_state,
     review_allowed_actions,
     validate_merge_gate,
 )
-from nodeflow.workflows.development_flow.implement_pipe import ImplementPipeNode
-from nodeflow.workflows.development_flow.review_pipe import ReviewPipeNode
-from nodeflow.workflows.development_flow.spec_plan_pipe import SpecPlanPipeNode
 
 
 def _as_path(base: Path, raw: str | None) -> Path | None:

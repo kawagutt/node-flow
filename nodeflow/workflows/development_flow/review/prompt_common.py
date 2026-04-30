@@ -6,7 +6,7 @@ import json
 from typing import Any, Dict, List
 
 from nodeflow.core.base_node import NodeExecutionFailure
-from nodeflow.workflows.development_flow.review_pipe.review_parse import REVIEW_JSON_CONTRACT_TEXT
+from nodeflow.workflows.development_flow.review.review_parse import REVIEW_JSON_CONTRACT_TEXT
 
 
 def as_text(value: Any) -> str:

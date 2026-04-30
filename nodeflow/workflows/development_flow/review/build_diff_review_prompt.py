@@ -1,4 +1,4 @@
-"""Build stdin prompt for spec conformance review (approved spec/plan + diff)."""
+"""Build stdin prompt for diff-focused review (includes diff text + JSON contract)."""
 
 from __future__ import annotations
 
@@ -7,15 +7,14 @@ from typing import Any, Dict
 
 from nodeflow.core.base_node import ExecutionContext
 from nodeflow.core.node_kinds import PythonActionNode
-from nodeflow.workflows.development_flow.review_pipe.prompt_common import (
-    as_text,
+from nodeflow.workflows.development_flow.review.prompt_common import (
     extract_diff_context,
     render_common_context,
 )
 
 
-class BuildSpecReviewPromptNode(PythonActionNode):
-    role = "build_spec_review_prompt"
+class BuildDiffReviewPromptNode(PythonActionNode):
+    role = "build_diff_review_prompt"
 
     def run(
         self,
@@ -23,24 +22,14 @@ class BuildSpecReviewPromptNode(PythonActionNode):
         params: MappingProxyType,
         context: ExecutionContext,
     ) -> Dict[str, Any]:
-        asp = (
-            inputs.get("approved_spec_plan")
-            if isinstance(inputs.get("approved_spec_plan"), dict)
-            else {}
-        )
         base_ref, diff_clipped, status_short, untracked, excerpts = extract_diff_context(
             inputs, params
         )
-
         mission = (
-            "Decide whether the diff conforms to the approved SPEC and PLAN. "
-            'If the change requires revising the spec (not just the code), set "spec_revision_needed": true.\n\n'
-        )
-        extra_sections = (
-            "## Approved SPEC\n"
-            f"{as_text(asp.get('spec'))}\n\n"
-            "## Approved PLAN\n"
-            f"{as_text(asp.get('plan'))}\n\n"
+            "Review the following implementation diff. "
+            "Focus on correctness, unintended scope changes, missing error handling, "
+            "bad naming, broken contracts, and likely test gaps. "
+            "Do not comment on style-only issues unless they affect maintainability.\n\n"
         )
         text = render_common_context(
             mission=mission,
@@ -49,7 +38,8 @@ class BuildSpecReviewPromptNode(PythonActionNode):
             untracked=untracked,
             excerpts=excerpts,
             diff_clipped=diff_clipped,
+            untracked_title="## Untracked paths (git ls-files --others --exclude-standard)",
+            excerpts_title="## Untracked file excerpts (text only; may be truncated)",
             diff_title="## Git diff (working tree vs base ref)",
-            extra_sections=extra_sections,
         )
         return {"codex_task_prompt": {"text": text}}

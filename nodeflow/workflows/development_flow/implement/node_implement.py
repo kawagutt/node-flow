@@ -18,7 +18,7 @@ from nodeflow.workflows.development_flow.common.collect_diff import CollectDiffN
 from nodeflow.workflows.development_flow.common.load_checkpoint import LoadCheckpointNode
 from nodeflow.workflows.development_flow.common.pipe_helpers import run_until_node_done
 from nodeflow.workflows.development_flow.common.write_checkpoint import WriteCheckpointNode
-from nodeflow.workflows.development_flow.implement_pipe.run_tests import RunTestsNode
+from nodeflow.workflows.development_flow.implement.run_tests import RunTestsNode
 
 
 class ImplementPipeNode(PipeNode):
