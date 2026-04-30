@@ -1,5 +1,5 @@
 """
-設定管理モジュール（YAML読み込み、deep merge）。execution 層 — ファイル IO。
+YAML 読み込みと deep merge。core — ファイル IO 補助。
 """
 
 import copy

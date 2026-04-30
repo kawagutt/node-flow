@@ -9,8 +9,8 @@ import sys
 from pathlib import Path
 
 from nodeflow.core.base_node import NodeExecutionFailure
-from nodeflow.execution.loader import load_pipeline
-from nodeflow.execution.run import load_and_kick_pipeline
+from nodeflow.core.loader import load_pipeline
+from nodeflow.core.run import load_and_kick_pipeline
 from nodeflow.nodes.development_flow.common.check_source_workspace import (
     CheckSourceWorkspaceNode,
 )
@@ -1611,7 +1611,8 @@ def test_start_requires_clean_source_repo(tmp_path: Path) -> None:
     repo = tmp_path / "dirty_repo"
     repo.mkdir()
     _git_repo_with_commit(repo)
-    (repo / "dirty.txt").write_text("dirty\n", encoding="utf-8")
+    # Tracked modification (untracked files are ignored by default start policy).
+    (repo / "README.md").write_text("dirty\n", encoding="utf-8")
     node = DevelopmentFlowPipeNode()
     node.execute(
         {"action": "start", "task_prompt": "x", "repo_root": str(repo)},
@@ -2213,6 +2214,8 @@ def test_revise_spec_requires_clean_source_repo(tmp_path: Path) -> None:
     )
     approve_fp = approve_out["flow_result"]["flow_checkpoint_path"]
     node.reset_status()
+    # Tracked modification so check_source_workspace treats the tree as dirty.
+    (repo / "README.md").write_text("revise dirty\n", encoding="utf-8")
     node.execute(
         {
             "action": "revise_spec",

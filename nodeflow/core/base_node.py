@@ -83,8 +83,8 @@ def domain_ports_from_observation(obs: Dict[str, Any]) -> Dict[str, Any]:
     Do not use this to drop arbitrary other keys—extend the frozenset only if the
     port contract adds a new reserved name.
 
-    **Call sites:** ``PipeNode.run()`` implementations (loader-built root pipe or
-    custom subclass) when forwarding the **final** child’s observation to this pipe’s
+    **Call sites:** ``RunnerFrame.run()`` / custom ``PipeNode.run()`` when forwarding
+    the **final** child’s observation to this pipe’s
     domain output. Not a general-purpose dict helper—avoid importing it elsewhere.
     """
     return {k: v for k, v in obs.items() if k not in RESERVED_TOP_LEVEL_FROM_RUN}

@@ -489,6 +489,9 @@ nodeflow/
     base_node.py
     runner.py
     registry.py
+    loader.py
+    run.py
+    config.py
     node_kinds/
       __init__.py
       action.py
@@ -499,14 +502,9 @@ nodeflow/
     summarize/
     exec/
     dispatch/
-
-  execution/
-    loader.py
-    run.py
-    config.py
 ```
 
-**`execution/`** — **`core/runner.py`**（graph の step 実行）とは別に、**pipeline 読み込み・組み立て・ルート `execute` のキック**を置く層。`loader` / `run` / `config` の役割分担はリポジトリ任せ。
+**`core/loader.py` / `core/run.py` / `core/config.py`** — **`core/runner.py`**（graph の step 実行）とは別に、**pipeline 読み込み・組み立て・ルート `execute` のキック**と YAML ファイル IO を置く。`loader` / `run` / `config` の役割分担はリポジトリ任せ。
 
 ### 15.3 ルール
 

@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Set, Tuple
 
 import nodeflow.nodes  # noqa: F401 — built-in registration
 from nodeflow.core.base_node import BaseNode
+from nodeflow.core.graph_spec import GraphSpec, InputBinding
 from nodeflow.core.node_kinds import PipeNode
 from nodeflow.core.registry import registry
 
@@ -33,10 +34,19 @@ class VersionMismatchError(Exception):
     """Raised when YAML version is missing or does not match."""
 
 
+class _GraphPipeNode(PipeNode):
+    """Root pipeline graph: stable GraphSpec for default run() / read_error()."""
+
+    def __init__(self, spec: GraphSpec) -> None:
+        super().__init__()
+        self._spec = spec
+
+    def graph(self) -> GraphSpec:
+        return self._spec
+
+
 _REF_PATTERN = re.compile(r"\$\{([^}.]+)\.([^}]+)\}")
 _REF_PATTERN_DEEP = re.compile(r"\$\{([^}.]+)\.([^}.]+)\.([^}]+)\}")
-
-InputBinding = Tuple[str, ...]
 
 
 def _ref_to_binding(ref: Any) -> InputBinding | None:
@@ -189,13 +199,14 @@ def load_pipeline(workspace_dir: str, file_path: str) -> BaseNode:
 
     node_input_bindings = _build_node_input_bindings(nodes_list, node_ids)
 
-    return PipeNode(
-        graph_node_order=graph_node_order,
+    spec = GraphSpec(
         nodes=nodes,
-        node_input_bindings=node_input_bindings,
-        node_param_definitions=node_param_definitions,
-        final_id=final_id,
+        order=graph_node_order,
+        bindings=node_input_bindings,
+        params=node_param_definitions,
+        final=final_id,
     )
+    return _GraphPipeNode(spec)
 
 
 def load_node_pipeline(file_path: str) -> Dict[str, Any]:

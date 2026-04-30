@@ -1,4 +1,4 @@
-"""PipeNode — linear graph execution (loader root uses the same class)."""
+"""PipeNode — linear graph execution (tests use GraphSpec + _TestPipeNode; loader uses _GraphPipeNode)."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from types import MappingProxyType
 from typing import Any, Dict
 
 from nodeflow.core.base_node import BaseNode, ExecutionContext, NodeExecutionLimit
+from nodeflow.core.graph_spec import GraphSpec
 from nodeflow.core.node_kinds import PipeNode
 
 
@@ -31,13 +32,24 @@ class EchoBNode(BaseNode):
         return {"result": {"out": str(val) + ":b"}}
 
 
+class _TestPipeNode(PipeNode):
+    def __init__(self, spec: GraphSpec) -> None:
+        super().__init__()
+        self._spec = spec
+
+    def graph(self) -> GraphSpec:
+        return self._spec
+
+
 def _make_pipe(nodes, order, bindings, params_def, final_id):
-    return PipeNode(
-        graph_node_order=order,
-        nodes=nodes,
-        node_input_bindings=bindings,
-        node_param_definitions=params_def,
-        final_id=final_id,
+    return _TestPipeNode(
+        GraphSpec(
+            nodes=nodes,
+            order=order,
+            bindings=bindings,
+            params=params_def,
+            final=final_id,
+        )
     )
 
 

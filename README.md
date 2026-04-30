@@ -42,7 +42,7 @@ See `ApiActionNode` docstring in code for the same contract.
 
 ## Root graph and `PipeNode`
 
-The YAML `graph` section (`graph.nodes`, `graph.final`) is loaded by **`execution.loader.load_pipeline`**, which **assembles a root `PipeNode` in code** (this is **not** a public YAML `type` like `type: pipe`). The root pipe’s **`run()`** returns the **`final` node’s domain output** (that node’s port name → dict payload, with child-level **`_runtime` / `_usage` stripped** via `domain_ports_from_observation`). The root’s own **`execute()`** then attaches the composite **`_runtime`** (port revisions) for the pipe—so the observable result is “final domain ports as the root’s domain ports,” plus the root’s **`_runtime`**, not a raw passthrough of the child’s full observation dict.
+The YAML `graph` section (`graph.nodes`, `graph.final`) is loaded by **`nodeflow.core.loader.load_pipeline`**, which **assembles a root `PipeNode` in code** (this is **not** a public YAML `type` like `type: pipe`). The loader holds a frozen **`GraphSpec`** (child nodes, order, bindings, params, `final`) on that root; default **`run()`** uses **`RunnerFrame`** to step the child graph and returns the **`final` node’s domain output** (that node’s port name → dict payload, with child-level **`_runtime` / `_usage` stripped** via `domain_ports_from_observation`). The root’s own **`execute()`** then attaches the composite **`_runtime`** (port revisions) for the pipe—so the observable result is “final domain ports as the root’s domain ports,” plus the root’s **`_runtime`**, not a raw passthrough of the child’s full observation dict.
 
 `read_error()` on that root `PipeNode` returns the **first** child error only when present; for full diagnostics, inspect child nodes.
 
@@ -103,8 +103,8 @@ For `development_flow_pipe`, `repo_root` means the target project repository (no
 
 `.nodeflow/` should usually be git-ignored. Fresh `prepare_workspace` / `start` clean checks skip paths under `.nodeflow/` by default so generated metadata does not block runs.
 
-`execution.loader.load_node_pipeline()` is a raw loader for version + top-level shape checks.
-Use `execution.loader.load_pipeline()` for executable graph validation.
+`nodeflow.core.loader.load_node_pipeline()` is a raw loader for version + top-level shape checks.
+Use `nodeflow.core.loader.load_pipeline()` for executable graph validation.
 
 ## API keys (optional)
 
@@ -119,14 +119,16 @@ nodeflow/
 │   ├── base_node.py      # execute template, _runtime / _usage
 │   ├── node_kinds/       # PipeNode, ActionNode, implementation kinds
 │   ├── runner.py
-│   └── registry.py
+│   ├── registry.py
+│   ├── loader.py         # pipeline YAML parse + root PipeNode assembly
+│   ├── config.py         # YAML IO helpers (load_yaml, deep merge)
+│   └── run.py            # load_and_kick_pipeline entry
 ├── nodes/                # concrete nodes only (by role / purpose)
 │   ├── routing/
 │   ├── summarize/
 │   ├── exec/
 │   ├── dispatch/
 │   └── development_flow/          # stage pipes; see development_flow/README.md
-└── execution/            # YAML load + run entrypoints
 ```
 
 ## Custom nodes

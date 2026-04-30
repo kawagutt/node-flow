@@ -1,4 +1,9 @@
-"""Public contract: loader root PipeNode, runtime revision, Runner surface."""
+"""Public contract: loader root PipeNode, runtime revision, Runner surface.
+
+Stable entrypoints for callers and tests: ``nodeflow.core.loader.load_pipeline``,
+``nodeflow.core.loader.load_node_pipeline``, ``nodeflow.core.run.load_and_kick_pipeline``.
+Prefer these over deep imports of private loader helpers unless necessary.
+"""
 
 from __future__ import annotations
 
@@ -6,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
+from nodeflow.core.loader import load_pipeline
 from nodeflow.core.node_kinds import PipeNode
 from nodeflow.core.runner import Runner
-from nodeflow.execution.loader import load_pipeline
 
 
 def test_loader_root_is_internal_pipe_node(tmp_path):

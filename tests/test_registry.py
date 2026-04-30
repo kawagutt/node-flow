@@ -56,7 +56,7 @@ def test_registry_clear():
 
 
 def test_load_pipeline_fails_when_registry_empty(tmp_path):
-    from nodeflow.execution.loader import load_pipeline
+    from nodeflow.core.loader import load_pipeline
 
     yaml_path = tmp_path / "pipeline.yaml"
     yaml_path.write_text(
@@ -80,7 +80,7 @@ graph:
 
 
 def test_registry_custom_node_register_and_load(tmp_path):
-    from nodeflow.execution.loader import load_pipeline
+    from nodeflow.core.loader import load_pipeline
 
     class CustomNode(BaseNode):
         def run(
@@ -115,7 +115,7 @@ graph:
 
 
 def test_loader_unknown_type_raises(tmp_path):
-    from nodeflow.execution.loader import load_pipeline
+    from nodeflow.core.loader import load_pipeline
 
     yaml_path = tmp_path / "pipeline.yaml"
     yaml_path.write_text(

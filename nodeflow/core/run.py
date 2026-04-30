@@ -1,5 +1,5 @@
 """
-NodeFlow — load + execute entry (execution layer).
+NodeFlow — load + execute entry (core).
 """
 
 from __future__ import annotations

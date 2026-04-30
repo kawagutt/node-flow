@@ -7,12 +7,22 @@ from types import MappingProxyType
 import pytest
 
 from nodeflow.core.base_node import BaseNode, ExecutionContext, NodeExecutionFailure
+from nodeflow.core.graph_spec import GraphSpec
+from nodeflow.core.loader import load_pipeline
 from nodeflow.core.node_kinds import PipeNode
-from nodeflow.execution.loader import load_pipeline
-from nodeflow.execution.run import load_and_kick_pipeline
+from nodeflow.core.run import load_and_kick_pipeline
 from nodeflow.nodes.exec.codex_exec import CodexExecNode
 from nodeflow.nodes.routing.python_route_by_task_type import PythonRouteByTaskTypeNode
 from nodeflow.nodes.summarize.python_summarize_result import PythonSummarizeResultNode
+
+
+class _TestPipeNode(PipeNode):
+    def __init__(self, spec: GraphSpec) -> None:
+        super().__init__()
+        self._spec = spec
+
+    def graph(self) -> GraphSpec:
+        return self._spec
 
 
 def test_route_exec_summarize_in_memory():
@@ -31,12 +41,14 @@ def test_route_exec_summarize_in_memory():
         "exec": {"argv": ["sh", "-c", "echo e2e-out"]},
         "summarize": {},
     }
-    pipe = PipeNode(
-        graph_node_order=["route", "exec", "summarize"],
-        nodes=nodes,
-        node_input_bindings=node_input_bindings,
-        node_param_definitions=node_param_definitions,
-        final_id="summarize",
+    pipe = _TestPipeNode(
+        GraphSpec(
+            nodes=nodes,
+            order=["route", "exec", "summarize"],
+            bindings=node_input_bindings,
+            params=node_param_definitions,
+            final="summarize",
+        )
     )
     out = pipe.execute({"task_type": "implement", "task_prompt": "x"}, {})
     assert pipe.read_status() == "done"
