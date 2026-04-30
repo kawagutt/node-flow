@@ -113,7 +113,7 @@ class SpecPlanPipeNode(PipeNode):
             )
             if checkpoint_dir_explicit:
                 raise NodeExecutionFailure(
-                    "spec_plan_pipe: artifact_root and write_checkpoint.checkpoint_dir cannot both be set"
+                    "spec_plan: artifact_root and write_checkpoint.checkpoint_dir cannot both be set"
                 )
             resolved_node_params["write_checkpoint"]["checkpoint_dir"] = str(
                 (Path(art.strip()) / "spec_plan").resolve()

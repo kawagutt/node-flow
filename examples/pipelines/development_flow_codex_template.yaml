@@ -16,7 +16,7 @@ inputs:
 graph:
   nodes:
     - id: flow
-      type: development_flow_pipe
+      type: workflows.development_flow
       inputs:
         action: ${inputs.action}
         task_prompt: ${inputs.task_prompt}
@@ -35,15 +35,15 @@ graph:
           strategy: current_repo
         flow_checkpoint:
           checkpoint_dir: .nodeflow/checkpoints
-        spec_plan_pipe:
+        spec_plan:
           codex_exec:
             argv: ["codex", "exec", "--model", "REPLACE_ME", "--", "cat"]
-        implement_pipe:
+        implement:
           codex_exec:
             argv: ["codex", "exec", "--model", "REPLACE_ME", "--", "cat"]
           run_tests:
             argv: ["python3", "-m", "pytest", "-q"]
-        review_pipe:
+        review:
           review_diff_focused:
             argv: ["codex", "exec", "--model", "REPLACE_ME", "--", "cat"]
           review_wide_scan:

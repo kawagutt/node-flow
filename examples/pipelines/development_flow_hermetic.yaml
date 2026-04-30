@@ -1,4 +1,4 @@
-# Runnable hermetic example: full development_flow_pipe (no Codex binary).
+# Runnable hermetic example: full workflows.development_flow (no Codex binary).
 version: "1.5"
 name: development_flow_hermetic
 inputs:
@@ -14,7 +14,7 @@ inputs:
 graph:
   nodes:
     - id: flow
-      type: development_flow_pipe
+      type: workflows.development_flow
       inputs:
         action: ${inputs.action}
         task_prompt: ${inputs.task_prompt}
@@ -43,7 +43,7 @@ graph:
           strategy: current_repo
         flow_checkpoint:
           checkpoint_dir: .nodeflow/checkpoints
-        spec_plan_pipe:
+        spec_plan:
           codex_exec:
             argv:
               - python3
@@ -54,7 +54,7 @@ graph:
                 print(json.dumps({"spec": "# SPEC\n" + body[:800], "plan": "# PLAN\nhermetic flow"}))
           write_checkpoint:
             run_id: "flow_spec"
-        implement_pipe:
+        implement:
           codex_exec:
             argv:
               - python3
@@ -67,7 +67,7 @@ graph:
             argv: ["python3", "-c", "print('hermetic tests ok')"]
           write_checkpoint:
             run_id: "flow_impl"
-        review_pipe:
+        review:
           review_diff_focused:
             argv:
               - python3

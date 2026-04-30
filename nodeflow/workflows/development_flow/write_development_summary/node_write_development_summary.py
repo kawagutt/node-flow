@@ -322,7 +322,7 @@ class WriteDevelopmentSummaryNode(PythonActionNode):
         out_dir = Path(rc_artifact_root).resolve()
         summary_dir = out_dir / "summary"
         summary_dir.mkdir(parents=True, exist_ok=True)
-        if action == "rework_implementation":
+        if action == "rework":
             stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
             out_path = summary_dir / f"{action}_{stamp}_development_summary.json"
         else:

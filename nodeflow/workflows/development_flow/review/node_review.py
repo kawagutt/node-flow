@@ -217,7 +217,7 @@ class ReviewPipeNode(PipeNode):
             )
             if checkpoint_dir_explicit:
                 raise NodeExecutionFailure(
-                    "review_pipe: artifact_root and write_checkpoint.checkpoint_dir cannot both be set"
+                    "review: artifact_root and write_checkpoint.checkpoint_dir cannot both be set"
                 )
             resolved_node_params["write_checkpoint"]["checkpoint_dir"] = str(
                 (Path(art.strip()) / "review").resolve()

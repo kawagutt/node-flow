@@ -10,7 +10,7 @@ inputs:
 graph:
   nodes:
     - id: spec_plan
-      type: spec_plan_pipe
+      type: workflows.development_flow.spec_plan
       inputs:
         task_prompt: ${inputs.task_prompt}
         repo_root: ${inputs.repo_root}

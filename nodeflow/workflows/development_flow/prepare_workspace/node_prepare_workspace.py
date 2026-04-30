@@ -134,7 +134,7 @@ class PrepareWorkspaceNode(PythonActionNode):
                 "source_repo_root does not match run_context.source_repo_root"
             )
 
-        # Fresh workspace prep requires a clean source tree. Reuse (rework_implementation) skips
+        # Fresh workspace prep requires a clean source tree. Reuse (rework) skips
         # this so current_repo can rework with an in-tree working tree dirty vs base_revision.
         if existing_workspace is None:
             cp_status = _run_git(source_repo_root, ["status", "--porcelain"])

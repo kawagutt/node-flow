@@ -38,11 +38,10 @@ def register_builtin_nodes() -> None:
     # Preferred v1.5 names for fixed provider pipes (no dynamic dispatch in PipeNode).
     registry.register("review_with_claude", ReviewWithClaudePipeNode, override=True)
     registry.register("implement_with_codex", ImplementWithCodexPipeNode, override=True)
-    # Development flow stage pipes (single-run; human checkpoint via artifacts).
-    registry.register("spec_plan_pipe", SpecPlanPipeNode, override=True)
-    registry.register("implement_pipe", ImplementPipeNode, override=True)
-    registry.register("review_pipe", ReviewPipeNode, override=True)
-    registry.register("development_flow_pipe", DevelopmentFlowPipeNode, override=True)
+    # Development flow nodes (path-style keys only).
+    registry.register("workflows.development_flow.spec_plan", SpecPlanPipeNode, override=True)
+    registry.register("workflows.development_flow.implement", ImplementPipeNode, override=True)
+    registry.register("workflows.development_flow.review", ReviewPipeNode, override=True)
     registry.register("workflows.development_flow.start", StartPipeNode, override=True)
     registry.register("workflows.development_flow.revise_spec", ReviseSpecPipeNode, override=True)
     registry.register("workflows.development_flow.approve", ApprovePipeNode, override=True)

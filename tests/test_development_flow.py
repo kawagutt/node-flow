@@ -151,7 +151,7 @@ def test_write_checkpoint_ok_reflects_child_and_next_action_on_failure(tmp_path:
     base_params = {
         "checkpoint_dir": cp_dir,
         "next_action_default": "review",
-        "next_action_on_failure": "rework_implementation",
+        "next_action_on_failure": "rework",
     }
     out = node.execute(
         {
@@ -174,7 +174,7 @@ def test_write_checkpoint_ok_reflects_child_and_next_action_on_failure(tmp_path:
     )
     sr = out["stage_result"]
     assert sr["ok"] is False
-    assert sr["next_action"] == "rework_implementation"
+    assert sr["next_action"] == "rework"
 
     node.reset_status()
     out_stale = node.execute(
@@ -225,7 +225,7 @@ def test_write_checkpoint_ok_reflects_child_and_next_action_on_failure(tmp_path:
         {
             "checkpoint_dir": cp_dir,
             "next_action_default": "review",
-            "next_action_on_failure": "rework_implementation",
+            "next_action_on_failure": "rework",
         },
     )
     sr2 = out2["stage_result"]
@@ -338,8 +338,8 @@ def test_aggregate_reviews_blocks_when_diff_collect_failed() -> None:
     rr = out["review_result"]
     assert rr["ok"] is False
     assert any(b.get("id") == "R_DIFF_COLLECT" for b in rr["blocking_findings"])
-    assert rr["decision"] == "rework_implementation"
-    assert rr["suggested_next_action"] == "rework_implementation"
+    assert rr["decision"] == "rework"
+    assert rr["suggested_next_action"] == "rework"
 
 
 def test_aggregate_reviews_schema_parse_failure_blocks() -> None:
@@ -442,7 +442,7 @@ def _run_context_for_workspace(repo: Path, planned_branch_name: str) -> dict:
     }
 
 
-def _ok_review_pipe_params(
+def _ok_review_params(
     checkpoint_dir: Path,
     run_id: str,
     *,
@@ -587,7 +587,7 @@ def test_dev_cycle_example_pipelines_smoke(tmp_path: Path) -> None:
     assert out3["stage_result"].get("ok") is True
 
 
-def test_development_flow_pipe_checkpoint_resume(tmp_path: Path) -> None:
+def test_development_flow_checkpoint_resume(tmp_path: Path) -> None:
     repo = tmp_path / "workspace"
     repo.mkdir()
     _git_repo_with_commit(repo)
@@ -600,7 +600,7 @@ def test_development_flow_pipe_checkpoint_resume(tmp_path: Path) -> None:
             "repo_root": str(repo),
         },
         {
-            "spec_plan_pipe": {
+            "spec_plan": {
                 "codex_exec": {
                     "argv": [
                         "python3",
@@ -631,7 +631,7 @@ def test_development_flow_pipe_checkpoint_resume(tmp_path: Path) -> None:
             "flow_checkpoint_path": fr["flow_checkpoint_path"],
         },
         {
-            "implement_pipe": {
+            "implement": {
                 "codex_exec": {
                     "argv": ["python3", "-c", "import sys; sys.stdin.read(); print('ok')"]
                 },
@@ -640,7 +640,7 @@ def test_development_flow_pipe_checkpoint_resume(tmp_path: Path) -> None:
                     "run_id": "002",
                 },
             },
-            "review_pipe": _ok_review_pipe_params(repo / ".nodeflow" / "checkpoints", "003"),
+            "review": _ok_review_params(repo / ".nodeflow" / "checkpoints", "003"),
             "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
         },
     )
@@ -686,7 +686,7 @@ def test_development_flow_merge_rejects_wrong_state(tmp_path: Path) -> None:
             "repo_root": str(repo),
         },
         {
-            "spec_plan_pipe": {
+            "spec_plan": {
                 "codex_exec": {
                     "argv": [
                         "python3",
@@ -712,21 +712,21 @@ def test_development_flow_merge_rejects_wrong_state(tmp_path: Path) -> None:
     assert "awaiting_review_decision" in str(node.read_error())
 
 
-def test_development_flow_force_merge_is_not_supported(tmp_path: Path) -> None:
-    repo = tmp_path / "workspace_force_not_supported"
+def test_development_flow_unknown_action_is_rejected(tmp_path: Path) -> None:
+    repo = tmp_path / "workspace_unknown_action"
     repo.mkdir()
     _git_repo_with_commit(repo)
     node = DevelopmentFlowPipeNode()
     node.execute(
         {
-            "action": "force_merge",
+            "action": "unknown_action",
             "repo_root": str(repo),
         },
         {"flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")}},
     )
     assert node.read_status() == "fatal"
     assert isinstance(node.read_error(), NodeExecutionFailure)
-    assert "unsupported action: force_merge" in str(node.read_error())
+    assert "unsupported action: unknown_action" in str(node.read_error())
 
 
 def test_development_flow_wrapper_does_not_leak_child_runtime(tmp_path: Path) -> None:
@@ -741,7 +741,7 @@ def test_development_flow_wrapper_does_not_leak_child_runtime(tmp_path: Path) ->
             "repo_root": str(repo),
         },
         {
-            "spec_plan_pipe": {
+            "spec_plan": {
                 "codex_exec": {
                     "argv": [
                         "python3",
@@ -772,7 +772,7 @@ def test_development_flow_implement_fail_marks_flow_not_ok(tmp_path: Path) -> No
             "repo_root": str(repo),
         },
         {
-            "spec_plan_pipe": {
+            "spec_plan": {
                 "codex_exec": {
                     "argv": [
                         "python3",
@@ -796,14 +796,14 @@ def test_development_flow_implement_fail_marks_flow_not_ok(tmp_path: Path) -> No
             "flow_checkpoint_path": fp,
         },
         {
-            "implement_pipe": {
+            "implement": {
                 "codex_exec": {"argv": ["python3", "-c", "import sys; sys.exit(1)"]},
                 "run_tests": {"argv": ["python3", "-c", "print('t')"]},
                 "write_checkpoint": {
                     "run_id": "i3",
                 },
             },
-            "review_pipe": {
+            "review": {
                 "review_diff_focused": {
                     "argv": [
                         "python3",
@@ -877,7 +877,7 @@ def test_development_flow_review_revise_spec_hides_merge_action(tmp_path: Path) 
             "repo_root": str(repo),
         },
         {
-            "spec_plan_pipe": {
+            "spec_plan": {
                 "codex_exec": {
                     "argv": [
                         "python3",
@@ -901,7 +901,7 @@ def test_development_flow_review_revise_spec_hides_merge_action(tmp_path: Path) 
             "flow_checkpoint_path": fp,
         },
         {
-            "implement_pipe": {
+            "implement": {
                 "codex_exec": {
                     "argv": ["python3", "-c", "import sys; sys.stdin.read(); print('ok')"]
                 },
@@ -910,7 +910,7 @@ def test_development_flow_review_revise_spec_hides_merge_action(tmp_path: Path) 
                     "run_id": "i4",
                 },
             },
-            "review_pipe": {
+            "review": {
                 "review_diff_focused": {
                     "argv": [
                         "python3",
@@ -1023,7 +1023,7 @@ def test_development_flow_revise_spec_restores_task_prompt_from_checkpoint(tmp_p
             "flow_checkpoint_path": str(flow_cp),
         },
         {
-            "spec_plan_pipe": {
+            "spec_plan": {
                 "codex_exec": {
                     "argv": [
                         "python3",
@@ -1054,7 +1054,7 @@ def test_development_flow_revise_spec_restores_task_prompt_from_real_flow(tmp_pa
             "repo_root": str(repo),
         },
         {
-            "spec_plan_pipe": {
+            "spec_plan": {
                 "codex_exec": {
                     "argv": [
                         "python3",
@@ -1078,7 +1078,7 @@ def test_development_flow_revise_spec_restores_task_prompt_from_real_flow(tmp_pa
             "flow_checkpoint_path": start_fp,
         },
         {
-            "implement_pipe": {
+            "implement": {
                 "codex_exec": {
                     "argv": ["python3", "-c", "import sys; sys.stdin.read(); print('ok')"]
                 },
@@ -1087,7 +1087,7 @@ def test_development_flow_revise_spec_restores_task_prompt_from_real_flow(tmp_pa
                     "run_id": "i5",
                 },
             },
-            "review_pipe": {
+            "review": {
                 "review_diff_focused": {
                     "argv": [
                         "python3",
@@ -1140,7 +1140,7 @@ def test_development_flow_revise_spec_restores_task_prompt_from_real_flow(tmp_pa
             "flow_checkpoint_path": approve_fp,
         },
         {
-            "spec_plan_pipe": {
+            "spec_plan": {
                 "codex_exec": {
                     "argv": [
                         "python3",
@@ -1179,11 +1179,11 @@ def test_development_flow_approve_requires_awaiting_approval(tmp_path: Path) -> 
             "flow_checkpoint_path": str(cp),
         },
         {
-            "implement_pipe": {
+            "implement": {
                 "codex_exec": {"argv": ["python3", "-c", "print('x')"]},
                 "run_tests": {"argv": ["python3", "-c", "print('t')"]},
             },
-            "review_pipe": {"review_diff_focused": {"argv": ["python3", "-c", "print('{}')"]}},
+            "review": {"review_diff_focused": {"argv": ["python3", "-c", "print('{}')"]}},
             "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
         },
     )
@@ -1210,37 +1210,13 @@ def test_development_flow_rework_requires_awaiting_review_decision(tmp_path: Pat
             "flow_checkpoint_path": str(cp),
         },
         {
-            "implement_pipe": {
+            "implement": {
                 "codex_exec": {"argv": ["python3", "-c", "print('x')"]},
                 "run_tests": {"argv": ["python3", "-c", "print('t')"]},
             },
-            "review_pipe": {"review_diff_focused": {"argv": ["python3", "-c", "print('{}')"]}},
+            "review": {"review_diff_focused": {"argv": ["python3", "-c", "print('{}')"]}},
             "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
         },
-    )
-    assert node.read_status() == "fatal"
-    assert isinstance(node.read_error(), NodeExecutionFailure)
-    assert "rework requires previous state awaiting_review_decision" in str(node.read_error())
-
-
-def test_development_flow_rework_implementation_alias_routes_to_rework(tmp_path: Path) -> None:
-    repo = tmp_path / "workspace_rework_alias"
-    repo.mkdir()
-    _git_repo_with_commit(repo)
-    cp = repo / ".nodeflow" / "checkpoints" / "wrong_alias.json"
-    cp.parent.mkdir(parents=True, exist_ok=True)
-    cp.write_text(
-        json.dumps({"flow_result": {"state": "awaiting_approval", "approved_candidate_path": "x"}}),
-        encoding="utf-8",
-    )
-    node = DevelopmentFlowPipeNode()
-    node.execute(
-        {
-            "action": "rework_implementation",
-            "repo_root": str(repo),
-            "flow_checkpoint_path": str(cp),
-        },
-        {},
     )
     assert node.read_status() == "fatal"
     assert isinstance(node.read_error(), NodeExecutionFailure)
@@ -1348,7 +1324,7 @@ def test_resume_rejects_mismatched_repo_root(tmp_path: Path) -> None:
             "repo_root": str(repo_a),
         },
         {
-            "spec_plan_pipe": {
+            "spec_plan": {
                 "codex_exec": {
                     "argv": [
                         "python3",
@@ -1372,13 +1348,13 @@ def test_resume_rejects_mismatched_repo_root(tmp_path: Path) -> None:
             "flow_checkpoint_path": start_out["flow_result"]["flow_checkpoint_path"],
         },
         {
-            "implement_pipe": {
+            "implement": {
                 "codex_exec": {
                     "argv": ["python3", "-c", "import sys; sys.stdin.read(); print('ok')"]
                 },
                 "run_tests": {"argv": ["python3", "-c", "print('t')"]},
             },
-            "review_pipe": {
+            "review": {
                 "review_diff_focused": {
                     "argv": [
                         "python3",
@@ -1408,7 +1384,7 @@ def test_development_flow_profile_unknown_raises(tmp_path: Path) -> None:
             "cost_profiles_path": str(profiles),
             "model_profile": "nope",
             "cost_profile": "default",
-            "spec_plan_pipe": {
+            "spec_plan": {
                 "codex_exec": {
                     "argv": [
                         "python3",
@@ -1437,7 +1413,7 @@ def test_development_flow_profile_partial_config_fails_fast(tmp_path: Path) -> N
         {"action": "start", "task_prompt": "x", "repo_root": str(repo)},
         {
             "model_profiles_path": str(tmp_path / "m.json"),
-            "spec_plan_pipe": {
+            "spec_plan": {
                 "codex_exec": {
                     "argv": [
                         "python3",
@@ -1469,14 +1445,14 @@ def test_development_flow_start_propagates_child_fatal(tmp_path: Path) -> None:
             "repo_root": str(repo),
         },
         {
-            # spec_plan_pipe child should become fatal and parent must propagate fatal.
-            "spec_plan_pipe": {},
+            # spec_plan child should become fatal and parent must propagate fatal.
+            "spec_plan": {},
             "flow_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "checkpoints")},
         },
     )
     assert node.read_status() == "fatal"
     assert isinstance(node.read_error(), NodeExecutionFailure)
-    assert "spec_plan_pipe fatal" in str(node.read_error())
+    assert "spec_plan fatal" in str(node.read_error())
 
 
 def test_development_flow_rejects_missing_action(tmp_path: Path) -> None:
@@ -1555,7 +1531,7 @@ def test_development_flow_invalid_explicit_flow_checkpoint_fails_fast(tmp_path: 
             "flow_checkpoint_path": str(bad),
         },
         {
-            "spec_plan_pipe": {
+            "spec_plan": {
                 "codex_exec": {
                     "argv": [
                         "python3",
@@ -1593,7 +1569,7 @@ def test_development_flow_start_rejects_flow_checkpoint_path_even_when_valid(
             "flow_checkpoint_path": str(cp),
         },
         {
-            "spec_plan_pipe": {
+            "spec_plan": {
                 "codex_exec": {
                     "argv": [
                         "python3",
@@ -1657,7 +1633,7 @@ def test_start_requires_clean_source_repo(tmp_path: Path) -> None:
     node.execute(
         {"action": "start", "task_prompt": "x", "repo_root": str(repo)},
         {
-            "spec_plan_pipe": {
+            "spec_plan": {
                 "codex_exec": {
                     "argv": [
                         "python3",
@@ -2181,7 +2157,7 @@ def test_revise_spec_requires_clean_source_repo(tmp_path: Path) -> None:
     start_out = node.execute(
         {"action": "start", "task_prompt": "t", "repo_root": str(repo)},
         {
-            "spec_plan_pipe": {
+            "spec_plan": {
                 "codex_exec": {
                     "argv": [
                         "python3",
@@ -2199,7 +2175,7 @@ def test_revise_spec_requires_clean_source_repo(tmp_path: Path) -> None:
     approve_out = node.execute(
         {"action": "approve", "repo_root": str(repo), "flow_checkpoint_path": start_fp},
         {
-            "implement_pipe": {
+            "implement": {
                 "codex_exec": {
                     "argv": [
                         "python3",
@@ -2211,7 +2187,7 @@ def test_revise_spec_requires_clean_source_repo(tmp_path: Path) -> None:
                 "run_tests": {"argv": ["python3", "-c", "print('t')"]},
                 "write_checkpoint": {"run_id": "ri0"},
             },
-            "review_pipe": {
+            "review": {
                 "review_diff_focused": {
                     "argv": [
                         "python3",
@@ -2264,7 +2240,7 @@ def test_revise_spec_requires_clean_source_repo(tmp_path: Path) -> None:
             "flow_checkpoint_path": approve_fp,
         },
         {
-            "spec_plan_pipe": {
+            "spec_plan": {
                 "codex_exec": {
                     "argv": [
                         "python3",
@@ -2290,7 +2266,7 @@ def test_revise_spec_rejects_changed_head_even_if_clean(tmp_path: Path) -> None:
     start_out = node.execute(
         {"action": "start", "task_prompt": "t", "repo_root": str(repo)},
         {
-            "spec_plan_pipe": {
+            "spec_plan": {
                 "codex_exec": {
                     "argv": [
                         "python3",
@@ -2308,14 +2284,14 @@ def test_revise_spec_rejects_changed_head_even_if_clean(tmp_path: Path) -> None:
     approve_out = node.execute(
         {"action": "approve", "repo_root": str(repo), "flow_checkpoint_path": start_fp},
         {
-            "implement_pipe": {
+            "implement": {
                 "codex_exec": {
                     "argv": ["python3", "-c", "import sys; sys.stdin.read(); print('ok')"]
                 },
                 "run_tests": {"argv": ["python3", "-c", "print('t')"]},
                 "write_checkpoint": {"run_id": "h1"},
             },
-            "review_pipe": {
+            "review": {
                 "review_diff_focused": {
                     "argv": [
                         "python3",
@@ -2375,7 +2351,7 @@ def test_revise_spec_rejects_changed_head_even_if_clean(tmp_path: Path) -> None:
             "flow_checkpoint_path": approve_fp,
         },
         {
-            "spec_plan_pipe": {
+            "spec_plan": {
                 "codex_exec": {
                     "argv": [
                         "python3",
@@ -2401,7 +2377,7 @@ def test_child_pipes_receive_artifact_root(tmp_path: Path) -> None:
     out = node.execute(
         {"action": "start", "task_prompt": "doc", "repo_root": str(repo)},
         {
-            "spec_plan_pipe": {
+            "spec_plan": {
                 "codex_exec": {
                     "argv": [
                         "python3",
@@ -2449,7 +2425,7 @@ def test_stage_pipes_reject_artifact_root_and_checkpoint_dir_conflict(tmp_path: 
     )
     assert impl.read_status() == "fatal"
     assert (
-        "implement_pipe: artifact_root and write_checkpoint.checkpoint_dir cannot both be set"
+        "implement: artifact_root and write_checkpoint.checkpoint_dir cannot both be set"
         in str(impl.read_error())
     )
 
@@ -2466,7 +2442,7 @@ def test_stage_pipes_reject_artifact_root_and_checkpoint_dir_conflict(tmp_path: 
     )
     assert review.read_status() == "fatal"
     assert (
-        "review_pipe: artifact_root and write_checkpoint.checkpoint_dir cannot both be set"
+        "review: artifact_root and write_checkpoint.checkpoint_dir cannot both be set"
         in str(review.read_error())
     )
 
@@ -2482,7 +2458,7 @@ def test_stage_pipes_reject_artifact_root_and_checkpoint_dir_conflict(tmp_path: 
     )
     assert spec.read_status() == "fatal"
     assert (
-        "spec_plan_pipe: artifact_root and write_checkpoint.checkpoint_dir cannot both be set"
+        "spec_plan: artifact_root and write_checkpoint.checkpoint_dir cannot both be set"
         in str(spec.read_error())
     )
 
@@ -2780,7 +2756,7 @@ def test_rework_development_summary_does_not_overwrite_previous_rework_summary(
                 "source_base_revision": ws_ctx["base_revision"],
             },
             "task_prompt": "rework",
-            "action": "rework_implementation",
+            "action": "rework",
         },
         {},
     )
@@ -2795,7 +2771,7 @@ def test_rework_development_summary_does_not_overwrite_previous_rework_summary(
                 "source_base_revision": ws_ctx["base_revision"],
             },
             "task_prompt": "rework",
-            "action": "rework_implementation",
+            "action": "rework",
         },
         {},
     )
@@ -2818,7 +2794,7 @@ def test_development_flow_revise_spec_drops_workspace_context(tmp_path: Path) ->
             "repo_root": str(repo),
         },
         {
-            "spec_plan_pipe": {
+            "spec_plan": {
                 "codex_exec": {
                     "argv": [
                         "python3",
@@ -2842,7 +2818,7 @@ def test_development_flow_revise_spec_drops_workspace_context(tmp_path: Path) ->
             "flow_checkpoint_path": start_fp,
         },
         {
-            "implement_pipe": {
+            "implement": {
                 "codex_exec": {
                     "argv": ["python3", "-c", "import sys; sys.stdin.read(); print('ok')"]
                 },
@@ -2851,7 +2827,7 @@ def test_development_flow_revise_spec_drops_workspace_context(tmp_path: Path) ->
                     "run_id": "ri1",
                 },
             },
-            "review_pipe": {
+            "review": {
                 "review_diff_focused": {
                     "argv": [
                         "python3",
@@ -2904,7 +2880,7 @@ def test_development_flow_revise_spec_drops_workspace_context(tmp_path: Path) ->
             "flow_checkpoint_path": approve_fp,
         },
         {
-            "spec_plan_pipe": {
+            "spec_plan": {
                 "codex_exec": {
                     "argv": [
                         "python3",

@@ -117,9 +117,7 @@ class ImplementPipeNode(PipeNode):
             "summary_default", "implementation completed; verify and continue to review"
         )
         resolved_node_params["write_checkpoint"].setdefault("next_action_default", "review")
-        resolved_node_params["write_checkpoint"].setdefault(
-            "next_action_on_failure", "rework_implementation"
-        )
+        resolved_node_params["write_checkpoint"].setdefault("next_action_on_failure", "rework")
         rr = pipe_inputs.get("repo_root")
         if isinstance(rr, str):
             resolved_node_params["write_checkpoint"]["_repo_root_for_paths"] = rr
@@ -131,7 +129,7 @@ class ImplementPipeNode(PipeNode):
             )
             if checkpoint_dir_explicit:
                 raise NodeExecutionFailure(
-                    "implement_pipe: artifact_root and write_checkpoint.checkpoint_dir cannot both be set"
+                    "implement: artifact_root and write_checkpoint.checkpoint_dir cannot both be set"
                 )
             resolved_node_params["write_checkpoint"]["checkpoint_dir"] = str(
                 (Path(art.strip()) / "implement").resolve()

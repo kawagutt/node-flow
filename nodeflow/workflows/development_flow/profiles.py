@@ -1,4 +1,4 @@
-"""Profile merge helpers for development_flow_pipe."""
+"""Profile merge helpers for workflows.development_flow."""
 
 from __future__ import annotations
 

@@ -200,13 +200,13 @@ class AggregateReviewsNode(PythonActionNode):
         if spec_revision_needed:
             decision = "revise_spec_plan"
         elif blocking_findings:
-            decision = "rework_implementation"
+            decision = "rework"
         else:
             decision = "merge_ok"
 
         mapped_next = {
             "merge_ok": "merge",
-            "rework_implementation": "rework_implementation",
+            "rework": "rework",
             "revise_spec_plan": "revise_spec",
         }.get(decision, "stop")
 

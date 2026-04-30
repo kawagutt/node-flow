@@ -11,7 +11,7 @@ inputs:
 graph:
   nodes:
     - id: implement
-      type: implement_pipe
+      type: workflows.development_flow.implement
       inputs:
         approved_checkpoint_path: ${inputs.approved_checkpoint_path}
         repo_root: ${inputs.repo_root}

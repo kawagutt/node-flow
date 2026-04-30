@@ -11,7 +11,10 @@ Allowed node type strings (registry keys for ``graph.nodes[].type``):
   python_route_by_task_type, python_summarize_result,
   codex_exec, claude_code_exec, kimi_exec, qwen_exec,
   review_with_claude, implement_with_codex,
-  spec_plan_pipe, implement_pipe, review_pipe, development_flow_pipe
+  workflows.development_flow.spec_plan,
+  workflows.development_flow.implement,
+  workflows.development_flow.review,
+  workflows.development_flow
 """
 
 from __future__ import annotations

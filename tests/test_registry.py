@@ -15,10 +15,13 @@ from nodeflow.core.registry import (
 )
 from nodeflow.nodes.builtins import register_builtin_nodes
 from nodeflow.workflows.development_flow.approve import ApprovePipeNode
+from nodeflow.workflows.development_flow.implement import ImplementPipeNode
 from nodeflow.workflows.development_flow.merge import MergePipeNode
 from nodeflow.workflows.development_flow.node_development_flow import DevelopmentFlowPipeNode
+from nodeflow.workflows.development_flow.review import ReviewPipeNode
 from nodeflow.workflows.development_flow.revise_spec import ReviseSpecPipeNode
 from nodeflow.workflows.development_flow.rework import ReworkPipeNode
+from nodeflow.workflows.development_flow.spec_plan import SpecPlanPipeNode
 from nodeflow.workflows.development_flow.start import StartPipeNode
 
 
@@ -152,5 +155,18 @@ def test_development_flow_path_style_wrapper_type_is_registered() -> None:
     assert registry.get("workflows.development_flow") is DevelopmentFlowPipeNode
 
 
-def test_development_flow_legacy_rework_implementation_type_is_not_registered() -> None:
-    assert registry.get("workflows.development_flow.rework_implementation") is None
+def test_development_flow_stage_nodes_are_registered_with_path_keys() -> None:
+    assert registry.get("workflows.development_flow.spec_plan") is SpecPlanPipeNode
+    assert registry.get("workflows.development_flow.implement") is ImplementPipeNode
+    assert registry.get("workflows.development_flow.review") is ReviewPipeNode
+
+
+def test_development_flow_old_registry_keys_are_not_registered() -> None:
+    old_keys = [
+        "development_flow" + "_pipe",
+        "spec_plan" + "_pipe",
+        "implement" + "_pipe",
+        "review" + "_pipe",
+    ]
+    for key in old_keys:
+        assert registry.get(key) is None

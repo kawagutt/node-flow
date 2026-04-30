@@ -76,7 +76,7 @@ def test_new_node_folders_have_matching_node_file():
     assert violations == []
 
 
-def test_no_development_flow_pipe_directories_remain() -> None:
+def test_no_development_flow_legacy_pipe_directories_remain() -> None:
     base = ROOT / "nodeflow" / "workflows" / "development_flow"
     violations = [p for p in base.rglob("*_pipe") if p.is_dir()]
     assert violations == []

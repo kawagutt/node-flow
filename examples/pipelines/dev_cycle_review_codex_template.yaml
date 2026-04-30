@@ -11,7 +11,7 @@ inputs:
 graph:
   nodes:
     - id: review
-      type: review_pipe
+      type: workflows.development_flow.review
       inputs:
         approved_checkpoint_path: ${inputs.approved_checkpoint_path}
         repo_root: ${inputs.repo_root}

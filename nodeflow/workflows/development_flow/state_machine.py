@@ -1,4 +1,4 @@
-"""State transition helpers for development_flow_pipe."""
+"""State transition helpers for workflows.development_flow."""
 
 from __future__ import annotations
 
@@ -31,15 +31,14 @@ def validate_merge_gate(prev_flow: Dict[str, Any]) -> None:
     if not (flow_ok and impl_ok and next_action == "merge" and review_ok):
         raise NodeExecutionFailure(
             "merge requires flow_result.ok == true, implement_stage_result.ok == true, "
-            "review next_action == 'merge', and review_stage_result.ok == true; "
-            "use action=force_merge to override"
+            "review next_action == 'merge', and review_stage_result.ok == true"
         )
 
 
 def review_allowed_actions(*, flow_ok: bool, review_next_action: Any) -> List[str]:
     review_next = review_next_action if isinstance(review_next_action, str) else None
     if flow_ok and review_next == "merge":
-        return ["merge", "rework_implementation", "revise_spec", "stop"]
+        return ["merge", "rework", "revise_spec", "stop"]
     if review_next == "revise_spec":
-        return ["revise_spec", "rework_implementation", "stop"]
-    return ["rework_implementation", "revise_spec", "stop"]
+        return ["revise_spec", "rework", "stop"]
+    return ["rework", "revise_spec", "stop"]

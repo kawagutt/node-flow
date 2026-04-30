@@ -1,6 +1,6 @@
 # Development flow stage pipes
 
-Built-in pipes for a development cycle. `development_flow_pipe` orchestrates actions via checkpoint/resume, while stage pipes (`spec_plan_pipe`, `implement_pipe`, `review_pipe`) execute single runs. NodeFlow does not pause in-process for human input.
+Built-in nodes for a development cycle. `workflows.development_flow` orchestrates actions via checkpoint/resume, while stage nodes (`workflows.development_flow.spec_plan`, `workflows.development_flow.implement`, `workflows.development_flow.review`) execute single runs. NodeFlow does not pause in-process for human input.
 
 ## Ownership boundary
 
@@ -9,17 +9,17 @@ Built-in pipes for a development cycle. `development_flow_pipe` orchestrates act
 
 In short:
 
-- `development_flow_pipe` = built-in node type implementation.
+- `workflows.development_flow` = built-in node type implementation.
 - `development_flow_*.yaml` = pipeline config that uses that node type.
 
 YAML registry keys:
 
 | `type`             | Purpose |
 |--------------------|---------|
-| `development_flow_pipe` | Top-level orchestration (`start` / `approve` / `rework` / `revise_spec` / `merge`) with flow checkpoint output for resume. |
-| `spec_plan_pipe`   | Collect repo context (git), run Codex (or other CLI) with that context on **stdin**, write checkpoint. |
-| `implement_pipe`   | Load **one** approved JSON (`approved_checkpoint_path`), run implement CLI (stdin = full prompt), tests, `git diff <base_ref>`, write checkpoint. |
-| `review_pipe`      | Load the same approved JSON, `git diff <base_ref>`, build 5 review prompts (diff / wide scan / tests / spec conformance / spec revision), run 5 review CLIs (**stdin** = prompt; **stdout** = JSON contract), aggregate, write checkpoint. |
+| `workflows.development_flow` | Top-level orchestration (`start` / `approve` / `rework` / `revise_spec` / `merge`) with flow checkpoint output for resume. |
+| `workflows.development_flow.spec_plan`   | Collect repo context (git), run Codex (or other CLI) with that context on **stdin**, write checkpoint. |
+| `workflows.development_flow.implement`   | Load **one** approved JSON (`approved_checkpoint_path`), run implement CLI (stdin = full prompt), tests, `git diff <base_ref>`, write checkpoint. |
+| `workflows.development_flow.review`      | Load the same approved JSON, `git diff <base_ref>`, build 5 review prompts (diff / wide scan / tests / spec conformance / spec revision), run 5 review CLIs (**stdin** = prompt; **stdout** = JSON contract), aggregate, write checkpoint. |
 
 Naming convention:
 
@@ -88,7 +88,7 @@ nodeflow/workflows/development_flow/
 }
 ```
 
-`implement_pipe` and `review_pipe` use this shape.
+`workflows.development_flow.implement` and `workflows.development_flow.review` use this shape.
 
 **Path resolution:** `approved_checkpoint_path` is resolved under pipeline input **`repo_root`** when the path is relative.
 
@@ -130,10 +130,10 @@ Each stage pipe’s root output exposes a `stage_result` port (dict) with at lea
 - `stage` — one of `spec_plan`, `implement`, `review`
 - `summary` (string)
 - `artifacts` — list of `{ "path", "kind" }` (spec_plan may list **`spec_plan_candidate`** before the main **`checkpoint`**).
-- `next_action` — e.g. `approve`, `review`, `rework`, `revise_spec`, `merge`, `stop`. When **`ok` is false**, `WriteCheckpointNode` **does not read** `request.next_action` (avoids a stale `"approve"`); it uses **`request.next_action_on_failure`** (set by `aggregate_reviews`) or **`params.next_action_on_failure`** (`implement_pipe` / `spec_plan_pipe` setdefaults), else **`stop`**.
+- `next_action` — e.g. `approve`, `review`, `rework`, `revise_spec`, `merge`, `stop`. When **`ok` is false**, `WriteCheckpointNode` **does not read** `request.next_action` (avoids a stale `"approve"`); it uses **`request.next_action_on_failure`** (set by `aggregate_reviews`) or **`params.next_action_on_failure`** (`workflows.development_flow.implement` / `workflows.development_flow.spec_plan` setdefaults), else **`stop`**.
 - `human_decision_required` (bool)
 - `raw_results` (dict)
-- **`approved_candidate_path`** (optional, spec_plan only) — path to a slim JSON file `{ "spec", "plan" }` parsed from the draft executor stdout, suitable as **`approved_checkpoint_path`** for `implement_pipe` / `review_pipe` without hand-editing the full stage checkpoint.
+- **`approved_candidate_path`** (optional, spec_plan only) — path to a slim JSON file `{ "spec", "plan" }` parsed from the draft executor stdout, suitable as **`approved_checkpoint_path`** for `workflows.development_flow.implement` / `workflows.development_flow.review` without hand-editing the full stage checkpoint.
 
 Checkpoint files default under `.nodeflow/checkpoints/` (override via `write_checkpoint` params). If `checkpoint_dir` is relative, it is resolved under **`repo_root`** (pipeline input passed into `write_checkpoint` as `_repo_root_for_paths`) when set, else under CLI **`-w` / `_workspace_dir`**. JSON is written with **`ensure_ascii=False`** so non-ASCII prompts remain readable.
 
@@ -148,7 +148,7 @@ Checkpoint payload has top-level `schema_version` (default: `development_flow.v1
 Keys are **child node ids** inside the composite pipe. Typical nesting:
 
 - **`codex_exec`** (spec/implement) or **`review_diff_focused`** / **`review_wide_scan`** / **`review_test_focused`** / **`review_spec_conformance`** / **`review_spec_revision`** — `argv`, `timeout`, `cwd`, … (same as standalone `codex_exec`).
-- **`write_checkpoint`** — `checkpoint_dir`, `run_id`, `stage`, `next_action_default`, `summary_default`, **`write_spec_plan_candidate`** (default **true** in `spec_plan_pipe`; writes `{run_id}_{spec_plan_candidate_suffix}.json`), **`spec_plan_candidate_suffix`** (default `approved_candidate`), etc. When `artifact_root` is provided by `development_flow_pipe`, stage pipes fail fast if `write_checkpoint.checkpoint_dir` is also explicitly set.
+- **`write_checkpoint`** — `checkpoint_dir`, `run_id`, `stage`, `next_action_default`, `summary_default`, **`write_spec_plan_candidate`** (default **true** in `workflows.development_flow.spec_plan`; writes `{run_id}_{spec_plan_candidate_suffix}.json`), **`spec_plan_candidate_suffix`** (default `approved_candidate`), etc. When `artifact_root` is provided by `workflows.development_flow`, stage nodes fail fast if `write_checkpoint.checkpoint_dir` is also explicitly set.
 - **`collect_repo_context`** — `max_diff_chars`, `untracked_excerpt_max_files`, `untracked_excerpt_max_bytes`, `ignored_untracked_prefixes` (same defaults as `collect_diff`).
 - **`collect_diff`** — `max_chars` (optional; default truncates long diffs), `ignored_changed_file_prefixes` (optional; default skips `.nodeflow/`).
 - **`build_diff_review_prompt`** / **`build_wide_scan_review_prompt`** / **`build_test_review_prompt`** / **`build_spec_review_prompt`** / **`build_spec_revision_review_prompt`** — `max_diff_chars` clipping inside the prompt.
@@ -158,23 +158,22 @@ Keys are **child node ids** inside the composite pipe. Typical nesting:
 
 `CollectDiffNode` runs `git diff <base_ref>` (e.g. `base_ref=HEAD`) so **uncommitted** implementation edits show up. It does **not** use `base...HEAD` triple-dot or `--staged`-only modes that hide working-tree changes.
 
-## Control flow (development_flow_pipe)
+## Control flow (workflows.development_flow)
 
-`development_flow_pipe` is designed for checkpoint/resume (no paused runtime):
+`workflows.development_flow` is designed for checkpoint/resume (no paused runtime):
 
-- Inputs accepted by top-level `development_flow_pipe`: `action`, `task_prompt`, `repo_root`, `flow_checkpoint_path`, `human_comment_path`, `human_comment_text`, `planned_branch_name`, `development_name`, `run_id`.
-- `development_flow_pipe` rejects `base_ref`, `branch_name`, and `approved_checkpoint_path` (those are stage-level concerns or flow-checkpoint-derived values).
+- Inputs accepted by top-level `workflows.development_flow`: `action`, `task_prompt`, `repo_root`, `flow_checkpoint_path`, `human_comment_path`, `human_comment_text`, `planned_branch_name`, `development_name`, `run_id`.
+- `workflows.development_flow` rejects `base_ref`, `branch_name`, and `approved_checkpoint_path` (those are stage-level concerns or flow-checkpoint-derived values).
 
-- `action=start`: run `check_source_workspace` (git repo + clean working tree; detached HEAD is rejected by default), then `prepare_development_run_context`, then `spec_plan_pipe`, then `flow_result.state=awaiting_approval`.
+- `action=start`: run `check_source_workspace` (git repo + clean working tree; detached HEAD is rejected by default), then `prepare_development_run_context`, then `workflows.development_flow.spec_plan`, then `flow_result.state=awaiting_approval`.
   This step does not create/switch branches or workspaces, but it may create a run artifact directory under `.nodeflow/runs/`. Rejects `flow_checkpoint_path` (always a fresh spec-plan run).
-- `action=revise_spec`: requires previous state `awaiting_review_decision`, `flow_checkpoint_path`, and a prior `review_checkpoint_path`; requires `run_context.source_base_revision` (from `start`). Clears `workspace_context`, then runs `spec_plan_pipe` with `revision_context` from the review. If `task_prompt` is empty, it uses `flow_result.task_prompt`; if missing, action fails fast.
-- `action=approve`: requires previous state `awaiting_approval` and `flow_checkpoint_path`; uses `approved_candidate_path` / `approved_checkpoint_path` from that checkpoint, then prepares workspace (`prepare_workspace`, `strategy=current_repo`), runs `implement_pipe` and `review_pipe`, and sets `flow_result.state=awaiting_review_decision`.
+- `action=revise_spec`: requires previous state `awaiting_review_decision`, `flow_checkpoint_path`, and a prior `review_checkpoint_path`; requires `run_context.source_base_revision` (from `start`). Clears `workspace_context`, then runs `workflows.development_flow.spec_plan` with `revision_context` from the review. If `task_prompt` is empty, it uses `flow_result.task_prompt`; if missing, action fails fast.
+- `action=approve`: requires previous state `awaiting_approval` and `flow_checkpoint_path`; uses `approved_candidate_path` / `approved_checkpoint_path` from that checkpoint, then prepares workspace (`prepare_workspace`, `strategy=current_repo`), runs `workflows.development_flow.implement` and `workflows.development_flow.review`, and sets `flow_result.state=awaiting_review_decision`.
 - `action=rework`: requires previous state `awaiting_review_decision`, `flow_checkpoint_path`, a valid previous review checkpoint, and checkpoint `workspace_context`; it reuses that `workspace_context` and fails fast on inconsistency.
 - **`current_repo` + `revise_spec`:** `revise_spec` requires the source repository to be clean, and `HEAD` must still match `run_context.source_base_revision`. Reset or stash previous implementation edits before revising the spec.
 - **`current_repo` + `rework`:** `prepare_workspace` reuses `workspace_context` from the checkpoint and **does not** require a clean source tree, so you can iterate on the same dirty working tree while `base_revision` stays fixed.
 - After `approve` / `rework`, `write_development_summary` writes a summary artifact and proposes a commit message based on implementation diff, review result, commit template, and recent commit style.
 - `action=merge`: requires `flow_checkpoint_path` from `awaiting_review_decision`, `flow_result.ok == true`, `implement_stage_result.ok == true`, `review_stage_result.ok == true`, and `next_action == "merge"`.
-- `force_merge` is no longer supported. Use `merge` only after the merge gate is satisfied.
 
 `flow_result.ok` after implement+review is **both** `implement_stage_result.ok` and `review_stage_result.ok`.
 `flow_result.ok` means stages completed successfully; it does not by itself mean merge is allowed. Use `merge_ready` and `allowed_actions` / `next_action`.
@@ -186,18 +185,18 @@ For `action=approve` / `action=rework`, `flow_result` includes `run_context`, `w
 Resume actions (`approve`, `rework`, `revise_spec`, `merge`) require checkpoint `flow_result.run_context.source_repo_root`; checkpoints without this field are not supported.
 
 `approve` / `rework` use `run_context.source_base_revision` (not pipeline `base_ref` at resume time) for `prepare_workspace` and stage `base_ref`, so implementation/review stay aligned with the tree as of `start`. With `strategy=current_repo`, a fresh `approve` always requires `HEAD == source_base_revision`.
-For `development_flow_pipe`, invocation-time `base_ref` does not change the frozen base during resume actions. `start` freezes `HEAD` into `run_context.source_base_revision`, and resume actions always use that value.
+For `workflows.development_flow`, invocation-time `base_ref` does not change the frozen base during resume actions. `start` freezes `HEAD` into `run_context.source_base_revision`, and resume actions always use that value.
 
 `prepare_development_run_context.branch_prefix` plus the generated slug produce names like `feat/nodeflow/001-add-config-validation` (slash after the prefix). This branch name is currently recorded as planned metadata in `run_context` / `workspace_context`; `development_flow` does not create or switch branches in current-repo mode.
 
 `write_development_summary` drops paths under `ignored_changed_file_prefixes` (default `[".nodeflow/"]`) from `changed_files`, consistent with clean-check ignores.
 
-Optional profile merge (fail-fast if profile names or files are wrong): set on `development_flow_pipe` params **`model_profiles_path`**, **`cost_profiles_path`**, **`model_profile`**, **`cost_profile`** (all four required together; partial config errors). Merge priority is `YAML direct params < model profile < cost profile`. Sample files live under `examples/reference/development_flow_profiles/` (reference only unless you wire these params).
+Optional profile merge (fail-fast if profile names or files are wrong): set on `workflows.development_flow` params **`model_profiles_path`**, **`cost_profiles_path`**, **`model_profile`**, **`cost_profile`** (all four required together; partial config errors). Merge priority is `YAML direct params < model profile < cost profile`. Sample files live under `examples/reference/development_flow_profiles/` (reference only unless you wire these params).
 
-`prepare_development_run_context.artifact_root_dir` controls where run artifacts are stored (`<artifact_root_dir>/<run_dir_name>` where `run_dir_name` is `<index>_<yyyymmdd>_<slug>`). `run_id` remains an internal ID in JSON/checkpoint references and is sourced from `development_flow_pipe` input `run_id` (or auto-generated when omitted).
-`start` may create the per-run artifact directory before `spec_plan_pipe` completes; failed starts can leave an empty or partial run directory.
+`prepare_development_run_context.artifact_root_dir` controls where run artifacts are stored (`<artifact_root_dir>/<run_dir_name>` where `run_dir_name` is `<index>_<yyyymmdd>_<slug>`). `run_id` remains an internal ID in JSON/checkpoint references and is sourced from `workflows.development_flow` input `run_id` (or auto-generated when omitted).
+`start` may create the per-run artifact directory before `workflows.development_flow.spec_plan` completes; failed starts can leave an empty or partial run directory.
 
-When `development_flow_pipe` passes `artifact_root` into stage pipes, checkpoints and related stage outputs are written under:
+When `workflows.development_flow` passes `artifact_root` into stage nodes, checkpoints and related stage outputs are written under:
 
 - `artifact_root/spec_plan/` — spec plan stage (`write_checkpoint`)
 - `artifact_root/implement/` — implement stage
@@ -239,7 +238,7 @@ For production, replace hermetic `argv` under `codex_exec` / review nodes with r
 
 ## Model/cost profiles (P2)
 
-Reference samples (merge into YAML params manually, or point `development_flow_pipe` at them with the four params listed above):
+Reference samples (merge into YAML params manually, or point `workflows.development_flow` at them with the four params listed above):
 
 - `examples/reference/development_flow_profiles/model_profiles.json`
 - `examples/reference/development_flow_profiles/cost_profiles.json`
