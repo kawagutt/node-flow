@@ -67,9 +67,7 @@ class ApprovePipeNode(PipeNode):
         repo_root = require_same_source_repo(repo_root, run_context)
         frozen_base = str(run_context.get("source_base_revision") or "").strip()
         if not frozen_base:
-            raise NodeExecutionFailure(
-                "run_context.source_base_revision is required for approve"
-            )
+            raise NodeExecutionFailure("run_context.source_base_revision is required for approve")
 
         approved_path: str | None = (
             resume_prev.get("approved_checkpoint_path")

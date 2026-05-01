@@ -23,7 +23,9 @@ def prepare_action_context(
             "checkout the desired source revision before start"
         )
     if "branch_name" in inputs:
-        raise NodeExecutionFailure("workflows.development_flow uses planned_branch_name, not branch_name")
+        raise NodeExecutionFailure(
+            "workflows.development_flow uses planned_branch_name, not branch_name"
+        )
     if "approved_checkpoint_path" in inputs:
         raise NodeExecutionFailure(
             "workflows.development_flow does not accept approved_checkpoint_path; "

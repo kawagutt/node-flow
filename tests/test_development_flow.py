@@ -2572,9 +2572,8 @@ def test_stage_pipes_reject_artifact_root_and_checkpoint_dir_conflict(tmp_path: 
         },
     )
     assert impl.read_status() == "fatal"
-    assert (
-        "implement: artifact_root and write_checkpoint.checkpoint_dir cannot both be set"
-        in str(impl.read_error())
+    assert "implement: artifact_root and write_checkpoint.checkpoint_dir cannot both be set" in str(
+        impl.read_error()
     )
 
     review = ReviewPipeNode()
@@ -2589,9 +2588,8 @@ def test_stage_pipes_reject_artifact_root_and_checkpoint_dir_conflict(tmp_path: 
         {"write_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "override")}},
     )
     assert review.read_status() == "fatal"
-    assert (
-        "review: artifact_root and write_checkpoint.checkpoint_dir cannot both be set"
-        in str(review.read_error())
+    assert "review: artifact_root and write_checkpoint.checkpoint_dir cannot both be set" in str(
+        review.read_error()
     )
 
     spec = SpecPlanPipeNode()
@@ -2605,9 +2603,8 @@ def test_stage_pipes_reject_artifact_root_and_checkpoint_dir_conflict(tmp_path: 
         {"write_checkpoint": {"checkpoint_dir": str(repo / ".nodeflow" / "override")}},
     )
     assert spec.read_status() == "fatal"
-    assert (
-        "spec_plan: artifact_root and write_checkpoint.checkpoint_dir cannot both be set"
-        in str(spec.read_error())
+    assert "spec_plan: artifact_root and write_checkpoint.checkpoint_dir cannot both be set" in str(
+        spec.read_error()
     )
 
 

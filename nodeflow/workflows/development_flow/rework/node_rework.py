@@ -78,9 +78,7 @@ class ReworkPipeNode(PipeNode):
             raise NodeExecutionFailure("workspace_context is required for rework")
         frozen_base = str(run_context.get("source_base_revision") or "").strip()
         if not frozen_base:
-            raise NodeExecutionFailure(
-                "run_context.source_base_revision is required for rework"
-            )
+            raise NodeExecutionFailure("run_context.source_base_revision is required for rework")
 
         approved_path: str | None = (
             resume_prev.get("approved_checkpoint_path")
