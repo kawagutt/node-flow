@@ -204,7 +204,7 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
-# Archived / local docs (not versioned); keep copies under doc/archive/ on your machine
+# Retired / personal notes (not maintained with this repo)
 doc/archive/
 
 # Marimo

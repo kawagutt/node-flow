@@ -72,7 +72,7 @@ Development flow tooling is intentionally split:
 - **`nodeflow/workflows/development_flow/`**: **ActionNodes** (checkpoint, workspace prep, summaries, review parsing, etc.). The old **`workflows.development_flow.*`** **PipeNode** composites are dropped until they are rebuilt on v1.6 PipeSpec.
 - **`nodeflow/workflows/`** also ships **`review_with_claude`** and **`implement_with_codex`** PipeNodes (still registered).
 
-Field semantics for workspace / checkpoints / summaries are being folded into **`doc/nodeflow_spec.md`** (and archived notes may live locally under **`doc/archive/`**, git-ignored). `.nodeflow/` should usually be git-ignored.
+Field semantics for workspace / checkpoints / summaries are **`doc/nodeflow_spec.md`** (see also code and tests under `tests/workflows/`). `.nodeflow/` should usually be git-ignored.
 
 **`nodeflow.core.loader.load_pipeline()`** confirms removal of YAML v1.5 by raising `NotImplementedError`.
 
