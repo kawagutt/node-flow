@@ -52,7 +52,7 @@ class LoadCheckpointNode(PythonActionNode):
             if "spec" not in data or "plan" not in data:
                 raise NodeExecutionFailure(
                     "approved checkpoint must contain top-level string (or object) keys "
-                    "'spec' and 'plan' (see nodeflow/workflows/development_flow/README.md)"
+                    "'spec' and 'plan' (approved checkpoint JSON shape; see doc/nodeflow_spec.md)"
                 )
             spec_text = _as_text(data["spec"])
             plan_text = _as_text(data["plan"])

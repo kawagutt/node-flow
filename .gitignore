@@ -204,6 +204,9 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# Archived / local docs (not versioned); keep copies under doc/archive/ on your machine
+doc/archive/
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
