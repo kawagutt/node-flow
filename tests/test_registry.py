@@ -14,15 +14,6 @@ from nodeflow.core.registry import (
     registry,
 )
 from nodeflow.nodes.builtins import register_builtin_nodes
-from nodeflow.workflows.development_flow.approve import ApprovePipeNode
-from nodeflow.workflows.development_flow.implement import ImplementPipeNode
-from nodeflow.workflows.development_flow.merge import MergePipeNode
-from nodeflow.workflows.development_flow.node_development_flow import DevelopmentFlowPipeNode
-from nodeflow.workflows.development_flow.review import ReviewPipeNode
-from nodeflow.workflows.development_flow.revise_spec import ReviseSpecPipeNode
-from nodeflow.workflows.development_flow.rework import ReworkPipeNode
-from nodeflow.workflows.development_flow.spec_plan import SpecPlanPipeNode
-from nodeflow.workflows.development_flow.start import StartPipeNode
 
 
 def test_registry_register_resolve():
@@ -64,33 +55,16 @@ def test_registry_clear():
         register_builtin_nodes()
 
 
-def test_load_pipeline_fails_when_registry_empty(tmp_path):
+def test_load_pipeline_is_removed(tmp_path) -> None:
     from nodeflow.core.loader import load_pipeline
 
     yaml_path = tmp_path / "pipeline.yaml"
-    yaml_path.write_text(
-        """
-version: "1.5"
-graph:
-  nodes:
-    - id: a
-      type: python_route_by_task_type
-      inputs: {}
-      params: {}
-  final: a
-"""
-    )
-    registry.clear()
-    try:
-        with pytest.raises(UnknownNodeTypeError):
-            load_pipeline(str(tmp_path), str(yaml_path))
-    finally:
-        register_builtin_nodes()
+    yaml_path.write_text("x: 1")
+    with pytest.raises(NotImplementedError, match="YAML 1.5"):
+        load_pipeline(str(tmp_path), str(yaml_path))
 
 
-def test_registry_custom_node_register_and_load(tmp_path):
-    from nodeflow.core.loader import load_pipeline
-
+def test_registry_custom_node_execute(tmp_path):
     class CustomNode(BaseNode):
         def run(
             self,
@@ -102,63 +76,28 @@ def test_registry_custom_node_register_and_load(tmp_path):
 
     registry.register("custom", CustomNode)
     try:
-        yaml_path = tmp_path / "pipeline.yaml"
-        yaml_path.write_text(
-            """
-version: "1.5"
-graph:
-  nodes:
-    - id: c
-      type: custom
-      inputs: {}
-      params: {}
-  final: c
-"""
-        )
-        root = load_pipeline(str(tmp_path), str(yaml_path))
-        out = root.execute({}, {})
-        assert "out" in out
+        n = CustomNode()
+        out = n.execute({}, {})
         assert out["out"]["value"] == "custom"
     finally:
         registry.unregister("custom")
 
 
-def test_loader_unknown_type_raises(tmp_path):
-    from nodeflow.core.loader import load_pipeline
-
-    yaml_path = tmp_path / "pipeline.yaml"
-    yaml_path.write_text(
-        """
-version: "1.5"
-graph:
-  nodes:
-    - id: x
-      type: not_a_registered_type
-      inputs: {}
-      params: {}
-  final: x
-"""
-    )
-    with pytest.raises(UnknownNodeTypeError):
-        load_pipeline(str(tmp_path), str(yaml_path))
-
-
-def test_development_flow_action_nodes_are_registered() -> None:
-    assert registry.get("workflows.development_flow.start") is StartPipeNode
-    assert registry.get("workflows.development_flow.revise_spec") is ReviseSpecPipeNode
-    assert registry.get("workflows.development_flow.approve") is ApprovePipeNode
-    assert registry.get("workflows.development_flow.rework") is ReworkPipeNode
-    assert registry.get("workflows.development_flow.merge") is MergePipeNode
-
-
-def test_development_flow_path_style_wrapper_type_is_registered() -> None:
-    assert registry.get("workflows.development_flow") is DevelopmentFlowPipeNode
-
-
-def test_development_flow_stage_nodes_are_registered_with_path_keys() -> None:
-    assert registry.get("workflows.development_flow.spec_plan") is SpecPlanPipeNode
-    assert registry.get("workflows.development_flow.implement") is ImplementPipeNode
-    assert registry.get("workflows.development_flow.review") is ReviewPipeNode
+def test_development_flow_composite_registry_keys_removed() -> None:
+    """v1.5 path-style development_flow pipes are not registered (rebuild via v1.6 PipeSpec)."""
+    keys = [
+        "workflows.development_flow",
+        "workflows.development_flow.spec_plan",
+        "workflows.development_flow.implement",
+        "workflows.development_flow.review",
+        "workflows.development_flow.start",
+        "workflows.development_flow.revise_spec",
+        "workflows.development_flow.approve",
+        "workflows.development_flow.rework",
+        "workflows.development_flow.merge",
+    ]
+    for key in keys:
+        assert registry.get(key) is None, f"expected {key} unregistered"
 
 
 def test_development_flow_old_registry_keys_are_not_registered() -> None:

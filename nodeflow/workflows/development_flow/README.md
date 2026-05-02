@@ -1,47 +1,16 @@
-# Development flow workflow nodes
+# Development flow — ActionNodes only (v1.6 transition)
 
-Built-in nodes for a development cycle. `workflows.development_flow` orchestrates actions via checkpoint/resume, while stage nodes (`workflows.development_flow.spec_plan`, `workflows.development_flow.implement`, `workflows.development_flow.review`) execute single runs. NodeFlow does not pause in-process for human input.
+Orchestration **PipeNodes** for `workflows.development_flow*` were removed with the YAML / RunnerFrame runtime. **`development_flow`** still ships **reuseable ActionNodes** (checkpoint, workspace prep, run context, summaries, review aggregation, prompts, profiles, git helpers). Rebuild the composite flow with **PipeSpec JSON** + core **Runner** in a later change.
+
+Fixture for tests or future pipes:
+
+- `examples/pipelines/fixtures/approved_development_flow_stub.json` — stub with top-level **`spec`** and **`plan`** (strings or JSON-serializable values).
 
 ## Ownership boundary
 
-- `nodeflow/workflows/development_flow/`: implementation source of truth (registry types + concrete node classes).
-- `examples/pipelines/`: usage examples only (runnable hermetic samples, templates, fixtures); these files instantiate node types and must not embed orchestration logic.
+- `nodeflow/workflows/development_flow/` — helpers and nodes (Python), not YAML pipeline samples.
 
-In short:
-
-- `workflows.development_flow` = built-in node type implementation.
-- `development_flow_*.yaml` = pipeline config that uses that node type.
-
-YAML registry keys:
-
-| `type`             | Purpose |
-|--------------------|---------|
-| `workflows.development_flow` | Top-level orchestration (`start` / `approve` / `rework` / `revise_spec` / `merge`) with flow checkpoint output for resume. |
-| `workflows.development_flow.spec_plan`   | Collect repo context (git), run Codex (or other CLI) with that context on **stdin**, write checkpoint. |
-| `workflows.development_flow.implement`   | Load **one** approved JSON (`approved_checkpoint_path`), run implement CLI (stdin = full prompt), tests, `git diff <base_ref>`, write checkpoint. |
-| `workflows.development_flow.review`      | Load the same approved JSON, `git diff <base_ref>`, build 5 review prompts (diff / wide scan / tests / spec conformance / spec revision), run 5 review CLIs (**stdin** = prompt; **stdout** = JSON contract), aggregate, write checkpoint. |
-| `workflows.development_flow.start` | Run only the `start` action. |
-| `workflows.development_flow.revise_spec` | Run only the `revise_spec` action. |
-| `workflows.development_flow.approve` | Run only the `approve` action. |
-| `workflows.development_flow.rework` | Run only the `rework` action. |
-| `workflows.development_flow.merge` | Run only the `merge` action. |
-
-Naming convention:
-
-- `*_hermetic.yaml`: runnable, CI-safe sample.
-- `*_codex_template.yaml`: Codex CLI template; edit argv and model names before use.
-- `dev_cycle_*`: stage-level example.
-- `development_flow_*`: top-level flow example.
-
-Examples by role:
-
-- Stage hermetic: `examples/pipelines/dev_cycle_spec_plan.yaml`, `examples/pipelines/dev_cycle_implement.yaml`, `examples/pipelines/dev_cycle_review.yaml`
-- Stage Codex templates: `examples/pipelines/dev_cycle_spec_plan_codex_template.yaml`, `examples/pipelines/dev_cycle_implement_codex_template.yaml`, `examples/pipelines/dev_cycle_review_codex_template.yaml`
-- Top-level flow: `examples/pipelines/development_flow_hermetic.yaml` (runnable), `examples/pipelines/development_flow_codex_template.yaml` (template)
-
-Fixture for implement/review inputs:
-
-- `examples/pipelines/fixtures/approved_development_flow_stub.json` — must contain top-level **`spec`** and **`plan`** (strings or JSON-serializable values).
+The rest of this file documents ports and semantics for ActionNodes preserved from P0/P2 until the markdown is tightened.
 
 ## Directory layout (matches pipe hierarchy)
 
@@ -49,29 +18,21 @@ Fixture for implement/review inputs:
 nodeflow/workflows/development_flow/
   README.md                 # this file
   __init__.py
-  check_source_workspace/   # node_check_source_workspace.py
-  load_checkpoint/          # node_load_checkpoint.py
-  write_checkpoint/           # node_write_checkpoint.py
-  prepare_workspace/          # node_prepare_workspace.py
+  check_source_workspace/
+  load_checkpoint/
+  write_checkpoint/
+  prepare_workspace/
   prepare_development_run_context/
   write_development_summary/
-  node_development_flow.py  # top-level action router
-  start/                    # node_start.py
-  revise_spec/              # node_revise_spec.py
-  approve/                  # node_approve.py
-  rework/                   # node_rework.py
-  merge/                    # node_merge.py
-  profiles.py               # model/cost profile loading + merge helpers
-  state_machine.py          # merge gate + allowed_actions helpers
+  profiles.py
+  state_machine.py
+  flow_*.py
   spec_plan/
-    node_spec_plan.py
-    collect_repo_context.py # git rev-parse + status + diff excerpt; builds Codex stdin body
+    collect_repo_context.py
   implement/
-    node_implement.py
     run_tests.py
   review/
-    node_review.py
-    review_parse.py         # JSON contract text + parse helpers (raw_decode); importable from other stages
+    review_parse.py         # JSON contract + parse helpers
     aggregate_reviews.py    # parses JSON from review stdout; merges with diff/exec signals
     build_diff_review_prompt.py
     build_wide_scan_review_prompt.py
@@ -216,30 +177,7 @@ Top-level **flow** checkpoints (`flow_checkpoint.checkpoint_dir`, filenames like
 
 ## CLI examples
 
-From the repository root:
-
-```bash
-nodeflow examples/pipelines/dev_cycle_spec_plan.yaml -w . \
-  -i task_prompt="Describe the change" -i repo_root=. -i base_ref=HEAD
-```
-
-Implement (uses committed fixture; path is workspace-relative when using `-w .`):
-
-```bash
-nodeflow examples/pipelines/dev_cycle_implement.yaml -w . \
-  -i approved_checkpoint_path=examples/pipelines/fixtures/approved_development_flow_stub.json \
-  -i repo_root=. -i base_ref=HEAD -i task_type=implement
-```
-
-Review:
-
-```bash
-nodeflow examples/pipelines/dev_cycle_review.yaml -w . \
-  -i approved_checkpoint_path=examples/pipelines/fixtures/approved_development_flow_stub.json \
-  -i repo_root=. -i base_ref=HEAD -i task_type=review
-```
-
-For production, replace hermetic `argv` under `codex_exec` / review nodes with real **`codex exec`** (or equivalent) invocations; keep **stdin**-driven prompts so diff and spec text actually reach the model.
+Stage YAML under `examples/pipelines/` was deleted with the public YAML loader. Invoke **ActionNodes** from Python or tests (see `tests/workflows/development_flow/`), or wire a **PipeSpec** once the JSON loader lands.
 
 ## Model/cost profiles (P2)
 

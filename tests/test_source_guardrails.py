@@ -35,22 +35,25 @@ def test_readme_has_no_legacy_vocabulary(path: Path):
         assert s not in text, f"{path}: forbidden substring {s!r}"
 
 
-def _iter_public_sample_yaml_files() -> list[Path]:
-    """YAML under examples/ and nodes/ (repo sample trees), excluding nothing."""
-    out: list[Path] = []
-    for root_name in ("examples", "nodes"):
-        root = REPO_ROOT / root_name
-        if not root.is_dir():
-            continue
-        for pattern in ("*.yaml", "*.yml"):
-            out.extend(root.rglob(pattern))
-    return sorted(set(out))
+def test_examples_pipelines_has_no_yaml_samples() -> None:
+    """v1.6: public pipeline examples are JSON; no YAML graph samples under ``examples/pipelines``."""
+    root = REPO_ROOT / "examples" / "pipelines"
+    if not root.is_dir():
+        return
+    for pattern in ("*.yaml", "*.yml"):
+        found = list(root.rglob(pattern))
+        assert not found, f"v1.6 remove YAML pipelines: {found}"
 
 
-def test_public_sample_yaml_files_have_no_legacy_vocabulary():
-    paths = _iter_public_sample_yaml_files()
-    assert paths, "expected at least one sample *.yaml under examples/ or nodes/"
-    for path in paths:
+def test_nodes_sample_yaml_files_have_no_legacy_vocabulary():
+    """Optional bundled node samples may still ship ``*.yaml`` under ``nodes/``."""
+    root = REPO_ROOT / "nodes"
+    if not root.is_dir():
+        return
+    paths: list[Path] = []
+    for pattern in ("*.yaml", "*.yml"):
+        paths.extend(root.rglob(pattern))
+    for path in sorted(set(paths)):
         text = path.read_text(encoding="utf-8")
         for s in FORBIDDEN_SUBSTRINGS:
             assert s not in text, f"{path}: forbidden substring {s!r}"

@@ -193,11 +193,15 @@ class BaseNode:
         if self._check_post_limit(params):
             self._status = "limit"
         else:
-            # run() finished synchronously; derive ready/done from current occupancy.
-            self._status = "ready"
-            self._refresh_status_from_output_occupancy()
+            self._status = self._status_after_run(result)
 
         return self._build_observation(usage=usage)
+
+    def _status_after_run(self, result: Dict[str, Any]) -> str:
+        """Derive ``self._status`` after ``run()`` returns (fatal/limit already handled)."""
+        self._status = "ready"
+        self._refresh_status_from_output_occupancy()
+        return self._status
 
     def _check_pre_limit(self, params: Dict[str, Any]) -> bool:
         """実行前の limit 判定。本版では max_calls のみ。params は freeze 前の生の dict。"""
@@ -303,7 +307,8 @@ class BaseNode:
         self._limit_state[name] = 0
 
     # v1.6 port API: delivery uses occupancy state, not observable output mutation.
-    def set_input(self, port_name: str, payload: Any) -> None:
+    def set_input(self, port_name: str, payload: dict[str, Any]) -> None:
+        """v1.6 port delivery: input payloads must be dict (shallow-copied)."""
         if not isinstance(payload, dict):
             raise TypeError(
                 f"Input port {port_name!r} payload must be dict, got {type(payload).__name__}"
@@ -335,7 +340,7 @@ class BaseNode:
         for key, value in self._input_ports.items():
             if filled_only and not self._input_occupancy.get(key, False):
                 continue
-            snapshot[key] = dict(value)
+            snapshot[key] = dict(value) if isinstance(value, dict) else value
         return snapshot
 
     def clear_input_occupancy(self, port_name: str) -> None:

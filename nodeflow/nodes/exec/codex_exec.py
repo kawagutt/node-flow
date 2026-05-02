@@ -78,15 +78,22 @@ class CodexExecNode(CliActionNode):
         if not isinstance(timeout, (int, float)) or timeout <= 0:
             timeout = 120.0
 
-        task_type = inputs.get("task_type")
+        task_type_raw = inputs.get("task_type")
+        if isinstance(task_type_raw, dict):
+            task_type = task_type_raw.get("task_type") or task_type_raw.get("value")
+        else:
+            task_type = task_type_raw
         if task_type is not None:
             task_type = str(task_type)
         resolved_cwd = self._resolve_cwd(p)
 
-        prompt = inputs.get("prompt")
+        prompt_raw = inputs.get("prompt")
         stdin: str | None = None
-        if isinstance(prompt, str) and prompt.strip():
-            stdin = prompt
+        if isinstance(prompt_raw, dict):
+            s = str(prompt_raw.get("text") or prompt_raw.get("value") or "").strip()
+            stdin = s or None
+        elif isinstance(prompt_raw, str) and prompt_raw.strip():
+            stdin = prompt_raw.strip()
 
         try:
             proc = subprocess.run(

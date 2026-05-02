@@ -1,5 +1,5 @@
-"""YAML registry type ``workflows.development_flow.implement``."""
+"""Implement-stage action nodes (``RunTestsNode``)."""
 
-from nodeflow.workflows.development_flow.implement.node_implement import ImplementPipeNode
+from nodeflow.workflows.development_flow.implement.run_tests import RunTestsNode
 
-__all__ = ["ImplementPipeNode"]
+__all__ = ["RunTestsNode"]

@@ -19,8 +19,8 @@ class PythonSummarizeResultNode(PythonActionNode):
         context: ExecutionContext,
     ) -> Dict[str, Any]:
         er = inputs.get("execution_result")
-        if not isinstance(er, dict):
-            er = {}
+        if not isinstance(er, dict) or not er:
+            return {}
 
         stdout = er.get("stdout")
         stderr = er.get("stderr")
@@ -48,10 +48,13 @@ class PythonSummarizeResultNode(PythonActionNode):
         if not key_findings:
             key_findings.append("completed")
 
+        summary_payload = {
+            "short": short,
+            "key_findings": key_findings,
+            "next_hint": er.get("next_hint"),
+        }
+        er_out = dict(er) if isinstance(er, dict) else {}
         return {
-            "summary": {
-                "short": short,
-                "key_findings": key_findings,
-                "next_hint": er.get("next_hint"),
-            }
+            "summary": summary_payload,
+            "execution_result": er_out,
         }

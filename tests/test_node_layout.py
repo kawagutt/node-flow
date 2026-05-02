@@ -33,6 +33,11 @@ ALLOWED_EXISTING_MISSING_NODE_FILE = {
     "nodeflow/nodes/routing",
     "nodeflow/nodes/summarize",
     "nodeflow/workflows",
+    # v1.5 composite PipeNode entrypoints removed; ActionNodes live in subdirs until layout is normalized.
+    "nodeflow/workflows/development_flow",
+    "nodeflow/workflows/development_flow/spec_plan",
+    "nodeflow/workflows/development_flow/implement",
+    "nodeflow/workflows/development_flow/review",
 }
 
 

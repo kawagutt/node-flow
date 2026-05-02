@@ -1,9 +1,4 @@
-"""Public contract: loader root PipeNode, runtime revision, Runner surface.
-
-Stable entrypoints for callers and tests: ``nodeflow.core.loader.load_pipeline``,
-``nodeflow.core.loader.load_node_pipeline``, ``nodeflow.core.run.load_and_kick_pipeline``.
-Prefer these over deep imports of private loader helpers unless necessary.
-"""
+"""Public contract: Runner surface, PipeNode.execute, fixed-provider pipes."""
 
 from __future__ import annotations
 
@@ -12,11 +7,10 @@ from pathlib import Path
 import pytest
 
 from nodeflow.core.loader import load_pipeline
-from nodeflow.core.node_kinds import PipeNode
 from nodeflow.core.runner import Runner
 
 
-def test_loader_root_is_internal_pipe_node(tmp_path):
+def test_load_pipeline_removed(tmp_path) -> None:
     yaml_path = tmp_path / "pipeline.yaml"
     yaml_path.write_text(
         """
@@ -31,8 +25,8 @@ graph:
   final: r
 """
     )
-    root = load_pipeline(str(tmp_path), str(yaml_path))
-    assert isinstance(root, PipeNode)
+    with pytest.raises(NotImplementedError, match="YAML 1.5"):
+        load_pipeline(str(tmp_path), str(yaml_path))
 
 
 def test_execute_attaches_runtime_ports_revision():
@@ -151,99 +145,9 @@ def test_fixed_provider_pipe_requires_task_type_input():
     assert "inputs.task_type is required" in str(rev.read_error())
 
 
-def test_examples_fixed_provider_yaml_nested_argv_matches_readme():
-    """Sample pipelines under examples/pipelines must include nested exec argv."""
+def test_examples_pipelines_has_no_public_yaml_examples() -> None:
+    """v1.6 public samples are JSON; YAML under ``examples/pipelines`` is obsolete noise."""
     repo = Path(__file__).resolve().parents[1]
-    for filename, inputs in (
-        ("review_with_claude.yaml", {"task_type": "review", "task_prompt": "x"}),
-        ("implement_with_codex.yaml", {"task_type": "implement", "task_prompt": "x"}),
-    ):
-        path = repo / "examples/pipelines" / filename
-        assert path.is_file(), f"missing {path}"
-        root = load_pipeline(str(repo / "examples"), str(path))
-        assert isinstance(root, PipeNode)
-        out = root.execute(inputs, {})
-        assert root.read_status() == "done"
-        assert "execution_result" in out
-        assert "_runtime" not in out["execution_result"]
-
-
-def test_loader_rejects_missing_id_or_type(tmp_path):
-    yaml_path = tmp_path / "bad.yaml"
-    yaml_path.write_text(
-        """
-version: "1.5"
-graph:
-  nodes:
-    - type: python_route_by_task_type
-      inputs:
-        task_type: ${inputs.task_type}
-      params: {}
-  final: route
-"""
-    )
-    with pytest.raises(ValueError, match="id is required"):
-        load_pipeline(str(tmp_path), str(yaml_path))
-
-
-def test_loader_rejects_unknown_final_node(tmp_path):
-    yaml_path = tmp_path / "bad_final.yaml"
-    yaml_path.write_text(
-        """
-version: "1.5"
-graph:
-  nodes:
-    - id: route
-      type: python_route_by_task_type
-      inputs:
-        task_type: ${inputs.task_type}
-      params: {}
-  final: missing
-"""
-    )
-    with pytest.raises(ValueError, match="unknown node id"):
-        load_pipeline(str(tmp_path), str(yaml_path))
-
-
-def test_loader_rejects_invalid_reference_syntax(tmp_path):
-    yaml_path = tmp_path / "bad_ref.yaml"
-    yaml_path.write_text(
-        """
-version: "1.5"
-graph:
-  nodes:
-    - id: route
-      type: python_route_by_task_type
-      inputs:
-        task_type: ${inputs.task_type.extra}
-      params: {}
-  final: route
-"""
-    )
-    with pytest.raises(ValueError, match="invalid reference syntax"):
-        load_pipeline(str(tmp_path), str(yaml_path))
-
-
-def test_loader_rejects_forward_reference(tmp_path):
-    yaml_path = tmp_path / "bad_forward_ref.yaml"
-    yaml_path.write_text(
-        """
-version: "1.5"
-graph:
-  nodes:
-    - id: a
-      type: python_summarize_result
-      inputs:
-        execution_result: ${b.execution_result}
-      params: {}
-    - id: b
-      type: codex_exec
-      inputs:
-        prompt: ${inputs.task_prompt}
-      params:
-        argv: ["sh", "-c", "echo x"]
-  final: b
-"""
-    )
-    with pytest.raises(ValueError, match="before it is available"):
-        load_pipeline(str(tmp_path), str(yaml_path))
+    root = repo / "examples" / "pipelines"
+    yamls = list(root.rglob("*.yaml")) + list(root.rglob("*.yml"))
+    assert yamls == [], f"remove YAML examples: {yamls}"

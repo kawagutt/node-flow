@@ -1,5 +1,7 @@
-"""YAML registry type ``workflows.development_flow.spec_plan``."""
+"""Spec/plan stage helpers (``CollectRepoContextNode``)."""
 
-from nodeflow.workflows.development_flow.spec_plan.node_spec_plan import SpecPlanPipeNode
+from nodeflow.workflows.development_flow.spec_plan.collect_repo_context import (
+    CollectRepoContextNode,
+)
 
-__all__ = ["SpecPlanPipeNode"]
+__all__ = ["CollectRepoContextNode"]

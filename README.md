@@ -1,6 +1,6 @@
 # NodeFlow
 
-**NodeFlow v1.5** — task-oriented **dispatcher** over external CLIs and HTTP APIs (Part V of the [specification](doc/nodeflow_spec.md)).
+**NodeFlow v1.6 (in progress)** — task-oriented nodes over external CLIs and HTTP APIs (see [specification](doc/nodeflow_spec.md)). The YAML / GraphSpec / RunnerFrame loader path has been removed; public wiring is moving to **JSON PipeSpec** + a dumb **Runner**.
 
 ## Overview
 
@@ -27,10 +27,10 @@ uv sync --extra dev
 
 ## Quick start
 
-From the repository root (pipeline path may be workspace-relative or cwd-relative):
+Run the core test slice (no public YAML samples under `examples/pipelines/`):
 
 ```bash
-nodeflow examples/pipelines/hello.yaml -w examples -i task_type=review
+pytest -q tests/core tests/test_public_contract.py tests/test_registry.py tests/test_e2e.py
 ```
 
 ## Exec and API failure semantics
@@ -40,14 +40,9 @@ nodeflow examples/pipelines/hello.yaml -w examples -i task_type=review
 
 See `ApiActionNode` docstring in code for the same contract.
 
-## Root graph and `PipeNode`
+## Pipes and the Runner
 
-The YAML `graph` section (`graph.nodes`, `graph.final`) is loaded by **`nodeflow.core.loader.load_pipeline`**, which **assembles a root `PipeNode` in code** (this is **not** a public YAML `type` like `type: pipe`). The loader holds a frozen **`GraphSpec`** (child nodes, order, bindings, params, `final`) on that root; default **`run()`** uses **`RunnerFrame`** to step the child graph and returns the **`final` node’s domain output** (that node’s port name → dict payload, with child-level **`_runtime` / `_usage` stripped** via `domain_ports_from_observation`). The root’s own **`execute()`** then attaches the composite **`_runtime`** (port revisions) for the pipe—so the observable result is “final domain ports as the root’s domain ports,” plus the root’s **`_runtime`**, not a raw passthrough of the child’s full observation dict.
-
-`read_error()` on that root `PipeNode` returns the **first** child error only when present; for full diagnostics, inspect child nodes.
-
-Top-level execution (`load_and_kick_pipeline` / CLI) is **fail-fast**: if the root
-status ends as anything other than `done` (`fatal` / `limit`), execution raises an error.
+**`load_pipeline()` / YAML `graph` + `final` are removed.** They raise `NotImplementedError` intentionally. Executable wiring is **`SourceRef`** + **`PipeSpec`** validated in core, stepped by **`Runner`** (occupancy scheduling, no frame stack). **`PipeNode`** implementations own internal execution (`pipe_spec()` / delegated children). See core tests under `tests/core/` for the contract skeleton.
 
 ## Workspace
 
@@ -64,50 +59,22 @@ For CLI exec nodes (`codex_exec`, `claude_code_exec`), subprocess `cwd` follows 
 execution template (`BaseNode._apply_usage`). It is not part of domain output and is
 not exposed on final node outputs by default.
 
-## YAML (v1.5)
+## Public pipelines
 
-- `version` must be **`"1.5"`**.
-- **`graph.nodes`**: each entry has `id`, `type`, `inputs`, `params`. **`type`** values are **registry keys** for concrete nodes (for example: `python_route_by_task_type`, `python_summarize_result`, `codex_exec`, `claude_code_exec`, `kimi_exec`, `qwen_exec`, `review_with_claude`, `implement_with_codex`, `workflows.development_flow.spec_plan`, `workflows.development_flow.implement`, `workflows.development_flow.review`, `workflows.development_flow`). There is **no** built-in YAML `type` for the root wrapper; the loader builds the root **`PipeNode`** internally. **CLI exec nodes** (`codex_exec`, `claude_code_exec`) require a **non-empty `params.argv`** list (subprocess precondition). For **`review_with_claude`** / **`implement_with_codex`**, put **nested exec params on that graph node’s `params`** (the same `params` object the loader passes into the composite), e.g. `claude_code_exec: { argv: [...] }` or `codex_exec: { argv: [...] }`—there are **no implicit default argv** in those pipes. These fixed-provider pipes expect both `task_prompt` and `task_type` inputs; `task_type` is forwarded to exec result context. See **`examples/pipelines/review_with_claude.yaml`** and **`examples/pipelines/implement_with_codex.yaml`**.
-- **`graph.final`**: id of the terminal node whose output is exposed as the pipeline result.
-- Nodes are executed in declaration order; `${node.port}` references are allowed only for nodes declared earlier (forward references are rejected).
+- **YAML graph samples** under `examples/pipelines/` were removed; v1.6 uses **JSON PipeSpec** (loader still evolving).
+- **Built-in registry types** (for programmatic / future JSON use) include routing, summarize, exec nodes, and fixed-provider pipes **`review_with_claude`** and **`implement_with_codex`**. **`workflows.development_flow.*`** composite YAML types are **not** registered anymore; **`development_flow`** **ActionNodes** remain under [`nodeflow/workflows/development_flow/`](nodeflow/workflows/development_flow/) for reuse inside new PipeSpecs.
 
-Minimal example (routing only):
+## Development flow (helpers)
 
-```yaml
-version: "1.5"
-graph:
-  nodes:
-    - id: route
-      type: python_route_by_task_type
-      inputs:
-        task_type: ${inputs.task_type}
-      params: {}
-  final: route
-```
+Development flow tooling is intentionally split:
 
-Fixed provider pipe examples with nested `argv` are under **`examples/pipelines/`** (`review_with_claude.yaml`, `implement_with_codex.yaml`).
+- **`nodeflow/nodes/`**: building blocks (`exec`, `routing`, …).
+- **`nodeflow/workflows/development_flow/`**: **ActionNodes** (checkpoint, workspace prep, summaries, review parsing, etc.). The old **`workflows.development_flow.*`** **PipeNode** composites are dropped until they are rebuilt on v1.6 PipeSpec.
+- **`nodeflow/workflows/`** also ships **`review_with_claude`** and **`implement_with_codex`** PipeNodes (still registered).
 
-## Development flow nodes and examples (P0/P2)
+Field semantics for workspace / checkpoints / summaries are summarized in **`nodeflow/workflows/development_flow/README.md`** (being updated alongside JSON PipeSpec). `.nodeflow/` should usually be git-ignored.
 
-Development flow is intentionally split into:
-
-- **Reusable nodes (`nodeflow/nodes/`)**: `exec`, `routing`, `summarize`, and other building-block registry types.
-- **Packaged workflows (`nodeflow/workflows/`)**: `development_flow`, `review_with_claude`, `implement_with_codex` (composite nodes; same YAML `type` registry keys as before).
-- **Usage examples (`examples/`)**: runnable samples/templates that instantiate those node types; no orchestration logic lives in example YAML files.
-
-Naming and concrete file examples live in **[`nodeflow/workflows/development_flow/README.md`](nodeflow/workflows/development_flow/README.md)**.
-
-**Import path note:** workflow node classes live under `nodeflow.workflows.*`. Development-flow YAML registry keys are path-style only: `workflows.development_flow`, `workflows.development_flow.spec_plan`, `workflows.development_flow.implement`, and `workflows.development_flow.review`. Legacy keys are not supported.
-
-For `workflows.development_flow`, `repo_root` means the target project repository (not the node-flow repository). The flow distinguishes:
-- `source_repo_root`: target repository passed as `repo_root`
-- `workspace_root`: execution root for implementation/review. Currently only `current_repo` is supported; future versions may add git worktree support.
-- `artifact_root`: preferred per-run root under `.nodeflow/runs/<run_dir_name>/` for stage checkpoints (`spec_plan/`, `implement/`, `review/`) and `summary/` when the orchestrator passes `artifact_root` into stage pipes; top-level flow JSON may still use `flow_checkpoint.checkpoint_dir` (see `nodeflow/workflows/development_flow/README.md`).
-
-`.nodeflow/` should usually be git-ignored. Fresh `prepare_workspace` / `start` clean checks skip paths under `.nodeflow/` by default so generated metadata does not block runs.
-
-`nodeflow.core.loader.load_node_pipeline()` is a raw loader for version + top-level shape checks.
-Use `nodeflow.core.loader.load_pipeline()` for executable graph validation.
+**`nodeflow.core.loader.load_pipeline()`** confirms removal of YAML v1.5 by raising `NotImplementedError`.
 
 ## API keys (optional)
 
@@ -123,7 +90,7 @@ nodeflow/
 │   ├── node_kinds/       # PipeNode, ActionNode, implementation kinds
 │   ├── runner.py
 │   ├── registry.py
-│   ├── loader.py         # pipeline YAML parse + root PipeNode assembly
+│   ├── loader.py         # legacy YAML entry points removed / migration guards
 │   ├── config.py         # YAML IO helpers (load_yaml, deep merge)
 │   └── run.py            # load_and_kick_pipeline entry
 ├── nodes/                # reusable building-block nodes (by role / purpose)
@@ -138,7 +105,7 @@ nodeflow/
 
 ## Custom nodes
 
-Register classes on `nodeflow.core.registry.registry` with `register("your_type", YourClass)` and use `type: your_type` in YAML. Custom code typically subclasses `BaseNode` or `ActionNode` / `PythonActionNode` and lives in your workspace, not in this package.
+Register classes on `nodeflow.core.registry.registry` with `register("your_type", YourClass)` for use from **PipeSpec** / programmatic execution. Custom code typically subclasses `BaseNode` or `ActionNode` / `PythonActionNode` and lives in your workspace, not in this package.
 
 ## Upgrading from v1.4
 

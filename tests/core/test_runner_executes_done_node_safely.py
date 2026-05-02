@@ -3,7 +3,8 @@ from __future__ import annotations
 from types import MappingProxyType
 
 from nodeflow.core.base_node import BaseNode, ExecutionContext
-from nodeflow.core.runner import Runner, SourceRef
+from nodeflow.core.runner import Runner
+from nodeflow.core.source_ref import SourceRef
 
 
 class _OneShotNode(BaseNode):

@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from types import MappingProxyType
 
+import pytest
+
 from nodeflow.core.base_node import BaseNode, ExecutionContext
-from nodeflow.core.runner import Runner, SourceRef
+from nodeflow.core.runner import Runner
+from nodeflow.core.source_ref import SourceRef
 
 
 class _ForwardNode(BaseNode):
@@ -86,3 +89,22 @@ def test_runner_does_not_deliver_when_target_already_filled():
     after = b.get_input_snapshot(filled_only=False)["input"]
     assert before == {"value": 999}
     assert after == {"value": 999}
+
+
+def test_runner_rejects_non_dict_pipe_input_payload():
+    """Core Runner does not coerce payloads; dict-only v1.6 contract."""
+
+    class _N(BaseNode):
+        def run(self, inputs, params: MappingProxyType, context: ExecutionContext):
+            return {"out": {}}
+
+    n = _N()
+    runner = Runner(
+        graph_node_order=["n"],
+        nodes={"n": n},
+        node_params={"n": {}},
+        node_input_sources={"n": {"a": SourceRef(kind="input", port_name="p1")}},
+        pipe_inputs={"p1": None},
+    )
+    with pytest.raises(TypeError, match="requires dict"):
+        runner.step()

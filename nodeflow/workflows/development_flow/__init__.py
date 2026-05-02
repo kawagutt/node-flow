@@ -1,23 +1,9 @@
-"""Development flow stage pipes — single-run stages with human checkpoint artifacts."""
+"""Development flow action nodes and helpers.
 
-from nodeflow.workflows.development_flow.approve import ApprovePipeNode
-from nodeflow.workflows.development_flow.implement import ImplementPipeNode
-from nodeflow.workflows.development_flow.merge import MergePipeNode
-from nodeflow.workflows.development_flow.node_development_flow import DevelopmentFlowPipeNode
-from nodeflow.workflows.development_flow.review import ReviewPipeNode
-from nodeflow.workflows.development_flow.revise_spec import ReviseSpecPipeNode
-from nodeflow.workflows.development_flow.rework import ReworkPipeNode
-from nodeflow.workflows.development_flow.spec_plan import SpecPlanPipeNode
-from nodeflow.workflows.development_flow.start import StartPipeNode
+Composite stage pipes (v1.5 YAML registry) were removed; rebuild with v1.6 PipeSpec in a follow-up.
+Import concrete nodes from subpackages (e.g. ``prepare_workspace``, ``write_checkpoint``).
+"""
 
-__all__ = [
-    "DevelopmentFlowPipeNode",
-    "StartPipeNode",
-    "ReviseSpecPipeNode",
-    "ApprovePipeNode",
-    "ReworkPipeNode",
-    "MergePipeNode",
-    "ImplementPipeNode",
-    "ReviewPipeNode",
-    "SpecPlanPipeNode",
-]
+from __future__ import annotations
+
+__all__: list[str] = []

@@ -82,7 +82,11 @@ class ClaudeCodeExecNode(CliActionNode):
         if model is not None:
             model = str(model)
 
-        task_type = inputs.get("task_type")
+        task_type_raw = inputs.get("task_type")
+        if isinstance(task_type_raw, dict):
+            task_type = task_type_raw.get("task_type") or task_type_raw.get("value")
+        else:
+            task_type = task_type_raw
         if task_type is not None:
             task_type = str(task_type)
         resolved_cwd = self._resolve_cwd(p)

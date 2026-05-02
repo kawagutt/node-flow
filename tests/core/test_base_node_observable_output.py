@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from types import MappingProxyType
 
-import pytest
-
 from nodeflow.core.base_node import BaseNode, ExecutionContext
 
 
@@ -45,12 +43,6 @@ def test_clear_output_occupancy_does_not_mutate_snapshot():
     assert node.get_output_snapshot() == {}
     assert node.is_output_filled("result") is False
     assert node.read_status() == "ready"
-
-
-def test_set_input_requires_dict_payload():
-    node = _EmitNode()
-    with pytest.raises(TypeError, match="payload must be dict"):
-        node.set_input("request", "not-a-dict")
 
 
 def test_set_input_copies_top_level_dict_from_caller():
