@@ -1,9 +1,12 @@
-"""v1.6 JSON PipeSpec loading — YAML 1.5 pipeline path intentionally absent.
+"""v1.6 JSON PipeSpec loading — **JSON only**.
 
-``load_pipeline`` accepts ``*.json`` (normative PipeSpec JSON, see ``doc/nodeflow_spec.md``
-§16.3). ``*.yaml`` / ``*.yml`` still raises ``NotImplementedError`` (public contract).
+There is no YAML parse path in this module. ``load_pipeline`` keeps the legacy name used when
+YAML 1.5 existed, but today it **only reads v1.6 PipeSpec ``*.json``** (§16.3 in
+``doc/nodeflow_spec.md``). Paths ending in ``*.yaml`` / ``*.yml`` raise
+``NotImplementedError`` explicitly (removed product path).
 
-Import from ``nodeflow.core.loader`` for IO; executable objects are validated with
+Use :func:`load_pipe_spec_from_json_object` / :func:`load_pipe_spec_from_json_bytes` for in-memory /
+bytes input. Executable results are validated with
 :class:`~nodeflow.core.pipe_spec.validate_executable_pipe_spec`.
 """
 
@@ -382,9 +385,10 @@ def load_pipeline(
     *,
     reg: NodeRegistry | None = None,
 ) -> PipeSpec:
-    """Load a v1.6 PipeSpec JSON file from ``file_path`` (relative to ``workspace_dir`` if needed).
+    """Load **JSON only**: v1.6 PipeSpec from ``file_path`` (relative to ``workspace_dir`` if needed).
 
-    ``*.yaml`` / ``*.yml`` still raise ``NotImplementedError`` (YAML 1.5 path removed).
+    Compatibility name retained from pre–v1.6 YAML loaders; behaviour is strictly ``*.json`` →
+    :func:`load_pipe_spec_from_json_bytes`. ``*.yaml`` / ``*.yml`` raise ``NotImplementedError``.
     Pass ``reg`` to resolve ``type`` strings against a registry other than the module default.
     """
     root = Path(workspace_dir)

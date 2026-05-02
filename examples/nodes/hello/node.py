@@ -1,15 +1,13 @@
 """
-Hello Node — v1.2. run(inputs, params) -> dict.
+Hello sample node — runnable type is packaged as ``HelloDemoNode``.
+
+See ``examples/pipes/hello.json`` for a minimal v1.6 PipeSpec graph using registry key ``hello_demo``.
 """
 
-from typing import Any, Dict
+from __future__ import annotations
 
-from nodeflow.core.base_node import BaseNode
+from nodeflow.nodes.hello_demo import HelloDemoNode
 
+HelloNode = HelloDemoNode
 
-class HelloNode(BaseNode):
-    def run(self, inputs: Dict[str, Any], params: Any) -> Dict[str, Any]:
-        message = (
-            params.get("message", "Hello, World!") if hasattr(params, "get") else "Hello, World!"
-        )
-        return {"message": {"data": message}}
+__all__ = ["HelloDemoNode", "HelloNode"]

@@ -14,12 +14,17 @@ from nodeflow.core.registry import (
     registry,
 )
 from nodeflow.nodes.builtins import register_builtin_nodes
+from nodeflow.nodes.hello_demo import HelloDemoNode
 
 
 def test_registry_register_resolve():
     cls = registry.resolve("python_route_by_task_type")
     node = cls()
     assert isinstance(node, BaseNode)
+
+
+def test_registry_resolves_hello_demo() -> None:
+    assert registry.resolve("hello_demo") is HelloDemoNode
 
 
 def test_registry_unknown_type_raises():

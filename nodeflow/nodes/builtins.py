@@ -7,6 +7,7 @@ from nodeflow.nodes.exec.claude_code_exec import ClaudeCodeExecNode
 from nodeflow.nodes.exec.codex_exec import CodexExecNode
 from nodeflow.nodes.exec.kimi_exec import KimiExecNode
 from nodeflow.nodes.exec.qwen_exec import QwenExecNode
+from nodeflow.nodes.hello_demo import HelloDemoNode
 from nodeflow.nodes.routing.python_route_by_task_type import PythonRouteByTaskTypeNode
 from nodeflow.nodes.summarize.python_summarize_result import PythonSummarizeResultNode
 from nodeflow.workflows.implement_with_codex.node_implement_with_codex import (
@@ -18,6 +19,7 @@ from nodeflow.workflows.review_with_claude.node_review_with_claude import (
 
 
 def register_builtin_nodes() -> None:
+    registry.register("hello_demo", HelloDemoNode, override=True)
     registry.register("python_route_by_task_type", PythonRouteByTaskTypeNode, override=True)
     registry.register("python_summarize_result", PythonSummarizeResultNode, override=True)
     registry.register("codex_exec", CodexExecNode, override=True)

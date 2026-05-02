@@ -1,0 +1,20 @@
+{
+  "pipe": {
+    "input_ports": ["incoming"],
+    "output_ports": {
+      "greeting": "demo.message"
+    }
+  },
+  "nodes": {
+    "demo": {
+      "type": "hello_demo",
+      "params": {
+        "message": "Hello from NodeFlow!"
+      },
+      "input_ports": {
+        "tick": "input.incoming"
+      },
+      "output_ports": ["message"]
+    }
+  }
+}
