@@ -88,7 +88,7 @@ def test_pipe_fatal_propagates():
     )
     out = pipe.execute({"x": 1}, {})
     assert pipe.read_status() == "fatal"
-    assert out == {}
+    assert out["_state"]["value"] == "fatal"
     assert nodes["a"].read_status() == "fatal"
 
 
@@ -111,7 +111,7 @@ def test_pipe_limit_propagates():
     out = pipe.execute({"x": 1}, {})
     assert nodes["a"].read_status() == "limit"
     assert pipe.read_status() == "limit"
-    assert out == {}
+    assert out["_state"]["value"] == "limit"
 
 
 def test_pipe_max_calls_on_root():
@@ -133,4 +133,4 @@ def test_pipe_max_calls_on_root():
     pipe.reset_status()
     out2 = pipe.execute({"x": "2"}, params)
     assert pipe.read_status() == "limit"
-    assert out2 == {}
+    assert out2["_state"]["value"] == "limit"

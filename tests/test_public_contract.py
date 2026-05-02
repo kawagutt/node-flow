@@ -137,7 +137,7 @@ def test_fixed_provider_pipe_requires_task_type_input():
         {"task_prompt": "x"},
         {"codex_exec": {"argv": ["sh", "-c", "echo should-not-run"]}},
     )
-    assert out_impl == {}
+    assert out_impl["_state"]["value"] == "fatal"
     assert impl.read_status() == "fatal"
     assert "inputs.task_type is required" in str(impl.read_error())
 
@@ -146,7 +146,7 @@ def test_fixed_provider_pipe_requires_task_type_input():
         {"task_prompt": "x"},
         {"claude_code_exec": {"argv": ["sh", "-c", "echo should-not-run"]}},
     )
-    assert out_rev == {}
+    assert out_rev["_state"]["value"] == "fatal"
     assert rev.read_status() == "fatal"
     assert "inputs.task_type is required" in str(rev.read_error())
 

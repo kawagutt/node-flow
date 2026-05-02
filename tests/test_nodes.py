@@ -52,7 +52,9 @@ def test_codex_exec_missing_argv_is_fatal():
     node = CodexExecNode()
     out = node.execute({}, {})
     assert node.read_status() == "fatal"
-    assert out == {}
+    assert out["_state"]["value"] == "fatal"
+    assert out["_runtime"]["ports"] == {}
+    assert out["_usage"] == {}
     assert isinstance(node.read_error(), NodeExecutionFailure)
 
 

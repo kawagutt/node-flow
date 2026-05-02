@@ -10,7 +10,6 @@ from nodeflow.core.node_kinds.action_node import (
     PythonActionNode,
 )
 from nodeflow.core.node_kinds.pipe_node import PipeNode
-from nodeflow.core.runner_frame import reset_children_for_graph
 
 __all__ = [
     "ActionNode",
@@ -19,5 +18,4 @@ __all__ = [
     "InputBinding",
     "PipeNode",
     "PythonActionNode",
-    "reset_children_for_graph",
 ]

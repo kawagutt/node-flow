@@ -18,7 +18,6 @@ from .node_kinds import (
     InputBinding,
     PipeNode,
     PythonActionNode,
-    reset_children_for_graph,
 )
 from .registry import (
     NodeRegistry,
@@ -27,8 +26,7 @@ from .registry import (
     registry,
 )
 from .run import load_and_kick_pipeline
-from .runner import Runner
-from .runner_frame import RunnerFrame
+from .runner import Runner, SourceRef
 
 __all__ = [
     "ActionNode",
@@ -48,12 +46,11 @@ __all__ = [
     "PythonActionNode",
     "RegistryConflictError",
     "Runner",
-    "RunnerFrame",
+    "SourceRef",
     "UnknownNodeTypeError",
     "load_and_kick_pipeline",
     "load_node_pipeline",
     "load_pipeline",
     "load_yaml",
     "registry",
-    "reset_children_for_graph",
 ]

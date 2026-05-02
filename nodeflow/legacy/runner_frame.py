@@ -1,4 +1,4 @@
-"""Scoped executor for one PipeNode graph (child Runner + param resolution)."""
+"""Legacy runner frame for pre-v1.6 PipeNode path."""
 
 from __future__ import annotations
 
@@ -13,13 +13,12 @@ from nodeflow.core.base_node import (
     domain_ports_from_observation,
 )
 from nodeflow.core.graph_spec import GraphSpec
-from nodeflow.core.runner import Runner
+from nodeflow.legacy.runner import Runner
 
 _REF_PATTERN = re.compile(r"\$\{([^}.]+)\.([^}]+)\}")
 
 
 def reset_children_for_graph(nodes: Dict[str, BaseNode]) -> None:
-    """Reset child node status so the same graph instance can be executed again."""
     for node in nodes.values():
         st = node.read_status()
         if st == "executing":
@@ -33,7 +32,6 @@ def _resolve_params_dict(
     pipe_params: Dict[str, Any],
     pipe_inputs: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Resolve ${params.x} and ${inputs.x} before Runner.step."""
     if not params_def:
         return {}
     resolved: Dict[str, Any] = {}
@@ -58,8 +56,6 @@ def _resolve_params_dict(
 
 
 class RunnerFrame:
-    """Scoped executor for one PipeNode graph."""
-
     def __init__(
         self,
         spec: GraphSpec,
@@ -104,13 +100,10 @@ class RunnerFrame:
                 raise NodeExecutionFailure("child fatal")
             if "limit" in statuses:
                 raise NodeExecutionLimit("child limit")
-
             final_node = self.spec.nodes.get(self.spec.final)
             if final_node is not None and final_node.read_status() == "done":
                 break
-
             if not progressed:
                 raise NodeExecutionFailure("invalid execution state")
-
         final_obs = self.latest_output.get(self.spec.final, {})
         return domain_ports_from_observation(final_obs)

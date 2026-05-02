@@ -7,7 +7,9 @@ from typing import Any, Dict, Optional
 
 from nodeflow.core.base_node import BaseNode, ExecutionContext
 from nodeflow.core.graph_spec import GraphSpec
-from nodeflow.core.runner_frame import RunnerFrame
+from nodeflow.legacy.runner_frame import RunnerFrame
+
+__all__ = ["PipeNode"]
 
 
 class PipeNode(BaseNode):

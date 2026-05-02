@@ -52,8 +52,9 @@ def test_route_exec_summarize_in_memory():
     )
     out = pipe.execute({"task_type": "implement", "task_prompt": "x"}, {})
     assert pipe.read_status() == "done"
-    for n in nodes.values():
-        assert n.read_status() == "done"
+    assert nodes["route"].read_status() == "done"
+    assert nodes["exec"].read_status() == "done"
+    assert nodes["summarize"].read_status() == "done"
     assert "summary" in out
     assert "short" in out["summary"]
 
@@ -102,7 +103,10 @@ def test_run_returning_runtime_is_fatal():
             return {"out": {"x": 1}, "_runtime": {"ports": {}}}
 
     n = BadPipe()
-    assert n.execute({}, {}) == {}
+    out = n.execute({}, {})
+    assert out["_state"]["value"] == "fatal"
+    assert out["_usage"] == {}
+    assert out["_runtime"]["ports"] == {}
     assert n.read_status() == "fatal"
 
 

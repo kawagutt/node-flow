@@ -11,8 +11,9 @@ from nodeflow.core.base_node import (
     NodeExecutionFailure,
     NodeExecutionLimit,
 )
-from nodeflow.core.node_kinds import PipeNode, reset_children_for_graph
-from nodeflow.core.runner import Runner
+from nodeflow.core.node_kinds import PipeNode
+from nodeflow.legacy.runner import Runner
+from nodeflow.legacy.runner_frame import reset_children_for_graph
 from nodeflow.nodes.exec.claude_code_exec import ClaudeCodeExecNode
 from nodeflow.nodes.summarize.python_summarize_result import PythonSummarizeResultNode
 

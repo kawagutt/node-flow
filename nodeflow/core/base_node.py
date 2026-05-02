@@ -73,17 +73,17 @@ def _freeze(params: dict) -> MappingProxyType:
     return MappingProxyType(params.copy() if params else {})
 
 
-RESERVED_TOP_LEVEL_FROM_RUN = frozenset({"_runtime", "_usage"})
+RESERVED_TOP_LEVEL_FROM_RUN = frozenset({"_state", "_runtime", "_usage"})
 
 
 def domain_ports_from_observation(obs: Dict[str, Any]) -> Dict[str, Any]:
     """Strip reserved top-level keys from a child ``execute()`` return.
 
-    Only ``_runtime`` and ``_usage`` are removed (see ``RESERVED_TOP_LEVEL_FROM_RUN``).
+    Reserved observation keys are removed (see ``RESERVED_TOP_LEVEL_FROM_RUN``).
     Do not use this to drop arbitrary other keys—extend the frozenset only if the
     port contract adds a new reserved name.
 
-    **Call sites:** ``RunnerFrame.run()`` / custom ``PipeNode.run()`` when forwarding
+    **Call sites:** default/custom ``PipeNode.run()`` when forwarding
     the **final** child’s observation to this pipe’s
     domain output. Not a general-purpose dict helper—avoid importing it elsewhere.
     """
@@ -120,16 +120,25 @@ class BaseNode:
         self._error: Exception | None = None
         self._limit_state: Dict[str, int] = {"calls": 0, "tokens": 0}
         self._current_context: ExecutionContext | None = None
+        self._input_ports: Dict[str, Any] = {}
+        self._input_occupancy: Dict[str, bool] = {}
+        self._output_ports: Dict[str, Any] = {}
+        self._output_occupancy: Dict[str, bool] = {}
+        self._output_runtime_ports: Dict[str, Dict[str, str]] = {}
+        self._last_usage: Dict[str, Any] = {}
 
     def execute(self, inputs: Dict[str, Any], params: Dict[str, Any]) -> Dict[str, Any]:
         """共通実行テンプレート。サブクラスは run() を実装する。"""
+        if self._status == "done":
+            # done node may be called again by Runner; must not duplicate execution.
+            return self._build_observation()
         if self._status != "ready":
             raise RuntimeError("execute called when status is not ready")
 
         # pre-limit は freeze 前の params を意図的に受け取る（execute の引数そのまま）
         if self._check_pre_limit(params):
             self._status = "limit"
-            return {}
+            return self._build_observation()
 
         self._status = "executing"
         context = ExecutionContext()
@@ -145,39 +154,50 @@ class BaseNode:
             raise NotImplementedError("LimitSignal not implemented in this version")
         except NodeExecutionLimit:
             self._status = "limit"
-            return {}
+            return self._build_observation()
         except NodeExecutionFailure as e:
             self._status = "fatal"
             self._error = e
-            return {}
+            return self._build_observation()
         except Exception as e:
             self._status = "fatal"
             self._error = e
-            return {}
+            return self._build_observation()
         finally:
             self._current_context = None
 
         if not isinstance(result, dict):
             self._status = "fatal"
             self._error = TypeError("run() must return a dict")
-            return {}
+            return self._build_observation()
 
         if "_runtime" in result:
             self._status = "fatal"
             self._error = ValueError(
                 "run() must not return _runtime; execution template owns _runtime"
             )
-            return {}
+            return self._build_observation()
+        if "_state" in result:
+            self._status = "fatal"
+            self._error = ValueError("run() must not return _state; execution template owns _state")
+            return self._build_observation()
 
-        self._apply_usage(result)
-        result = _attach_runtime(result)
+        try:
+            usage = self._extract_usage(result)
+            self._store_output_ports(result)
+        except Exception as e:
+            self._status = "fatal"
+            self._error = e
+            return self._build_observation()
 
         if self._check_post_limit(params):
             self._status = "limit"
         else:
-            self._status = "done"
+            # run() finished synchronously; derive ready/done from current occupancy.
+            self._status = "ready"
+            self._refresh_status_from_output_occupancy()
 
-        return result
+        return self._build_observation(usage=usage)
 
     def _check_pre_limit(self, params: Dict[str, Any]) -> bool:
         """実行前の limit 判定。本版では max_calls のみ。params は freeze 前の生の dict。"""
@@ -199,14 +219,52 @@ class BaseNode:
             return True
         return False
 
-    def _apply_usage(self, result: Dict[str, Any]) -> None:
+    def _extract_usage(self, result: Dict[str, Any]) -> Dict[str, Any]:
         """run の戻り値から _usage を取り除き、tokens を _limit_state に加算する。"""
         usage = result.pop("_usage", None)
         if not isinstance(usage, dict):
-            return
+            self._last_usage = {}
+            return {}
         total = usage.get("total_tokens")
         if isinstance(total, int):
             self._limit_state["tokens"] += total
+        self._last_usage = dict(usage)
+        return self._last_usage
+
+    def _store_output_ports(self, output_ports: Dict[str, Any]) -> None:
+        for port_key, port_value in list(output_ports.items()):
+            if port_key in RESERVED_TOP_LEVEL_FROM_RUN:
+                continue
+            if not isinstance(port_value, dict):
+                raise TypeError(
+                    f"Port {port_key!r} payload must be dict, got {type(port_value).__name__}"
+                )
+            self._output_ports[port_key] = dict(port_value)
+            self._output_occupancy[port_key] = True
+            self._output_runtime_ports[port_key] = {"revision": str(uuid.uuid4())}
+
+    def _refresh_status_from_output_occupancy(self) -> None:
+        if self._status in {"fatal", "limit", "executing"}:
+            return
+        self._status = "done" if any(self._output_occupancy.values()) else "ready"
+
+    def _build_observation(self, usage: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        domain_output = self.get_output_snapshot()
+        runtime_ports: Dict[str, Dict[str, str]] = {}
+        for port_key in list(domain_output.keys()):
+            runtime = self._output_runtime_ports.get(port_key)
+            if runtime is not None:
+                runtime_ports[port_key] = dict(runtime)
+        error = None
+        if self._error is not None:
+            error = {
+                "type": type(self._error).__name__,
+                "message": str(self._error),
+            }
+        domain_output["_state"] = {"value": self._status, "error": error}
+        domain_output["_runtime"] = {"ports": runtime_ports}
+        domain_output["_usage"] = dict(self._last_usage if usage is None else usage)
+        return domain_output
 
     def run(
         self,
@@ -231,9 +289,55 @@ class BaseNode:
             raise RuntimeError("cannot reset while executing")
         self._status = "ready"
         self._error = None
+        self._input_ports = {}
+        self._input_occupancy = {}
+        self._output_ports = {}
+        self._output_occupancy = {}
+        self._output_runtime_ports = {}
+        self._last_usage = {}
 
     def reset_limit_state(self, name: str) -> None:
         """指定した limit state をリセットする。status は変更しない。"""
         if name not in self._limit_state:
             raise KeyError(f"Unknown limit state: {name}")
         self._limit_state[name] = 0
+
+    # v1.6 port API: delivery uses occupancy state, not observable output mutation.
+    def set_input(self, port_name: str, payload: Any) -> None:
+        if not isinstance(payload, dict):
+            raise TypeError(
+                f"Input port {port_name!r} payload must be dict, got {type(payload).__name__}"
+            )
+        self._input_ports[port_name] = dict(payload)
+        self._input_occupancy[port_name] = True
+
+    def get_output_snapshot(self, *, filled_only: bool = True) -> Dict[str, Any]:
+        snapshot: Dict[str, Any] = {}
+        for key, value in self._output_ports.items():
+            if filled_only and not self._output_occupancy.get(key, False):
+                continue
+            snapshot[key] = dict(value)
+        return snapshot
+
+    def is_output_filled(self, port_name: str) -> bool:
+        return bool(self._output_occupancy.get(port_name, False))
+
+    def clear_output_occupancy(self, port_name: str) -> None:
+        if port_name in self._output_occupancy:
+            self._output_occupancy[port_name] = False
+        self._refresh_status_from_output_occupancy()
+
+    def is_input_filled(self, port_name: str) -> bool:
+        return bool(self._input_occupancy.get(port_name, False))
+
+    def get_input_snapshot(self, *, filled_only: bool = True) -> Dict[str, Any]:
+        snapshot: Dict[str, Any] = {}
+        for key, value in self._input_ports.items():
+            if filled_only and not self._input_occupancy.get(key, False):
+                continue
+            snapshot[key] = dict(value)
+        return snapshot
+
+    def clear_input_occupancy(self, port_name: str) -> None:
+        if port_name in self._input_occupancy:
+            self._input_occupancy[port_name] = False
