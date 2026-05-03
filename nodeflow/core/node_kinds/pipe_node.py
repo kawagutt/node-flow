@@ -42,6 +42,26 @@ class PipeNode(BaseNode):
             "Subclass must implement pipe_spec() returning an executable PipeSpec."
         )
 
+    def _resolved_node_params(
+        self,
+        spec: PipeSpec,
+        raw_params: dict[str, Any],
+    ) -> dict[str, dict[str, Any]]:
+        """Merge :class:`~nodeflow.core.pipe_spec.NodeSpec` params with composite ``raw_params``.
+
+        Default: shallow-copy each node's ``spec.nodes[*].params`` and propagate a top-level
+        string ``"_workspace_dir"`` (when present) to every child's params via ``setdefault``.
+        Subclasses override to inject provider-specific child param dicts keyed in ``params``.
+        """
+        resolved: dict[str, dict[str, Any]] = {
+            nid: dict(ns.params) for nid, ns in spec.nodes.items()
+        }
+        workspace_dir = raw_params.get("_workspace_dir")
+        if isinstance(workspace_dir, str):
+            for node_params in resolved.values():
+                node_params.setdefault("_workspace_dir", workspace_dir)
+        return resolved
+
     def run(
         self,
         inputs: Dict[str, Any],
@@ -55,11 +75,7 @@ class PipeNode(BaseNode):
         pipe_inputs = dict(inputs)
         nodes_map = {nid: ns.node for nid, ns in spec.nodes.items()}
         reset_child_nodes_for_pipe_execution(nodes_map)
-        resolved_node_params = {nid: dict(ns.params) for nid, ns in spec.nodes.items()}
-        workspace_dir = raw_params.get("_workspace_dir")
-        if isinstance(workspace_dir, str):
-            for node_params in resolved_node_params.values():
-                node_params.setdefault("_workspace_dir", workspace_dir)
+        resolved_node_params = self._resolved_node_params(spec, raw_params)
 
         runner = Runner.from_pipe_spec(
             spec, pipe_inputs=pipe_inputs, node_params=resolved_node_params

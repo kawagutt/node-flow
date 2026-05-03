@@ -16,7 +16,10 @@ from nodeflow.workflows.implement_with_codex.node_implement_with_codex import (
 def test_fixed_provider_codex_summarize_pipe() -> None:
     pipe = ImplementWithCodexPipeNode()
     out = pipe.execute(
-        {"task_type": "implement", "task_prompt": "e2e"},
+        {
+            "task_type": {"value": "implement"},
+            "task_prompt": {"text": "e2e"},
+        },
         {"codex_exec": {"argv": ["sh", "-c", "echo e2e-out"]}},
     )
     assert pipe.read_status() == "done"

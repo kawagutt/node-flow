@@ -5,27 +5,32 @@ from __future__ import annotations
 from types import MappingProxyType
 from typing import Any, Dict
 
-from nodeflow.core.base_node import ExecutionContext, NodeExecutionFailure
+from nodeflow.core.base_node import ExecutionContext
 from nodeflow.core.node_kinds import PipeNode
 from nodeflow.core.pipe_spec import NodeSpec, PipeDeclaration, PipeSpec
 from nodeflow.core.source_ref import SourceRef
 from nodeflow.nodes.exec.claude_code_exec import ClaudeCodeExecNode
 from nodeflow.nodes.summarize.python_summarize_result import PythonSummarizeResultNode
+from nodeflow.workflows.fixed_provider_cli_ports import (
+    optional_child_params,
+    validate_task_prompt_task_type_ports,
+)
 
 
 class ReviewWithClaudePipeNode(PipeNode):
-    """Fixed review flow without dynamic routing semantics."""
+    """Fixed review flow without dynamic routing semantics.
+
+    Public ``task_prompt`` / ``task_type`` ports use the same dict payload contract as
+    ``implement_with_codex``. Child params merge from ``claude_code_exec`` and
+    ``python_summarize_result`` in pipe ``params``.
+    """
 
     def __init__(self) -> None:
         super().__init__()
         self._exec = ClaudeCodeExecNode()
         self._summarize = PythonSummarizeResultNode()
-        self._compose_params_holder: dict[str, Any] | None = None
 
     def pipe_spec(self) -> PipeSpec:
-        holder = self._compose_params_holder
-        exec_p = dict(holder.get("exec") or {}) if holder else {}
-        sum_p = dict(holder.get("summarize") or {}) if holder else {}
         return PipeSpec(
             graph_node_order=("exec", "summarize"),
             pipe=PipeDeclaration(
@@ -46,7 +51,7 @@ class ReviewWithClaudePipeNode(PipeNode):
                         "task_type": SourceRef(kind="input", port_name="task_type"),
                     },
                     output_ports=frozenset({"execution_output"}),
-                    params=exec_p,
+                    params={},
                 ),
                 "summarize": NodeSpec(
                     node_id="summarize",
@@ -57,10 +62,24 @@ class ReviewWithClaudePipeNode(PipeNode):
                         ),
                     },
                     output_ports=frozenset({"summary", "execution_output"}),
-                    params=sum_p,
+                    params={},
                 ),
             },
         )
+
+    def _resolved_node_params(
+        self, spec: PipeSpec, raw_params: dict[str, Any]
+    ) -> dict[str, dict[str, Any]]:
+        resolved = super()._resolved_node_params(spec, raw_params)
+        resolved["exec"] = {
+            **resolved["exec"],
+            **optional_child_params(raw_params, "claude_code_exec"),
+        }
+        resolved["summarize"] = {
+            **resolved["summarize"],
+            **optional_child_params(raw_params, "python_summarize_result"),
+        }
+        return resolved
 
     def run(
         self,
@@ -68,23 +87,5 @@ class ReviewWithClaudePipeNode(PipeNode):
         params: MappingProxyType | Dict[str, Any],
         context: ExecutionContext,
     ) -> Dict[str, Any]:
-        if not isinstance(inputs.get("task_prompt"), str):
-            raise NodeExecutionFailure("inputs.task_prompt is required")
-        if not isinstance(inputs.get("task_type"), str):
-            raise NodeExecutionFailure("inputs.task_type is required")
-        normalized = dict(inputs)
-        normalized["task_prompt"] = {"text": normalized["task_prompt"]}
-        normalized["task_type"] = {"value": normalized["task_type"]}
-        raw_params = dict(params) if not isinstance(params, MappingProxyType) else dict(params)
-        exec_p = dict(raw_params.get("claude_code_exec") or {})
-        ws = raw_params.get("_workspace_dir")
-        if isinstance(ws, str):
-            exec_p.setdefault("_workspace_dir", ws)
-        self._compose_params_holder = {
-            "exec": exec_p,
-            "summarize": dict(raw_params.get("python_summarize_result") or {}),
-        }
-        try:
-            return super().run(normalized, params, context)
-        finally:
-            self._compose_params_holder = None
+        validate_task_prompt_task_type_ports(inputs)
+        return super().run(inputs, params, context)
