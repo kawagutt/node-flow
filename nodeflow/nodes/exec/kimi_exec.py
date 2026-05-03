@@ -12,31 +12,31 @@ from nodeflow.core.base_node import ExecutionContext
 from nodeflow.core.node_kinds import ApiActionNode
 
 
-def _execution_result_payload(
+def _execution_output_payload(
     *,
     ok: bool,
-    executor: str,
+    external_executor: str,
     provider: str,
     model: Optional[str],
     task_type: Optional[str],
     summary: Optional[str],
     stdout: Optional[str],
     stderr: Optional[str],
-    raw_response: Any,
+    raw_output: Any,
     artifacts: List[Any],
     provider_meta: Dict[str, Any],
     next_hint: Optional[str],
 ) -> Dict[str, Any]:
     return {
         "ok": ok,
-        "executor": executor,
+        "external_executor": external_executor,
         "provider": provider,
         "model": model,
         "task_type": task_type,
         "summary": summary,
         "stdout": stdout,
         "stderr": stderr,
-        "raw_response": raw_response,
+        "raw_output": raw_output,
         "artifacts": artifacts,
         "provider_meta": provider_meta,
         "next_hint": next_hint,
@@ -84,16 +84,16 @@ class KimiExecNode(ApiActionNode):
             )
         except Exception as exc:
             return {
-                "execution_result": _execution_result_payload(
+                "execution_output": _execution_output_payload(
                     ok=False,
-                    executor="kimi",
+                    external_executor="kimi",
                     provider="moonshot",
                     model=model,
                     task_type=task_type,
                     summary=None,
                     stdout=None,
                     stderr=str(exc),
-                    raw_response={"error": str(exc)},
+                    raw_output={"error": str(exc)},
                     artifacts=[],
                     provider_meta={"base_url": base_url},
                     next_hint=None,
@@ -109,7 +109,7 @@ class KimiExecNode(ApiActionNode):
         if resp.choices:
             content = resp.choices[0].message.content or ""
 
-        raw_response = resp.model_dump() if hasattr(resp, "model_dump") else resp  # type: ignore[assignment]
+        raw_out = resp.model_dump() if hasattr(resp, "model_dump") else resp  # type: ignore[assignment]
 
         usage_obj = resp.usage
         prompt_tokens = completion_tokens = total_tokens = 0
@@ -121,16 +121,16 @@ class KimiExecNode(ApiActionNode):
         summary = (content[:500] + "…") if len(content) > 500 else (content or None)
 
         return {
-            "execution_result": _execution_result_payload(
+            "execution_output": _execution_output_payload(
                 ok=True,
-                executor="kimi",
+                external_executor="kimi",
                 provider="moonshot",
                 model=model,
                 task_type=task_type,
                 summary=summary,
                 stdout=None,
                 stderr=None,
-                raw_response=raw_response,
+                raw_output=raw_out,
                 artifacts=[],
                 provider_meta={"base_url": base_url},
                 next_hint=None,

@@ -1,4 +1,4 @@
-"""ClaudeCodeExecNode — single subprocess; Common Result on execution_result port."""
+"""ClaudeCodeExecNode — single subprocess; Common Output on execution_output port."""
 
 from __future__ import annotations
 
@@ -12,31 +12,31 @@ from nodeflow.core.base_node import ExecutionContext, NodeExecutionFailure
 from nodeflow.core.node_kinds import CliActionNode
 
 
-def _execution_result_payload(
+def _execution_output_payload(
     *,
     ok: bool,
-    executor: str,
+    external_executor: str,
     provider: str,
     model: Optional[str],
     task_type: Optional[str],
     summary: Optional[str],
     stdout: Optional[str],
     stderr: Optional[str],
-    raw_response: Any,
+    raw_output: Any,
     artifacts: List[Any],
     provider_meta: Dict[str, Any],
     next_hint: Optional[str],
 ) -> Dict[str, Any]:
     return {
         "ok": ok,
-        "executor": executor,
+        "external_executor": external_executor,
         "provider": provider,
         "model": model,
         "task_type": task_type,
         "summary": summary,
         "stdout": stdout,
         "stderr": stderr,
-        "raw_response": raw_response,
+        "raw_output": raw_output,
         "artifacts": artifacts,
         "provider_meta": provider_meta,
         "next_hint": next_hint,
@@ -102,16 +102,16 @@ class ClaudeCodeExecNode(CliActionNode):
             )
         except subprocess.TimeoutExpired as exc:
             return {
-                "execution_result": _execution_result_payload(
+                "execution_output": _execution_output_payload(
                     ok=False,
-                    executor="claude_code",
+                    external_executor="claude_code",
                     provider="anthropic",
                     model=model,
                     task_type=task_type,
                     summary="subprocess timeout",
                     stdout=getattr(exc, "stdout", None) or None,
                     stderr=getattr(exc, "stderr", None) or str(exc),
-                    raw_response={"error": "timeout", "cmd": argv},
+                    raw_output={"error": "timeout", "cmd": argv},
                     artifacts=[],
                     provider_meta={"argv": argv, "cwd": resolved_cwd},
                     next_hint=None,
@@ -119,21 +119,21 @@ class ClaudeCodeExecNode(CliActionNode):
             }
 
         ok = proc.returncode == 0
-        raw_response = {
+        raw_out = {
             "returncode": proc.returncode,
             "args": argv,
         }
         return {
-            "execution_result": _execution_result_payload(
+            "execution_output": _execution_output_payload(
                 ok=ok,
-                executor="claude_code",
+                external_executor="claude_code",
                 provider="anthropic",
                 model=model,
                 task_type=task_type,
                 summary=None,
                 stdout=proc.stdout or None,
                 stderr=proc.stderr or None,
-                raw_response=raw_response,
+                raw_output=raw_out,
                 artifacts=[],
                 provider_meta={"argv": argv, "cwd": resolved_cwd},
                 next_hint=None,

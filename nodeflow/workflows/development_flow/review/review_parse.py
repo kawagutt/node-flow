@@ -1,4 +1,4 @@
-"""Parse structured JSON review output from CodexExec / CLI execution_result."""
+"""Parse structured JSON review output from CodexExec / CLI execution_output."""
 
 from __future__ import annotations
 
@@ -53,15 +53,15 @@ def _coalesce_text(er: Dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
-def parse_review_contract_from_execution_result(er: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+def parse_review_contract_from_execution_output(eo: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
     """
-    Parse LLM review JSON from execution_result.
+    Parse LLM review JSON from execution_output (Common Output port).
 
     Returns (parsed_ok, payload). On parse failure payload is empty dict.
     """
-    if not isinstance(er, dict):
+    if not isinstance(eo, dict):
         return False, {}
-    text = _coalesce_text(er)
+    text = _coalesce_text(eo)
     blob = _extract_first_json_object(text)
     if not blob:
         return False, {}

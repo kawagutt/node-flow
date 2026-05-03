@@ -6,7 +6,7 @@ import json
 
 from nodeflow.workflows.development_flow.review.aggregate_reviews import AggregateReviewsNode
 from nodeflow.workflows.development_flow.review.review_parse import (
-    parse_review_contract_from_execution_result,
+    parse_review_contract_from_execution_output,
     validate_review_contract_payload,
 )
 
@@ -20,8 +20,8 @@ def test_parse_review_contract_braces_inside_json_string() -> None:
         "summary": "The returned dict {'ok': true} is noted.",
     }
     text = json.dumps(payload)
-    er = {"ok": True, "stdout": text, "stderr": None, "raw_response": {}}
-    parsed_ok, out = parse_review_contract_from_execution_result(er)
+    er = {"ok": True, "stdout": text, "stderr": None, "raw_output": {}}
+    parsed_ok, out = parse_review_contract_from_execution_output(er)
     assert parsed_ok
     assert out.get("summary") == payload["summary"]
 
@@ -48,7 +48,7 @@ def test_aggregate_reviews_blocks_when_diff_collect_failed() -> None:
             "spec_revision_needed": False,
         }
     )
-    er = {"ok": True, "stdout": valid, "stderr": "", "raw_response": {}}
+    er = {"ok": True, "stdout": valid, "stderr": "", "raw_output": {}}
     out = node.execute(
         {
             "review_diff": er,
@@ -68,7 +68,7 @@ def test_aggregate_reviews_blocks_when_diff_collect_failed() -> None:
 def test_aggregate_reviews_schema_parse_failure_blocks() -> None:
     node = AggregateReviewsNode()
     bad = json.dumps({"summary": "looks good"})
-    er_bad = {"ok": True, "stdout": bad, "stderr": "", "raw_response": {}}
+    er_bad = {"ok": True, "stdout": bad, "stderr": "", "raw_output": {}}
     valid = json.dumps(
         {
             "ok": True,
@@ -77,7 +77,7 @@ def test_aggregate_reviews_schema_parse_failure_blocks() -> None:
             "spec_revision_needed": False,
         }
     )
-    er_ok = {"ok": True, "stdout": valid, "stderr": "", "raw_response": {}}
+    er_ok = {"ok": True, "stdout": valid, "stderr": "", "raw_output": {}}
     out = node.execute(
         {
             "review_diff": er_bad,
@@ -102,7 +102,7 @@ def test_aggregate_reviews_missing_review_input_blocks() -> None:
             "spec_revision_needed": False,
         }
     )
-    er_ok = {"ok": True, "stdout": valid, "stderr": "", "raw_response": {}}
+    er_ok = {"ok": True, "stdout": valid, "stderr": "", "raw_output": {}}
     out = node.execute(
         {
             "review_diff": er_ok,

@@ -32,8 +32,8 @@ class ImplementWithCodexPipeNode(PipeNode):
                 input_ports=frozenset({"task_prompt", "task_type"}),
                 output_sources={
                     "summary": SourceRef(kind="node", node_id="summarize", port_name="summary"),
-                    "execution_result": SourceRef(
-                        kind="node", node_id="summarize", port_name="execution_result"
+                    "execution_output": SourceRef(
+                        kind="node", node_id="summarize", port_name="execution_output"
                     ),
                 },
             ),
@@ -45,18 +45,18 @@ class ImplementWithCodexPipeNode(PipeNode):
                         "prompt": SourceRef(kind="input", port_name="task_prompt"),
                         "task_type": SourceRef(kind="input", port_name="task_type"),
                     },
-                    output_ports=frozenset({"execution_result"}),
+                    output_ports=frozenset({"execution_output"}),
                     params=exec_p,
                 ),
                 "summarize": NodeSpec(
                     node_id="summarize",
                     node=self._summarize,
                     input_sources={
-                        "execution_result": SourceRef(
-                            kind="node", node_id="exec", port_name="execution_result"
+                        "execution_output": SourceRef(
+                            kind="node", node_id="exec", port_name="execution_output"
                         ),
                     },
-                    output_ports=frozenset({"summary", "execution_result"}),
+                    output_ports=frozenset({"summary", "execution_output"}),
                     params=sum_p,
                 ),
             },

@@ -35,8 +35,8 @@ pytest -q tests/core tests/test_public_contract.py tests/test_registry.py tests/
 
 ## Exec and API failure semantics
 
-- **External call returned a response** (HTTP error, error JSON, logical failure): represent it inside the normal output, e.g. port `execution_result` with `ok: false` and details in `stderr` / `raw_response` — same key shape as success (Part V §9).
-- **Precondition not met before a meaningful request** (e.g. missing required API key env var): raise or let `BaseNode` surface **fatal** + `read_error()` — this is a node/configuration error, not a domain `execution_result`.
+- **External call returned a response** (HTTP error, error JSON, logical failure): represent it inside the normal output, e.g. port `execution_output` with `ok: false` and details in `stderr` / `raw_output` — same key shape as success (Common Output, spec §8).
+- **Precondition not met before a meaningful request** (e.g. missing required API key env var): raise or let `BaseNode` surface **fatal** + `read_error()` — this is a node/configuration error, not a domain `execution_output` mishandling.
 
 See `ApiActionNode` docstring in code for the same contract.
 

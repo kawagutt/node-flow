@@ -25,23 +25,23 @@ def test_python_route_implement_path():
     assert "recommended_pipe_type" not in out["route"]
 
 
-def test_python_summarize_reads_execution_result():
+def test_python_summarize_reads_execution_output():
     node = PythonSummarizeResultNode()
-    er = {
+    eo = {
         "ok": True,
-        "executor": "codex",
+        "external_executor": "codex",
         "provider": "codex",
         "model": None,
         "task_type": "implement",
         "summary": None,
         "stdout": "patch applied\n",
         "stderr": "",
-        "raw_response": {"rc": 0},
+        "raw_output": {"rc": 0},
         "artifacts": [],
         "provider_meta": {},
         "next_hint": None,
     }
-    out = node.execute({"execution_result": er}, {})
+    out = node.execute({"execution_output": eo}, {})
     assert node.read_status() == "done"
     assert "summary" in out
     assert "short" in out["summary"]
@@ -62,23 +62,23 @@ def test_codex_exec_runs_with_valid_argv():
     node = CodexExecNode()
     out = node.execute({}, {"argv": ["echo", "codex-ok"]})
     assert node.read_status() == "done"
-    assert "execution_result" in out
-    pl = out["execution_result"]
+    assert "execution_output" in out
+    pl = out["execution_output"]
     assert pl["ok"] is True
-    assert pl["executor"] == "codex"
-    assert pl["raw_response"] == {
+    assert pl["external_executor"] == "codex"
+    assert pl["raw_output"] == {
         "returncode": 0,
         "args": ["echo", "codex-ok"],
         "stdin_used": False,
     }
-    assert "revision" in out["_runtime"]["ports"]["execution_result"]
+    assert "revision" in out["_runtime"]["ports"]["execution_output"]
 
 
 def test_codex_exec_custom_argv():
     node = CodexExecNode()
     out = node.execute({}, {"argv": ["sh", "-c", "echo hi"]})
-    assert out["execution_result"]["stdout"] is not None
-    assert "hi" in (out["execution_result"]["stdout"] or "")
+    assert out["execution_output"]["stdout"] is not None
+    assert "hi" in (out["execution_output"]["stdout"] or "")
 
 
 def test_codex_exec_resolves_relative_cwd_against_workspace(tmp_path):
@@ -95,9 +95,9 @@ def test_codex_exec_resolves_relative_cwd_against_workspace(tmp_path):
         },
     )
     assert node.read_status() == "done"
-    stdout = (out["execution_result"]["stdout"] or "").strip()
+    stdout = (out["execution_output"]["stdout"] or "").strip()
     assert stdout == str(subdir.resolve())
-    assert out["execution_result"]["provider_meta"]["cwd"] == str(subdir.resolve())
+    assert out["execution_output"]["provider_meta"]["cwd"] == str(subdir.resolve())
 
 
 def test_codex_exec_defaults_cwd_to_workspace(tmp_path):
@@ -112,5 +112,5 @@ def test_codex_exec_defaults_cwd_to_workspace(tmp_path):
         },
     )
     assert node.read_status() == "done"
-    stdout = (out["execution_result"]["stdout"] or "").strip()
+    stdout = (out["execution_output"]["stdout"] or "").strip()
     assert Path(stdout).resolve() == workspace.resolve()

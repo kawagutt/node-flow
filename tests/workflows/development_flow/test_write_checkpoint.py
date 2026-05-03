@@ -24,11 +24,11 @@ def test_write_checkpoint_ok_reflects_child_and_next_action_on_failure(tmp_path:
                 "artifacts": [],
                 "human_decision_required": True,
             },
-            "execution_result": {
+            "execution_output": {
                 "ok": False,
-                "executor": "codex",
+                "external_executor": "codex",
                 "provider": "codex",
-                "raw_response": {},
+                "raw_output": {},
                 "artifacts": [],
                 "provider_meta": {},
             },
@@ -49,11 +49,11 @@ def test_write_checkpoint_ok_reflects_child_and_next_action_on_failure(tmp_path:
                 "human_decision_required": True,
                 "next_action": "approve",
             },
-            "execution_result": {
+            "execution_output": {
                 "ok": False,
-                "executor": "codex",
+                "external_executor": "codex",
                 "provider": "codex",
-                "raw_response": {},
+                "raw_output": {},
                 "artifacts": [],
                 "provider_meta": {},
             },
@@ -76,11 +76,11 @@ def test_write_checkpoint_ok_reflects_child_and_next_action_on_failure(tmp_path:
                 "artifacts": [],
                 "human_decision_required": True,
             },
-            "execution_result": {
+            "execution_output": {
                 "ok": True,
-                "executor": "codex",
+                "external_executor": "codex",
                 "provider": "codex",
-                "raw_response": {},
+                "raw_output": {},
                 "artifacts": [],
                 "provider_meta": {},
             },
@@ -112,13 +112,13 @@ def test_write_spec_plan_writes_approved_candidate(tmp_path: Path) -> None:
                 "artifacts": [],
                 "human_decision_required": True,
             },
-            "execution_result": {
+            "execution_output": {
                 "ok": True,
                 "stdout": stdout,
                 "stderr": "",
-                "executor": "codex",
+                "external_executor": "codex",
                 "provider": "codex",
-                "raw_response": {},
+                "raw_output": {},
                 "artifacts": [],
                 "provider_meta": {},
             },

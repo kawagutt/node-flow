@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Tuple
 from nodeflow.core.base_node import ExecutionContext
 from nodeflow.core.node_kinds import PythonActionNode
 from nodeflow.workflows.development_flow.review.review_parse import (
-    parse_review_contract_from_execution_result,
+    parse_review_contract_from_execution_output,
     validate_review_contract_payload,
 )
 
@@ -59,7 +59,7 @@ def _consume_review(
         )
         return blocking, non_blocking, spec_revision, False
 
-    parsed_ok, payload = parse_review_contract_from_execution_result(er)
+    parsed_ok, payload = parse_review_contract_from_execution_output(er)
     if not parsed_ok:
         blocking.append(
             {

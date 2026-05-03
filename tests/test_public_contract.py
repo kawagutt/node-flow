@@ -63,12 +63,12 @@ def test_fixed_provider_pipe_bundles_child_domain_only():
         {"codex_exec": {"argv": ["sh", "-c", "echo dispatch-contract"]}},
     )
     assert impl.read_status() == "done"
-    for port in ("summary", "execution_result"):
+    for port in ("summary", "execution_output"):
         assert port in out_impl
         assert isinstance(out_impl[port], dict)
         assert "_runtime" not in out_impl[port]
     assert "_runtime" in out_impl
-    assert "revision" in out_impl["_runtime"]["ports"]["execution_result"]
+    assert "revision" in out_impl["_runtime"]["ports"]["execution_output"]
 
     rev = ReviewWithClaudePipeNode()
     out_rev = rev.execute(
@@ -76,11 +76,12 @@ def test_fixed_provider_pipe_bundles_child_domain_only():
         {"claude_code_exec": {"argv": ["sh", "-c", "echo review-pipe"]}},
     )
     assert rev.read_status() == "done"
-    for port in ("summary", "execution_result"):
+    for port in ("summary", "execution_output"):
         assert port in out_rev
+        assert isinstance(out_rev[port], dict)
         assert "_runtime" not in out_rev[port]
     assert "_runtime" in out_rev
-    assert "revision" in out_rev["_runtime"]["ports"]["execution_result"]
+    assert "revision" in out_rev["_runtime"]["ports"]["execution_output"]
 
 
 def test_fixed_provider_pipe_resolves_relative_cwd_against_workspace(tmp_path):
@@ -104,7 +105,7 @@ def test_fixed_provider_pipe_resolves_relative_cwd_against_workspace(tmp_path):
         },
     )
     assert impl.read_status() == "done"
-    assert (out_impl["execution_result"]["stdout"] or "").strip() == str(subdir.resolve())
+    assert (out_impl["execution_output"]["stdout"] or "").strip() == str(subdir.resolve())
 
     rev = ReviewWithClaudePipeNode()
     out_rev = rev.execute(
@@ -115,7 +116,7 @@ def test_fixed_provider_pipe_resolves_relative_cwd_against_workspace(tmp_path):
         },
     )
     assert rev.read_status() == "done"
-    assert (out_rev["execution_result"]["stdout"] or "").strip() == str(subdir.resolve())
+    assert (out_rev["execution_output"]["stdout"] or "").strip() == str(subdir.resolve())
 
 
 def test_fixed_provider_pipe_requires_task_type_input():

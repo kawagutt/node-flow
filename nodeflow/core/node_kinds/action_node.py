@@ -30,7 +30,7 @@ class ApiActionNode(ActionNode):
 
     - When the remote API returns an HTTP response (including error status or a body
       the client maps to failure), prefer returning a normal output dict with
-      ``execution_result.ok = False`` and details in ``stderr`` / ``raw_response`` /
+      ``execution_output.ok = False`` and details in ``stderr`` / ``raw_output`` /
       ``provider_meta`` — same shape as success.
     - Raise only for **preconditions the node cannot satisfy** (e.g. missing API key
       env var before any request), **programming errors**, or truly unrecoverable

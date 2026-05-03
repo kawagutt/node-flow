@@ -1,4 +1,4 @@
-"""PythonSummarizeResultNode — consumes execution_result port; emits summary."""
+"""PythonSummarizeResultNode — consumes execution_output port; emits summary + passthrough."""
 
 from __future__ import annotations
 
@@ -18,15 +18,15 @@ class PythonSummarizeResultNode(PythonActionNode):
         params: MappingProxyType,
         context: ExecutionContext,
     ) -> Dict[str, Any]:
-        er = inputs.get("execution_result")
-        if not isinstance(er, dict) or not er:
+        eo = inputs.get("execution_output")
+        if not isinstance(eo, dict) or not eo:
             return {}
 
-        stdout = er.get("stdout")
-        stderr = er.get("stderr")
-        summary_line = er.get("summary")
-        raw = er.get("raw_response")
-        ok = er.get("ok")
+        stdout = eo.get("stdout")
+        stderr = eo.get("stderr")
+        summary_line = eo.get("summary")
+        raw = eo.get("raw_output")
+        ok = eo.get("ok")
 
         text_parts: List[str] = []
         if isinstance(stdout, str) and stdout.strip():
@@ -51,10 +51,10 @@ class PythonSummarizeResultNode(PythonActionNode):
         summary_payload = {
             "short": short,
             "key_findings": key_findings,
-            "next_hint": er.get("next_hint"),
+            "next_hint": eo.get("next_hint"),
         }
-        er_out = dict(er) if isinstance(er, dict) else {}
+        eo_out = dict(eo) if isinstance(eo, dict) else {}
         return {
             "summary": summary_payload,
-            "execution_result": er_out,
+            "execution_output": eo_out,
         }

@@ -53,9 +53,9 @@ class WriteCheckpointNode(PythonActionNode):
         context: ExecutionContext,
     ) -> Dict[str, Any]:
         request = inputs.get("request") if isinstance(inputs.get("request"), dict) else {}
-        execution_result = (
-            inputs.get("execution_result")
-            if isinstance(inputs.get("execution_result"), dict)
+        exec_output = (
+            inputs.get("execution_output")
+            if isinstance(inputs.get("execution_output"), dict)
             else None
         )
         test_result = (
@@ -83,8 +83,8 @@ class WriteCheckpointNode(PythonActionNode):
         file_path = checkpoint_dir / f"{run_id}_{stage}.json"
 
         merged_raw = dict(request.get("raw_results") or {})
-        if execution_result is not None:
-            merged_raw["execution_result"] = execution_result
+        if exec_output is not None:
+            merged_raw["execution_output"] = exec_output
         if test_result is not None:
             merged_raw["test_result"] = test_result
         if diff_result is not None:
@@ -95,8 +95,8 @@ class WriteCheckpointNode(PythonActionNode):
         artifacts: List[Dict[str, Any]] = list(request.get("artifacts") or [])
 
         child_ok_values: List[bool] = []
-        if execution_result is not None:
-            child_ok_values.append(bool(execution_result.get("ok")))
+        if exec_output is not None:
+            child_ok_values.append(bool(exec_output.get("ok")))
         if test_result is not None:
             child_ok_values.append(bool(test_result.get("ok")))
         if diff_result is not None:
@@ -125,9 +125,9 @@ class WriteCheckpointNode(PythonActionNode):
             bool(params.get("write_spec_plan_candidate"))
             and stage == "spec_plan"
             and final_ok
-            and execution_result is not None
+            and exec_output is not None
         ):
-            stdout = execution_result.get("stdout")
+            stdout = exec_output.get("stdout")
             if isinstance(stdout, str):
                 obj = _loads_first_json_object(stdout)
                 if isinstance(obj, dict) and "spec" in obj and "plan" in obj:
