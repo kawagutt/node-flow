@@ -1,6 +1,6 @@
 # NodeFlow
 
-**NodeFlow v1.6 (in progress)** — task-oriented nodes over external CLIs and HTTP APIs (see [specification](doc/nodeflow_spec.md)). The YAML / GraphSpec / RunnerFrame loader path has been removed; public wiring is moving to **JSON PipeSpec** + a dumb **Runner**.
+**NodeFlow v1.6** — task-oriented nodes over external CLIs and HTTP APIs (see [specification](doc/nodeflow_spec.md)). The **v1.6 core model is implemented**: public **JSON PipeSpec**, a source-based dumb **Runner**, **PipeNode** composite wiring, **dict-only** port payloads, and **Common Output**. Legacy YAML / GraphSpec / RunnerFrame **execution paths are removed**. A few **spec / README / transitional `execute(inputs, params)`** details remain before calling the line “fully complete” with zero compatibility caveats (see §14.1 in the spec).
 
 ## Overview
 
@@ -46,7 +46,7 @@ See `ApiActionNode` docstring in code for the same contract.
 
 ## Workspace
 
-The CLI `-w` / `--workspace` option sets the workspace directory (not necessarily a folder named `workspace`). It is used for pipeline file resolution and workspace-relative params where applicable.
+The CLI `-w` / `--workspace` option sets the workspace directory (not necessarily a folder named `workspace`). It is reserved for workspace-relative resolution (e.g. `load_pipeline(workspace, path)` for **v1.6 `*.json`** PipeSpec files) and workspace-relative params where applicable.
 
 For CLI exec nodes (`codex_exec`, `claude_code_exec`), subprocess `cwd` follows this order:
 - `params.cwd` (relative paths are resolved against workspace when available)
@@ -90,9 +90,9 @@ nodeflow/
 │   ├── node_kinds/       # PipeNode, ActionNode, implementation kinds
 │   ├── runner.py
 │   ├── registry.py
-│   ├── loader.py         # legacy YAML entry points removed / migration guards
-│   ├── config.py         # YAML IO helpers (load_yaml, deep merge)
-│   └── run.py            # load_and_kick_pipeline entry
+│   ├── loader.py         # v1.6 JSON PipeSpec → PipeSpec (YAML v1.5 public path removed)
+│   ├── config.py         # workspace YAML helpers (node config / nodeflow.yaml), not PipeSpec
+│   └── run.py            # removed YAML kick stub (load_and_kick_pipeline)
 ├── nodes/                # reusable building-block nodes (by role / purpose)
 │   ├── routing/
 │   ├── summarize/
@@ -109,7 +109,7 @@ Register classes on `nodeflow.core.registry.registry` with `register("your_type"
 
 ## Upgrading from v1.4
 
-- **CLI:** `nodeflow run …` is no longer used; pass the pipeline YAML as the first argument (see [CHANGELOG.md](CHANGELOG.md)).
+- **CLI / file loading:** The old **YAML `graph` + `final`** pipeline is gone. Use **`nodeflow.core.loader.load_pipeline(workspace, "relative/or/abs/path/to/pipe.json")`** (JSON only) or construct a **`PipeNode`** and call **`execute(...)`** from Python. The `nodeflow` console script still wires to the **removed** `load_and_kick_pipeline` helper and **always raises**—treat it as a compatibility stub, not a v1.6 entrypoint (see [CHANGELOG.md](CHANGELOG.md)).
 
 ## License
 

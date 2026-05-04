@@ -74,6 +74,18 @@ def test_codex_exec_runs_with_valid_argv():
     assert "revision" in out["_runtime"]["ports"]["execution_output"]
 
 
+def test_common_output_has_no_legacy_keys_for_codex_exec():
+    node = CodexExecNode()
+    out = node.execute({}, {"argv": ["echo", "ok"]})
+    eo = out["execution_output"]
+    assert "ok" in eo
+    assert "external_executor" in eo
+    assert "raw_output" in eo
+    assert "executor" not in eo
+    assert "raw_response" not in eo
+    assert "execution_result" not in out
+
+
 def test_codex_exec_custom_argv():
     node = CodexExecNode()
     out = node.execute({}, {"argv": ["sh", "-c", "echo hi"]})

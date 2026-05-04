@@ -21,5 +21,6 @@ def load_and_kick_pipeline(
 ) -> Dict[str, Any]:
     """Removed: YAML root pipeline loading. Construct a v1.6 ``PipeNode`` and call ``execute``."""
     raise NotImplementedError(
-        "load_and_kick_pipeline (YAML 1.5) was removed. Use PipeNode + pipe_spec() and root.execute()."
+        "load_and_kick_pipeline (YAML 1.5) was removed. Use nodeflow.core.loader.load_pipeline(..., "
+        "'path/to/pipe.json') for v1.6 JSON PipeSpec, or construct a PipeNode and call execute()."
     )

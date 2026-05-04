@@ -226,6 +226,8 @@ class Runner:
         same runner instance (prevents duplicate runs after outputs are consumed). Idle ``done``
         nodes without filled outputs are executed at most once per instance (the template’s
         no-op ``done`` path).
+
+        Normative rationale (idempotency, not payload semantics): ``doc/nodeflow_spec.md`` §10.2.2.
         """
         progressed = False
         for node_id in self.graph_node_order:

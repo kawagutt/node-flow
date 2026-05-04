@@ -129,7 +129,7 @@ v1.6 が primary scope とするもの。
 
 * **`BaseNode`** は **すべての node の最上位基底**である。
 * **execution template** と **state / limit / error の共通 mechanism** を提供する。各 node の state はその node instance が所有し、Runner は state を直接所有しない。
-* public execution step は **`execute()` のみ**とする。内部 helper 名は public contract に含めない。
+* public execution step は **`execute()` のみ**とする。内部 helper 名は public contract に含めない。本リポジトリの **transitional** な呼び出し形（`execute` が `inputs` を受け取る）は [§14.1](#141-basenode) に従う。
 * v1.6 の論理 **state**（`_state.value`）は `ready` / `executing` / `done` / `limit` / `fatal`。`done` と `ready` は主に **port occupancy** と突き合わせて読む（[§7.3](#73-_state--_runtime)）。
 
 ## 6. Node Taxonomy
@@ -198,7 +198,9 @@ Node input は **input port name から dict payload への mapping** である�
 top-level key は input port name のみとする。
 `_state` / `_runtime` / `_usage` は input に含めない（reserved observation は input port として扱わない）。
 
-caller は node の input port mapping を用意し、node の input port occupancy を filled にしたうえで `execute()` を開始する。
+理想的な呼び方では、caller または Runner が **`set_input`** 等で input port occupancy を filled にしたうえで `execute()` を開始する（Runner の subgraph では Phase A の delivery がこれに相当する）。
+
+本リポジトリ実装の **v1.6 transitional API** では、`BaseNode.execute(inputs, params)` が **同一呼び出し内**で port mapping を受け取り、テンプレートが occupancy を整えてから `run()` に渡す（詳細は [§14.1](#141-basenode)）。graph 境界の **意味論上の入力**は引き続き port の dict payload のみである。
 
 PipeNode の場合、caller が渡した input port mapping は、child PipeSpec 内の `input.<pipe_input_port>` source として Runner により扱われる。
 
@@ -525,6 +527,16 @@ caller は直接 `execute()` した `PipeNode` の `_state.value` を観測し�
 
 v1.6 は **graph レベルでの repeated domain execution** を規定しない。`execute()` が no-op か再開かは node の責務である。
 
+### 10.2.2 同一 Runner インスタンス内の idempotency（実装詳細）
+
+本リポジトリの Runner は、**同一 `Runner` インスタンス**の寿命のあいだ、次のような **重複 `node.execute()` の抑止**を行ってよい。これは **input / output payload の意味解釈ではなく**、delivery 後に source が empty になる **1:1 occupancy モデル**のもとで、**同じ進行を何度も繰り返さない**ための **idempotency guard** である。
+
+* 宣言 input port が **一つも無い** node が、すでに **runner 可視の status / port occupancy に material な変化**を起こした後は、その Runner インスタンス上で **再度 `execute()` しない**。
+* **`done`** で **filled な output port が無い**（idle `done`）node への `execute()` は、その Runner インスタンス上で **高々一度**に制限してよい。
+* **`done`** かつ **output snapshot が空でない** node は、Phase B で **`execute()` を呼ばない**（`BaseNode` テンプレート側が **再入 duplicate 実行**を避ける想定と整合する）。
+
+これらは **normative な graph 意味論の一部ではなく**、参照実装の挙動として許容される。payload の充足判定や provider 選択を Runner が行うことにはならない（[§10.1](#101-runner--node-responsibility-boundary)）。
+
 ### 10.3 PipeSpec in v1.6
 
 v1.6 の `PipeSpec` は少なくとも次を持つ。
@@ -743,6 +755,8 @@ class DevelopmentFlowPipeNode(PipeNode):
 * その後、PipeNode は §10.4 の優先順位に従って自身の `_state.value` を整える。
 * concrete `PipeNode` は child node を直接 `execute()` してはならない。child execution は Runner が PipeSpec に従って行う。
 * single-run の粒度は [§9](#9-single-run-principle) を参照。
+* **child ランタイムのリセット:** 各 **外側**の `PipeNode.execute()` 呼び出しの開始時に、child node 集合の実行時状態は **リセット**され、その呼び出し専用の **fresh な内部 Runner** 用状態から始まる（実装では child の `reset_status` 等に相当する）。
+* **partial progress と外側呼び出し:** **別々の外側** `PipeNode.execute()` 呼び出しのあいだでは、子ノードの partial progress は **保持しない**。1 回の外側呼び出しの内側で、同期 Runner loop が尽きるまで delivery / child `execute` を進めるモデルである。
 
 ### 13.4 `pipe_spec()` contract
 
@@ -770,9 +784,8 @@ def pipe_spec(self) -> PipeSpec:
 ### 14.1 `BaseNode`
 
 * `BaseNode` は `execute()` の共通 contract を提供する。
-* `execute()` は引数なしで呼ぶ（`def execute(self) -> dict`）。
-* `execute()` は必ず observable output を返し、形式は §7 に従う。
-* input は `execute()` 引数として渡さない。caller または Runner は、`execute()` を呼ぶ前に node の input port occupancy に payload を書き込む。
+* **本リポジトリ v1.6.x（transitional）**では、公開シグネチャは次の形である: `execute(self, inputs: Mapping[str, Any], params: Mapping[str, Any]) -> dict`。`inputs` は **input port name → dict payload** の mapping（[§7.2.1](#721-node-input-format)）。テンプレートはこの mapping から port occupancy を整え、`run(inputs, frozen_params, context)` を呼ぶ。戻り値は必ず observable output とし、形式は §7 に従う。
+* **target direction（非 transitional）:** 将来バージョンでは、graph 上の caller は **`set_input`（または Runner の delivery）のみ**で occupancy を埋め、`execute()` は **input payload 引数なし**（または `params` のみ）へ寄せることを想定する。子ノードへの配送は引き続き **`set_input`** 経路のみとする（Runner は payload の意味を解釈しない; [§10.1](#101-runner--node-responsibility-boundary)）。
 * Runner は node state を直接変更しない。`_state.value` と port occupancy の整合は node が所有し、同期処理では `execute()` 内、非同期処理では node 内部完了検知でも更新しうる。
 * `execute()` は処理を進められない場合 no-op で戻ってよい。その場合も `_state` / `_runtime` / `_usage` を返す。
 * 正常完了時は node が input を consume し、該当 output の occupancy を filled にし、§7.3 に従って **`done`** としうる。
@@ -910,6 +923,8 @@ Runner は JSON を直接実行しない。loader は外部 JSON を parse / val
 ```
 
 JSON root object に `pipe` と `nodes` 以外の key を含めてはならない（未知 key は invalid）。
+
+**重複 object key:** JSON テキスト内で **同一 object に同じ key が二度出現する**ことは RFC に反するが、Python 標準の `json.loads` は **後勝ちで黙って解釈する**ため、本リポジトリの PipeSpec loader は **その違反を検出・拒否しない**。厳密に弾きたい場合は、編集時検証・`jq`・JSON Schema 等の **外部ツール**に委ねる。
 
 #### Root keys
 
