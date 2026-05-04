@@ -1,4 +1,4 @@
-"""NodeFlow CLI — compatibility stub after YAML v1.5 pipeline kick removal.
+"""NodeFlow CLI — compatibility stub after legacy YAML graph pipeline removal.
 
 Public v1.6 wiring is **JSON PipeSpec** only: use :func:`nodeflow.core.loader.load_pipeline`
 with a ``*.json`` file, or construct a :class:`~nodeflow.core.node_kinds.PipeNode` and call

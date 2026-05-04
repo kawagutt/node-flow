@@ -1,6 +1,6 @@
 """Development flow action nodes and helpers.
 
-Composite stage pipes (v1.5 YAML registry) were removed; rebuild with v1.6 PipeSpec in a follow-up.
+Legacy YAML registry composites were removed; wire these ActionNodes from v1.6 JSON PipeSpec.
 Import concrete nodes from subpackages (e.g. ``prepare_workspace``, ``write_checkpoint``).
 """
 

@@ -83,22 +83,38 @@ Field semantics for workspace / checkpoints / summaries are **`doc/nodeflow_spec
 
 ## Layout
 
+Each **descendant** directory under `nodeflow/nodes/` and `nodeflow/workflows/` (excluding the
+package roots themselves and `__pycache__`) carries a `node_<dirname>.py` module. For container-only
+trees (for example ``development_flow/``), that file may be a **layout marker** with minimal exports;
+stage subpackages hold the concrete ActionNodes. See `tests/test_node_layout.py`.
+
+Built-ins for both **`nodeflow.nodes.*`** and packaged **`nodeflow.workflows.*`** PipeNodes are registered in
+[`nodeflow/builtins.py`](nodeflow/builtins.py) (single place). The **`nodeflow`** package import loads it;
+``nodeflow/nodes/__init__.py`` does **not** touch the registry.
+
 ```
 nodeflow/
+├── builtins.py          # built-in registry (nodes + packaged workflows)
+├── cli.py
 ├── core/
-│   ├── base_node.py      # execute template, _runtime / _usage
-│   ├── node_kinds/       # PipeNode, ActionNode, implementation kinds
+│   ├── base_node.py
+│   ├── node_kinds/       # PipeNode, ActionNode, Python/Cli/Api kinds
 │   ├── runner.py
 │   ├── registry.py
-│   ├── loader.py         # v1.6 JSON PipeSpec → PipeSpec (YAML v1.5 public path removed)
-│   ├── config.py         # workspace YAML helpers (node config / nodeflow.yaml), not PipeSpec
-│   └── run.py            # removed YAML kick stub (load_and_kick_pipeline)
-├── nodes/                # reusable building-block nodes (by role / purpose)
-│   ├── routing/
+│   ├── loader.py         # JSON PipeSpec → in-memory PipeSpec
+│   ├── pipe_spec.py
+│   ├── pipe_runtime.py
+│   ├── config.py         # workspace YAML (not PipeSpec)
+│   └── run.py            # stub / not a v1.6 YAML kick entrypoint
+├── nodes/
+│   ├── hello_demo.py
+│   ├── routing/          # e.g. node_routing.py
 │   ├── summarize/
-│   └── exec/
-└── workflows/            # packaged composite workflows (development_flow, fixed-provider pipes)
-    ├── development_flow/ # ActionNodes; see doc/nodeflow_spec.md
+│   ├── exec/             # e.g. node_exec.py + per-provider modules
+│   └── git/collect_diff/
+└── workflows/
+    ├── fixed_provider_cli_ports.py
+    ├── development_flow/   # ActionNodes + helpers; node_development_flow.py
     ├── review_with_claude/
     └── implement_with_codex/
 ```

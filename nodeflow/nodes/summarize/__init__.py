@@ -1,5 +1,5 @@
 """Concrete summarize nodes."""
 
-from nodeflow.nodes.summarize.python_summarize_result import PythonSummarizeResultNode
+from nodeflow.nodes.summarize.node_summarize import PythonSummarizeResultNode
 
 __all__ = ["PythonSummarizeResultNode"]

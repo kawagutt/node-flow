@@ -1,15 +1,17 @@
-"""Register built-in node types (registry keys)."""
+"""Register all built-in node types (``nodes/`` and packaged ``workflows/``) on the global registry."""
 
 from __future__ import annotations
 
 from nodeflow.core.registry import registry
-from nodeflow.nodes.exec.claude_code_exec import ClaudeCodeExecNode
-from nodeflow.nodes.exec.codex_exec import CodexExecNode
-from nodeflow.nodes.exec.kimi_exec import KimiExecNode
-from nodeflow.nodes.exec.qwen_exec import QwenExecNode
+from nodeflow.nodes.exec.node_exec import (
+    ClaudeCodeExecNode,
+    CodexExecNode,
+    KimiExecNode,
+    QwenExecNode,
+)
 from nodeflow.nodes.hello_demo import HelloDemoNode
-from nodeflow.nodes.routing.python_route_by_task_type import PythonRouteByTaskTypeNode
-from nodeflow.nodes.summarize.python_summarize_result import PythonSummarizeResultNode
+from nodeflow.nodes.routing.node_routing import PythonRouteByTaskTypeNode
+from nodeflow.nodes.summarize.node_summarize import PythonSummarizeResultNode
 from nodeflow.workflows.implement_with_codex.node_implement_with_codex import (
     ImplementWithCodexPipeNode,
 )

@@ -1,4 +1,9 @@
-"""Forward-looking layout checks for nodeflow/nodes and nodeflow/workflows."""
+"""Layout checks for nodeflow/nodes and nodeflow/workflows (``node_<dirname>.py`` gate).
+
+Only **descendant** directories of each check root are inspected; the package roots
+``nodeflow/nodes/`` and ``nodeflow/workflows/`` themselves are **not** required to
+contain ``node_nodes.py`` / ``node_workflows.py`` (they are container roots only).
+"""
 
 from __future__ import annotations
 
@@ -20,43 +25,35 @@ FORBIDDEN_DIR_NAMES = {
     "scripts",
 }
 
-# Existing violations allowed in this PR. Remove entries in later phases.
 ALLOWED_EXISTING_FORBIDDEN_DIRS: set[str] = set()
 
-# Existing directories that do not yet follow node_<name>.py.
-# This test is forward-looking in Phase 0-2.
-ALLOWED_EXISTING_MISSING_NODE_FILE = {
-    "nodeflow/nodes",
-    "nodeflow/nodes/exec",
-    "nodeflow/nodes/git",
-    "nodeflow/nodes/routing",
-    "nodeflow/nodes/summarize",
-    "nodeflow/workflows",
-    # v1.5 composite PipeNode entrypoints removed; ActionNodes live in subdirs until layout is normalized.
-    "nodeflow/workflows/development_flow",
-    "nodeflow/workflows/development_flow/spec_plan",
-    "nodeflow/workflows/development_flow/implement",
-    "nodeflow/workflows/development_flow/review",
-}
+# No grandfathered layout exceptions are allowed.
+ALLOWED_EXISTING_MISSING_NODE_FILE: set[str] = set()
 
 
 def _rel(path: Path) -> str:
     return path.relative_to(ROOT).as_posix()
 
 
-def _iter_dirs(root: Path):
-    if not root.exists():
+def _iter_descendant_dirs(container: Path):
+    """Yield directories under ``container``, excluding ``container`` itself and ``__pycache__`` trees."""
+    if not container.exists():
         return
-    for path in root.rglob("*"):
-        if path.is_dir() and "__pycache__" not in path.parts:
-            yield path
+    for path in container.rglob("*"):
+        if not path.is_dir():
+            continue
+        if path == container:
+            continue
+        if "__pycache__" in path.parts:
+            continue
+        yield path
 
 
 def test_forbidden_node_folder_names_are_not_added():
     violations: list[str] = []
 
     for root in CHECK_ROOTS:
-        for path in _iter_dirs(root):
+        for path in _iter_descendant_dirs(root):
             rel = _rel(path)
             if path.name in FORBIDDEN_DIR_NAMES and rel not in ALLOWED_EXISTING_FORBIDDEN_DIRS:
                 violations.append(rel)
@@ -68,7 +65,7 @@ def test_new_node_folders_have_matching_node_file():
     violations: list[str] = []
 
     for root in CHECK_ROOTS:
-        for path in _iter_dirs(root):
+        for path in _iter_descendant_dirs(root):
             rel = _rel(path)
             if rel in ALLOWED_EXISTING_MISSING_NODE_FILE:
                 continue
@@ -90,3 +87,8 @@ def test_no_pipe_py_under_development_flow_workflows() -> None:
     base = ROOT / "nodeflow" / "workflows" / "development_flow"
     violations = [p for p in base.rglob("pipe.py") if p.is_file()]
     assert violations == []
+
+
+def test_no_root_level_legacy_nodes_directory() -> None:
+    """Repo root ``nodes/`` was the old v1.x YAML layout; NodeFlow concrete nodes live under ``nodeflow/nodes/``."""
+    assert not (ROOT / "nodes").is_dir(), "remove stray repository-root nodes/ directory"

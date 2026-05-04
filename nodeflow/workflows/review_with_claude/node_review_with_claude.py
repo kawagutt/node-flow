@@ -9,8 +9,8 @@ from nodeflow.core.base_node import ExecutionContext
 from nodeflow.core.node_kinds import PipeNode
 from nodeflow.core.pipe_spec import NodeSpec, PipeDeclaration, PipeSpec
 from nodeflow.core.source_ref import SourceRef
-from nodeflow.nodes.exec.claude_code_exec import ClaudeCodeExecNode
-from nodeflow.nodes.summarize.python_summarize_result import PythonSummarizeResultNode
+from nodeflow.nodes.exec.node_exec import ClaudeCodeExecNode
+from nodeflow.nodes.summarize.node_summarize import PythonSummarizeResultNode
 from nodeflow.workflows.fixed_provider_cli_ports import (
     optional_child_params,
     validate_task_prompt_task_type_ports,

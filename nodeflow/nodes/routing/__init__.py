@@ -1,5 +1,5 @@
 """Concrete routing nodes."""
 
-from nodeflow.nodes.routing.python_route_by_task_type import PythonRouteByTaskTypeNode
+from nodeflow.nodes.routing.node_routing import PythonRouteByTaskTypeNode
 
 __all__ = ["PythonRouteByTaskTypeNode"]

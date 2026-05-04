@@ -2,6 +2,8 @@
 
 本書は **NodeFlow v1.6 の public model**を定義する。
 
+本リポジトリの Python パッケージ `version`（`pyproject.toml` の `project.version`）は **1.6.0** とし、本書の仕様ラベル v1.6 と揃える。
+
 文書の中心は次の五つである。
 
 * **node model**（`BaseNode` と port・観測可能な出力の境界）
@@ -1013,8 +1015,9 @@ YAML、TOML、Python literal dict ファイル、ad-hoc な独自 graph 記法�
 ### 16.4 ルール
 
 * **taxonomy（抽象の node kind）** は **`core/`**（上記 `node_kinds/` 等）。**building-block concrete** は **`nodes/`**、**パッケージされた複合 workflow** は **`workflows/`**。
+* **`nodes/`** および **`workflows/`** の **コンテナ root ディレクトリそのものは対象外**とし、その **配下の各 descendant directory**（**直下の子ディレクトリを含む**、`__pycache__` を除く）は、そのディレクトリ名に対応する **`node_<dirname>.py`** を置く。コンテナのみのディレクトリでは **`node_<dirname>.py`** を marker モジュール（最小 exports）として置いてよい。複数 concrete を同居させる場合は、そのモジュールから再 export してよい。
 * **`core/`** に **アプリ concrete** を置かない。
-* **built-in registration** は **一箇所に集約**する。
+* **built-in registry への登録**は **`nodeflow/builtins.py`** に集約する（`nodes` パッケージから `workflows` を直接 import しない）。
 * **直列 subgraph** は **`PipeNode` の能力**として表現し、**特別な concrete 名を仕様が要求しない**。
 
 ---

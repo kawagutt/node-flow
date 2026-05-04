@@ -9,8 +9,8 @@ from nodeflow.core.base_node import ExecutionContext
 from nodeflow.core.node_kinds import PipeNode
 from nodeflow.core.pipe_spec import NodeSpec, PipeDeclaration, PipeSpec
 from nodeflow.core.source_ref import SourceRef
-from nodeflow.nodes.exec.codex_exec import CodexExecNode
-from nodeflow.nodes.summarize.python_summarize_result import PythonSummarizeResultNode
+from nodeflow.nodes.exec.node_exec import CodexExecNode
+from nodeflow.nodes.summarize.node_summarize import PythonSummarizeResultNode
 from nodeflow.workflows.fixed_provider_cli_ports import (
     optional_child_params,
     validate_task_prompt_task_type_ports,
@@ -22,7 +22,7 @@ class ImplementWithCodexPipeNode(PipeNode):
 
     Public inputs follow v1.6 dict-only port payloads (see Runner delivery): ``task_prompt`` is
     ``{\"text\": <str>}`` and ``task_type`` is ``{\"value\": <str>}`` — the shapes expected by
-    :class:`~nodeflow.nodes.exec.codex_exec.CodexExecNode` on its ``prompt`` / ``task_type`` ports.
+    :class:`~nodeflow.nodes.exec.node_exec.CodexExecNode` on its ``prompt`` / ``task_type`` ports.
 
     Pipe-level ``params`` may include ``codex_exec`` and ``python_summarize_result`` dicts merged
     into the corresponding child nodes' params (via :meth:`_resolved_node_params`).

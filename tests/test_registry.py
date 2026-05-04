@@ -7,13 +7,13 @@ from typing import Any, Dict
 
 import pytest
 
+from nodeflow.builtins import register_builtin_nodes
 from nodeflow.core.base_node import BaseNode, ExecutionContext
 from nodeflow.core.registry import (
     RegistryConflictError,
     UnknownNodeTypeError,
     registry,
 )
-from nodeflow.nodes.builtins import register_builtin_nodes
 from nodeflow.nodes.hello_demo import HelloDemoNode
 
 
@@ -89,7 +89,7 @@ def test_registry_custom_node_execute(tmp_path):
 
 
 def test_development_flow_composite_registry_keys_removed() -> None:
-    """v1.5 path-style development_flow pipes are not registered (rebuild via v1.6 PipeSpec)."""
+    """Legacy path-style development_flow pipes are not registered (rebuild via v1.6 PipeSpec)."""
     keys = [
         "workflows.development_flow",
         "workflows.development_flow.spec_plan",
