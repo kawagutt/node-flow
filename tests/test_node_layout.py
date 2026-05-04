@@ -27,7 +27,6 @@ ALLOWED_EXISTING_FORBIDDEN_DIRS: set[str] = set()
 # This test is forward-looking in Phase 0-2.
 ALLOWED_EXISTING_MISSING_NODE_FILE = {
     "nodeflow/nodes",
-    "nodeflow/nodes/base",
     "nodeflow/nodes/exec",
     "nodeflow/nodes/git",
     "nodeflow/nodes/routing",
