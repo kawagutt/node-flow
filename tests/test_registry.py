@@ -114,3 +114,8 @@ def test_development_flow_old_registry_keys_are_not_registered() -> None:
     ]
     for key in old_keys:
         assert registry.get(key) is None
+
+
+def test_fixed_provider_pipe_registry_keys_are_not_registered() -> None:
+    assert registry.get("implement_with_codex") is None
+    assert registry.get("review_with_claude") is None

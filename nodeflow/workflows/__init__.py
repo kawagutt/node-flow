@@ -1,1 +1,1 @@
-"""User-facing composite workflow nodes (development_flow, fixed-provider pipes, …)."""
+"""Workflow utilities and development_flow ActionNodes."""

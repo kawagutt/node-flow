@@ -1,4 +1,4 @@
-"""Wire-level source reference for port delivery (v1.6 executable PipeSpec, core Runner)."""
+"""Wire-level source reference for port delivery (executable PipeSpec, core Runner)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Literal
 class SourceRef:
     """Declares where an input port or pipe output reads from (whole-port payloads only).
 
-    Nested field selection is not part of the v1.6 core model; reshape payloads upstream so each
+    Nested field selection is not part of the core model; reshape payloads upstream so each
     delivery remains one dict per port.
     """
 

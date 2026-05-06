@@ -43,9 +43,15 @@ def _gather_offenders(pkg_root: Path, *, ban_workflows: bool, ban_nodes: bool) -
                     if ban_workflows and (
                         name == "nodeflow.workflows" or name.startswith("nodeflow.workflows.")
                     ):
-                        offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}: import {name!r}")
-                    if ban_nodes and (name == "nodeflow.nodes" or name.startswith("nodeflow.nodes.")):
-                        offenders.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}: import {name!r}")
+                        offenders.append(
+                            f"{path.relative_to(REPO_ROOT)}:{node.lineno}: import {name!r}"
+                        )
+                    if ban_nodes and (
+                        name == "nodeflow.nodes" or name.startswith("nodeflow.nodes.")
+                    ):
+                        offenders.append(
+                            f"{path.relative_to(REPO_ROOT)}:{node.lineno}: import {name!r}"
+                        )
     return offenders
 
 

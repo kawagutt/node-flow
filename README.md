@@ -1,6 +1,6 @@
 # NodeFlow
 
-**NodeFlow v1.6** — task-oriented nodes over external CLIs and HTTP APIs (see [specification](doc/nodeflow_spec.md)). The **v1.6 core model is implemented**: public **JSON PipeSpec**, a source-based dumb **Runner**, **PipeNode** composite wiring, **dict-only** port payloads, and **Common Output**. Legacy YAML / GraphSpec / RunnerFrame **execution paths are removed**. A few **spec / README / transitional `execute(inputs, params)`** details remain before calling the line “fully complete” with zero compatibility caveats (see §14.1 in the spec).
+**NodeFlow** — task-oriented nodes over external CLIs and HTTP APIs (see [specification](doc/nodeflow_spec.md)). NodeFlow uses **JSON PipeSpec** as the public pipeline format with a source-based dumb **Runner**, **PipeNode** composite wiring, **dict-only** port payloads, and **Common Output**. Legacy YAML / GraphSpec / RunnerFrame execution paths are removed.
 
 ## Overview
 
@@ -11,7 +11,7 @@ NodeFlow wires **routing**, **external execution**, and **summarization** into r
 - **Role** (`route_by_task_type`, `summarize_result`, `exec`, …) is a **class attribute**, not an inheritance axis.
 - **Runner** stays minimal: it only runs `execute` in graph order; **no routing, provider selection, or role interpretation** inside the Runner.
 
-Runtime primitives (`BaseNode.execute`, limits, `_runtime` / `_usage`, `ExecutionContext`) and **taxonomy** (`PipeNode`, `ActionNode`, …) live in **`nodeflow/core/`**. Reusable building-block nodes live in **`nodeflow/nodes/`** under **role/purpose** folders (`routing/`, `summarize/`, `exec/`). Packaged composite workflows (`development_flow`, fixed-provider pipes) live in **`nodeflow/workflows/`**.
+Runtime primitives (`BaseNode.execute`, limits, `_runtime` / `_usage`, `ExecutionContext`) and **taxonomy** (`PipeNode`, `ActionNode`, …) live in **`nodeflow/core/`**. Reusable building-block nodes live in **`nodeflow/nodes/`** under **role/purpose** folders (`routing/`, `summarize/`, `exec/`). Workflow helpers and ActionNodes live in **`nodeflow/workflows/`**.
 
 ## Install
 
@@ -46,7 +46,7 @@ See `ApiActionNode` docstring in code for the same contract.
 
 ## Workspace
 
-The CLI `-w` / `--workspace` option sets the workspace directory (not necessarily a folder named `workspace`). It is reserved for workspace-relative resolution (e.g. `load_pipeline(workspace, path)` for **v1.6 `*.json`** PipeSpec files) and workspace-relative params where applicable.
+The CLI `-w` / `--workspace` option sets the workspace directory (not necessarily a folder named `workspace`). It is reserved for workspace-relative resolution (e.g. `load_pipeline(workspace, path)` for `*.json` PipeSpec files) and workspace-relative params where applicable.
 
 For CLI exec nodes (`codex_exec`, `claude_code_exec`), subprocess `cwd` follows this order:
 - `params.cwd` (relative paths are resolved against workspace when available)
@@ -61,16 +61,16 @@ not exposed on final node outputs by default.
 
 ## Public pipelines
 
-- **YAML graph samples** under `examples/pipelines/` were removed; v1.6 uses **JSON PipeSpec** (loader still evolving).
-- **Built-in registry types** (for programmatic / future JSON use) include routing, summarize, exec nodes, and fixed-provider pipes **`review_with_claude`** and **`implement_with_codex`**. **`workflows.development_flow.*`** composite YAML types are **not** registered anymore; **`development_flow`** **ActionNodes** remain under [`nodeflow/workflows/development_flow/`](nodeflow/workflows/development_flow/) for reuse inside new PipeSpecs.
+- **YAML graph samples** under `examples/pipelines/` were removed; public samples are **JSON PipeSpec**.
+- **Built-in registry types** (for programmatic / future JSON use) include routing, summarize, and exec nodes. **`workflows.development_flow.*`** composite YAML types are **not** registered anymore; **`development_flow`** **ActionNodes** remain under [`nodeflow/workflows/development_flow/`](nodeflow/workflows/development_flow/) for reuse inside new PipeSpecs.
 
 ## Development flow (helpers)
 
 Development flow tooling is intentionally split:
 
 - **`nodeflow/nodes/`**: building blocks (`exec`, `routing`, …).
-- **`nodeflow/workflows/development_flow/`**: **ActionNodes** (checkpoint, workspace prep, summaries, review parsing, etc.). The old **`workflows.development_flow.*`** **PipeNode** composites are dropped until they are rebuilt on v1.6 PipeSpec.
-- **`nodeflow/workflows/`** also ships **`review_with_claude`** and **`implement_with_codex`** PipeNodes (still registered).
+- **`nodeflow/workflows/development_flow/`**: **ActionNodes** (checkpoint, workspace prep, summaries, review parsing, etc.). The old **`workflows.development_flow.*`** **PipeNode** composites are dropped.
+- **`nodeflow/workflows/`** ships workflow building utilities and ActionNodes; workflow-specific `PipeNode` subclasses are not part of the public model.
 
 Field semantics for workspace / checkpoints / summaries are **`doc/nodeflow_spec.md`** (see also code and tests under `tests/workflows/`). `.nodeflow/` should usually be git-ignored.
 
@@ -88,9 +88,9 @@ package roots themselves and `__pycache__`) carries a `node_<dirname>.py` module
 trees (for example ``development_flow/``), that file may be a **layout marker** with minimal exports;
 stage subpackages hold the concrete ActionNodes. See `tests/test_node_layout.py`.
 
-Built-ins for both **`nodeflow.nodes.*`** and packaged **`nodeflow.workflows.*`** PipeNodes are registered in
-[`nodeflow/builtins.py`](nodeflow/builtins.py) (single place). The **`nodeflow`** package import loads it;
-``nodeflow/nodes/__init__.py`` does **not** touch the registry.
+Built-ins for **`nodeflow.nodes.*`** are registered in [`nodeflow/builtins.py`](nodeflow/builtins.py)
+(single place). The **`nodeflow`** package import loads it; ``nodeflow/nodes/__init__.py`` does **not**
+touch the registry.
 
 ```
 nodeflow/
@@ -105,7 +105,7 @@ nodeflow/
 │   ├── pipe_spec.py
 │   ├── pipe_runtime.py
 │   ├── config.py         # workspace YAML (not PipeSpec)
-│   └── run.py            # stub / not a v1.6 YAML kick entrypoint
+│   └── run.py            # stub / not a YAML kick entrypoint
 ├── nodes/
 │   ├── hello_demo.py
 │   ├── routing/          # e.g. node_routing.py
@@ -113,7 +113,6 @@ nodeflow/
 │   ├── exec/             # e.g. node_exec.py + per-provider modules
 │   └── git/collect_diff/
 └── workflows/
-    ├── fixed_provider_cli_ports.py
     ├── development_flow/   # ActionNodes + helpers; node_development_flow.py
     ├── review_with_claude/
     └── implement_with_codex/
@@ -123,9 +122,9 @@ nodeflow/
 
 Register classes on `nodeflow.core.registry.registry` with `register("your_type", YourClass)` for use from **PipeSpec** / programmatic execution. Custom code typically subclasses `BaseNode` or `ActionNode` / `PythonActionNode` and lives in your workspace, not in this package.
 
-## Upgrading from v1.4
+## Upgrading from legacy YAML
 
-- **CLI / file loading:** The old **YAML `graph` + `final`** pipeline is gone. Use **`nodeflow.core.loader.load_pipeline(workspace, "relative/or/abs/path/to/pipe.json")`** (JSON only) or construct a **`PipeNode`** and call **`execute(...)`** from Python. The `nodeflow` console script still wires to the **removed** `load_and_kick_pipeline` helper and **always raises**—treat it as a compatibility stub, not a v1.6 entrypoint (see [CHANGELOG.md](CHANGELOG.md)).
+- **CLI / file loading:** The old **YAML `graph` + `final`** pipeline is gone. Use **`nodeflow.core.loader.load_pipeline(workspace, "relative/or/abs/path/to/pipe.json")`** (JSON only) or construct a **`PipeNode`** and call **`execute(...)`** from Python. The `nodeflow` console script still wires to the removed `load_and_kick_pipeline` helper and always raises, so treat it as a compatibility stub (see [CHANGELOG.md](CHANGELOG.md)).
 
 ## License
 

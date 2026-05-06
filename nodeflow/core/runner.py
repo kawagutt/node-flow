@@ -1,4 +1,4 @@
-"""NodeFlow v1.6 source-based runner (occupancy-driven, PipeSpec-shaped core only)."""
+"""NodeFlow source-based runner (occupancy-driven, PipeSpec-shaped core only)."""
 
 from __future__ import annotations
 

@@ -8,23 +8,6 @@ import pytest
 
 from nodeflow.core.base_node import BaseNode, ExecutionContext
 from nodeflow.core.run import load_and_kick_pipeline
-from nodeflow.workflows.implement_with_codex.node_implement_with_codex import (
-    ImplementWithCodexPipeNode,
-)
-
-
-def test_fixed_provider_codex_summarize_pipe() -> None:
-    pipe = ImplementWithCodexPipeNode()
-    out = pipe.execute(
-        {
-            "task_type": {"value": "implement"},
-            "task_prompt": {"text": "e2e"},
-        },
-        {"codex_exec": {"argv": ["sh", "-c", "echo e2e-out"]}},
-    )
-    assert pipe.read_status() == "done"
-    assert "summary" in out
-    assert "short" in out["summary"]
 
 
 def test_e2e_yaml_load_pipeline_removed(tmp_path) -> None:

@@ -1,4 +1,4 @@
-"""Register all built-in node types (``nodes/`` and packaged ``workflows/``) on the global registry."""
+"""Register built-in node types from ``nodeflow.nodes`` on the global registry."""
 
 from __future__ import annotations
 
@@ -12,12 +12,6 @@ from nodeflow.nodes.exec.node_exec import (
 from nodeflow.nodes.hello_demo import HelloDemoNode
 from nodeflow.nodes.routing.node_routing import PythonRouteByTaskTypeNode
 from nodeflow.nodes.summarize.node_summarize import PythonSummarizeResultNode
-from nodeflow.workflows.implement_with_codex.node_implement_with_codex import (
-    ImplementWithCodexPipeNode,
-)
-from nodeflow.workflows.review_with_claude.node_review_with_claude import (
-    ReviewWithClaudePipeNode,
-)
 
 
 def register_builtin_nodes() -> None:
@@ -28,8 +22,6 @@ def register_builtin_nodes() -> None:
     registry.register("claude_code_exec", ClaudeCodeExecNode, override=True)
     registry.register("kimi_exec", KimiExecNode, override=True)
     registry.register("qwen_exec", QwenExecNode, override=True)
-    registry.register("review_with_claude", ReviewWithClaudePipeNode, override=True)
-    registry.register("implement_with_codex", ImplementWithCodexPipeNode, override=True)
 
 
 register_builtin_nodes()

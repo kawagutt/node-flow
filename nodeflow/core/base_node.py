@@ -306,9 +306,9 @@ class BaseNode:
             raise KeyError(f"Unknown limit state: {name}")
         self._limit_state[name] = 0
 
-    # v1.6 port API: delivery uses occupancy state, not observable output mutation.
+    # Port delivery uses occupancy state, not observable output mutation.
     def set_input(self, port_name: str, payload: dict[str, Any]) -> None:
-        """v1.6 port delivery: input payloads must be dict (shallow-copied)."""
+        """Port delivery contract: input payloads must be dict (shallow-copied)."""
         if not isinstance(payload, dict):
             raise TypeError(
                 f"Input port {port_name!r} payload must be dict, got {type(payload).__name__}"

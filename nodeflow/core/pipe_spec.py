@@ -22,7 +22,7 @@ def _reserved_port(port_name: str) -> bool:
 
 
 def _validate_graph_node_id(name: str) -> None:
-    """v1.6: graph node keys must be ``[A-Za-z][A-Za-z0-9_]*`` and not ``input`` / ``output``."""
+    """Graph node keys must be ``[A-Za-z][A-Za-z0-9_]*`` and not ``input`` / ``output``."""
     if not _NAME_RE.fullmatch(name):
         raise PipeSpecValidationError(f"invalid node_id {name!r}: must match [A-Za-z][A-Za-z0-9_]*")
     if name in ("input", "output"):
@@ -32,7 +32,7 @@ def _validate_graph_node_id(name: str) -> None:
 
 
 def _validate_port_name(name: str) -> None:
-    """v1.6: port names must match the same token pattern and must not be observation reserved."""
+    """Port names must match the same token pattern and must not be observation reserved."""
     if not _NAME_RE.fullmatch(name):
         raise PipeSpecValidationError(
             f"invalid port name {name!r}: must match [A-Za-z][A-Za-z0-9_]*"

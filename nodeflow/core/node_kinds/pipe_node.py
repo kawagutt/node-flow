@@ -1,4 +1,4 @@
-"""PipeNode — v1.6 composite: ``pipe_spec()`` + core :class:`~nodeflow.core.runner.Runner`."""
+"""PipeNode — executable composite: ``pipe_spec()`` + core :class:`~nodeflow.core.runner.Runner`."""
 
 from __future__ import annotations
 
@@ -51,7 +51,6 @@ class PipeNode(BaseNode):
 
         Default: shallow-copy each node's ``spec.nodes[*].params`` and propagate a top-level
         string ``"_workspace_dir"`` (when present) to every child's params via ``setdefault``.
-        Subclasses override to inject provider-specific child param dicts keyed in ``params``.
         """
         resolved: dict[str, dict[str, Any]] = {
             nid: dict(ns.params) for nid, ns in spec.nodes.items()
