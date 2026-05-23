@@ -163,7 +163,9 @@ def _load_child_definition(
         except UnknownNodeTypeError as e:
             raise PipeSpecLoadError(str(e)) from e
         if not isinstance(node_cls, type) or not issubclass(node_cls, BaseNode):
-            raise PipeSpecLoadError(f"{path}: registry resolved non-BaseNode class for {type_name!r}")
+            raise PipeSpecLoadError(
+                f"{path}: registry resolved non-BaseNode class for {type_name!r}"
+            )
 
         try:
             instance = node_cls()
@@ -179,7 +181,9 @@ def _load_child_definition(
     )
 
 
-def _build_v17_executable_pipe(data: Mapping[str, Any], workspace: Path, reg: NodeRegistry) -> PipeSpec:
+def _build_v17_executable_pipe(
+    data: Mapping[str, Any], workspace: Path, reg: NodeRegistry
+) -> PipeSpec:
     _ensure_only_keys("root", data, frozenset({"kind", "version", "pipe", "nodes"}))
     if data.get("kind") != "pipe" or data.get("version") != "1.7":
         raise PipeSpecLoadError("pipe document must declare kind='pipe' and version='1.7'")
@@ -190,9 +194,7 @@ def _build_v17_executable_pipe(data: Mapping[str, Any], workspace: Path, reg: No
     _ensure_only_keys("pipe", pipe_blob, frozenset({"outputs"}))
     outputs_raw = pipe_blob.get("outputs")
     if not isinstance(outputs_raw, dict):
-        raise PipeSpecLoadError(
-            f"pipe.outputs must be an object, got {type(outputs_raw).__name__}"
-        )
+        raise PipeSpecLoadError(f"pipe.outputs must be an object, got {type(outputs_raw).__name__}")
     if len(outputs_raw) == 0:
         raise PipeSpecLoadError("pipe.outputs must not be empty")
 
@@ -248,7 +250,9 @@ def _build_v17_executable_pipe(data: Mapping[str, Any], workspace: Path, reg: No
         if cfg_overlay is not None and not isinstance(cfg_overlay, dict):
             raise PipeSpecLoadError(f"{loc}.config must be an object when present")
 
-        instance, accepted_in, static_out, defaults = _load_child_definition(workspace, path_str, reg)
+        instance, accepted_in, static_out, defaults = _load_child_definition(
+            workspace, path_str, reg
+        )
 
         input_refs: dict[str, SourceRef] = {}
         seen_tgt: set[str] = set()
@@ -288,9 +292,7 @@ def _build_v17_executable_pipe(data: Mapping[str, Any], workspace: Path, reg: No
                 f"pipe.outputs[{out_name!r}]: must not wire from input.* (pass-through forbidden)"
             )
         if not src.node_id or src.node_id not in nodes_out:
-            raise PipeSpecLoadError(
-                f"pipe.outputs[{out_name!r}]: unknown node id {src.node_id!r}"
-            )
+            raise PipeSpecLoadError(f"pipe.outputs[{out_name!r}]: unknown node id {src.node_id!r}")
         if src.port_name not in nodes_out[src.node_id].output_ports:
             raise PipeSpecLoadError(
                 f"pipe.outputs[{out_name!r}]: source port {src.port_name!r} "

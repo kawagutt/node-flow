@@ -15,6 +15,9 @@ from nodeflow.nodes.summarize.node_summarize import PythonSummarizeResultNode
 
 
 def register_builtin_nodes() -> None:
+    from nodeflow.workflows.dev_process.register_nodes import register_dev_process_nodes
+
+    register_dev_process_nodes()
     registry.register("hello_demo", HelloDemoNode, override=True)
     registry.register("python_route_by_task_type", PythonRouteByTaskTypeNode, override=True)
     registry.register("python_summarize_result", PythonSummarizeResultNode, override=True)

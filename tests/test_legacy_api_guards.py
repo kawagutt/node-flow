@@ -89,6 +89,6 @@ def test_no_removed_pipenode_constructor_kwargs(root: str) -> None:
 
 
 def test_nodeflow_execution_package_dir_is_absent() -> None:
-    assert not (ROOT / "nodeflow" / "execution").exists(), (
-        "nodeflow/execution/ must not exist (no shim package)"
-    )
+    assert not (
+        ROOT / "nodeflow" / "execution"
+    ).exists(), "nodeflow/execution/ must not exist (no shim package)"

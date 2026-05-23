@@ -1,0 +1,23 @@
+{
+  "kind": "pipe",
+  "version": "1.7",
+  "pipe": {
+    "outputs": {
+      "flow_output": "flow.flow_output"
+    }
+  },
+  "nodes": [
+    {
+      "id": "flow",
+      "path": "examples/nodes/dev_process_flow/node.json",
+      "inputs": {
+        "action": "input.action",
+        "repo_root": "input.repo_root",
+        "task_prompt": "input.task_prompt",
+        "flow_checkpoint_path": "input.flow_checkpoint_path",
+        "run_id": "input.run_id",
+        "human_comment_text": "input.human_comment_text"
+      }
+    }
+  ]
+}

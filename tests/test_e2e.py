@@ -34,12 +34,12 @@ def test_run_returning_runtime_is_fatal():
     assert n.read_status() == "fatal"
 
 
-def test_load_and_kick_pipeline_removed(tmp_path) -> None:
+def test_load_and_kick_pipeline_yaml_removed(tmp_path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     yaml_path = workspace / "fatal.yaml"
     yaml_path.write_text("x: 1")
-    with pytest.raises(NotImplementedError, match="load_and_kick_pipeline"):
+    with pytest.raises(NotImplementedError, match="YAML"):
         load_and_kick_pipeline(
             str(workspace), str(yaml_path), initial_inputs={"task_prompt": "hello"}
         )

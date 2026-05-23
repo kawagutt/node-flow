@@ -1,0 +1,18 @@
+{
+  "kind": "node",
+  "version": "1.7",
+  "type": "dev_process.flow",
+  "input_ports": [
+    "action",
+    "repo_root",
+    "task_prompt",
+    "flow_checkpoint_path",
+    "run_id",
+    "human_comment_text"
+  ],
+  "output_ports": ["flow_output"],
+  "default_config": {
+    "run_spec_plan_on_start": true,
+    "force_review_blocking": false
+  }
+}
