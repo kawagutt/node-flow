@@ -1,4 +1,4 @@
-"""Linear child graph via v1.6 ``PipeNode`` + ``pipe_spec()`` (no YAML / GraphSpec)."""
+"""Linear child graph via generic ``PipeNode`` + executable ``PipeSpec``."""
 
 from __future__ import annotations
 
@@ -39,39 +39,34 @@ class EchoBNode(BaseNode):
         return {"result": {"out": str(val) + ":b"}}
 
 
-class _LinearPipe(PipeNode):
-    def __init__(self, nodes: Dict[str, BaseNode]) -> None:
-        super().__init__()
-        self._nodes = nodes
-
-    def pipe_spec(self) -> PipeSpec:
-        a = self._nodes["a"]
-        b = self._nodes["b"]
-        return PipeSpec(
-            graph_node_order=("a", "b"),
-            pipe=PipeDeclaration(
-                input_ports=frozenset({"x"}),
-                output_sources={"result": SourceRef(kind="node", node_id="b", port_name="result")},
+def _spec(nodes: Dict[str, BaseNode]) -> PipeSpec:
+    a = nodes["a"]
+    b = nodes["b"]
+    return PipeSpec(
+        graph_node_order=("a", "b"),
+        pipe=PipeDeclaration(
+            input_ports=frozenset({"x"}),
+            output_sources={"result": SourceRef(kind="node", node_id="b", port_name="result")},
+        ),
+        nodes={
+            "a": NodeSpec(
+                node_id="a",
+                node=a,
+                input_sources={"x": SourceRef(kind="input", port_name="x")},
+                output_ports=frozenset({"result"}),
             ),
-            nodes={
-                "a": NodeSpec(
-                    node_id="a",
-                    node=a,
-                    input_sources={"x": SourceRef(kind="input", port_name="x")},
-                    output_ports=frozenset({"result"}),
-                ),
-                "b": NodeSpec(
-                    node_id="b",
-                    node=b,
-                    input_sources={"data": SourceRef(kind="node", node_id="a", port_name="result")},
-                    output_ports=frozenset({"result"}),
-                ),
-            },
-        )
+            "b": NodeSpec(
+                node_id="b",
+                node=b,
+                input_sources={"data": SourceRef(kind="node", node_id="a", port_name="result")},
+                output_ports=frozenset({"result"}),
+            ),
+        },
+    )
 
 
-def _make_pipe(nodes: Dict[str, BaseNode]) -> _LinearPipe:
-    return _LinearPipe(nodes)
+def _make_pipe(nodes: Dict[str, BaseNode]) -> PipeNode:
+    return PipeNode(_spec(nodes))
 
 
 def test_pipe_two_nodes() -> None:
@@ -79,9 +74,8 @@ def test_pipe_two_nodes() -> None:
     pipe = _make_pipe(nodes)
     out = pipe.execute({"x": {"text": "in"}}, {})
     assert pipe.read_status() == "done"
-    assert nodes["a"].read_status() == "ready"
-    # Pipe output edge consumes b's last output occupancy → ready (no terminal special-case).
-    assert nodes["b"].read_status() == "ready"
+    assert nodes["a"].read_status() == "done"
+    assert nodes["b"].read_status() == "done"
     assert out["result"]["out"] == "in:a:b"
 
 

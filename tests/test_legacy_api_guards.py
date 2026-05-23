@@ -17,7 +17,7 @@ _LEGACY_SUBSTRINGS = (
     "nodeflow/execution",
 )
 
-# Removed PipeNode(graph_node_order=..., ...) style (use pipe_spec() / custom run() instead).
+# Removed PipeNode(graph_node_order=..., ...) style (use PipeNode(spec: PipeSpec) instead).
 _PIPE_NODE_KW_SUBSTRINGS = (
     "PipeNode(graph_node_order",
     "PipeNode(node_input_bindings",
@@ -83,7 +83,8 @@ def test_no_removed_pipenode_constructor_kwargs(root: str) -> None:
                 violations.append(f"{path.relative_to(ROOT)}: contains {sub!r}")
 
     assert violations == [], (
-        "Do not call PipeNode with removed graph kwargs; use pipe_spec():\n" + "\n".join(violations)
+        "Do not call PipeNode with removed graph kwargs; construct PipeNode(spec):\n"
+        + "\n".join(violations)
     )
 
 

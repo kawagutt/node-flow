@@ -42,7 +42,8 @@ def test_clear_output_occupancy_does_not_mutate_snapshot():
     assert snap_after == {"result": {"value": 42}}
     assert node.get_output_snapshot() == {}
     assert node.is_output_filled("result") is False
-    assert node.read_status() == "ready"
+    # v1.7: clear_output_occupancy 後も terminal の `done` は `idle` に戻らない。
+    assert node.read_status() == "done"
 
 
 def test_set_input_copies_top_level_dict_from_caller():

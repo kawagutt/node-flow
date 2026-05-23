@@ -1,4 +1,4 @@
-"""Minimal PipeNode: pipe_spec + pipe output completion (no final-node shortcut)."""
+"""Minimal generic PipeNode: pipe outputs completion."""
 
 from __future__ import annotations
 
@@ -17,40 +17,34 @@ class _Pass(BaseNode):
         return {"out": dict(inputs["in"])}
 
 
-class _LinearPipe(PipeNode):
-    """Stable child instances (``read_error`` / diagnostics must not call ``pipe_spec()`` blindly)."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._a = _Pass()
-        self._b = _Pass()
-
-    def pipe_spec(self) -> PipeSpec:
-        return PipeSpec(
-            graph_node_order=("a", "b"),
-            pipe=PipeDeclaration(
-                input_ports=frozenset({"x"}),
-                output_sources={"result": SourceRef(kind="node", node_id="b", port_name="out")},
+def _linear_spec() -> PipeSpec:
+    a = _Pass()
+    b = _Pass()
+    return PipeSpec(
+        graph_node_order=("a", "b"),
+        pipe=PipeDeclaration(
+            input_ports=frozenset({"x"}),
+            output_sources={"result": SourceRef(kind="node", node_id="b", port_name="out")},
+        ),
+        nodes={
+            "a": NodeSpec(
+                node_id="a",
+                node=a,
+                input_sources={"in": SourceRef(kind="input", port_name="x")},
+                output_ports=frozenset({"out"}),
             ),
-            nodes={
-                "a": NodeSpec(
-                    node_id="a",
-                    node=self._a,
-                    input_sources={"in": SourceRef(kind="input", port_name="x")},
-                    output_ports=frozenset({"out"}),
-                ),
-                "b": NodeSpec(
-                    node_id="b",
-                    node=self._b,
-                    input_sources={"in": SourceRef(kind="node", node_id="a", port_name="out")},
-                    output_ports=frozenset({"out"}),
-                ),
-            },
-        )
+            "b": NodeSpec(
+                node_id="b",
+                node=b,
+                input_sources={"in": SourceRef(kind="node", node_id="a", port_name="out")},
+                output_ports=frozenset({"out"}),
+            ),
+        },
+    )
 
 
 def test_pipe_node_completes_on_pipe_outputs_not_final() -> None:
-    pipe = _LinearPipe()
+    pipe = PipeNode(_linear_spec())
     out = pipe.execute({"x": {"v": 3}}, {})
     assert pipe.read_status() == "done"
     assert out["result"] == {"v": 3}

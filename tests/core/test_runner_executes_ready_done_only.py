@@ -7,7 +7,7 @@ from nodeflow.core.runner import Runner
 
 
 class _CountNode(BaseNode):
-    def __init__(self, initial_status: str = "ready") -> None:
+    def __init__(self, initial_status: str = "idle") -> None:
         super().__init__()
         self._status = initial_status
         self.execute_calls = 0
@@ -22,20 +22,20 @@ class _CountNode(BaseNode):
         return {"out": {"calls": self.calls}}
 
 
-def test_runner_executes_ready_done_only_and_keeps_other_states():
-    ready = _CountNode("ready")
-    done = _CountNode("done")
-    executing = _CountNode("executing")
-    limit = _CountNode("limit")
-    fatal = _CountNode("fatal")
+def test_runner_calls_execute_on_every_scanned_node_each_round():
+    idle_node = _CountNode("idle")
+    done_node = _CountNode("done")
+    executing_node = _CountNode("executing")
+    limit_node = _CountNode("limit")
+    fatal_node = _CountNode("fatal")
     runner = Runner(
-        graph_node_order=["ready", "done", "executing", "limit", "fatal"],
+        graph_node_order=["idle_node", "done_node", "executing_node", "limit_node", "fatal_node"],
         nodes={
-            "ready": ready,
-            "done": done,
-            "executing": executing,
-            "limit": limit,
-            "fatal": fatal,
+            "idle_node": idle_node,
+            "done_node": done_node,
+            "executing_node": executing_node,
+            "limit_node": limit_node,
+            "fatal_node": fatal_node,
         },
         node_params={},
         node_input_sources={},
@@ -43,13 +43,18 @@ def test_runner_executes_ready_done_only_and_keeps_other_states():
     )
 
     assert runner.step() is True
-    assert ready.execute_calls == 1
-    assert done.execute_calls == 1
-    assert ready.calls == 1
-    assert done.calls == 0
-    assert executing.calls == 0
-    assert limit.calls == 0
-    assert fatal.calls == 0
-    assert executing.read_status() == "executing"
-    assert limit.read_status() == "limit"
-    assert fatal.read_status() == "fatal"
+    assert idle_node.execute_calls == 1
+    assert done_node.execute_calls == 1
+    assert executing_node.execute_calls == 1
+    assert limit_node.execute_calls == 1
+    assert fatal_node.execute_calls == 1
+
+    assert idle_node.calls == 1
+    assert done_node.calls == 0
+    assert executing_node.calls == 0
+    assert limit_node.calls == 0
+    assert fatal_node.calls == 0
+
+    assert executing_node.read_status() == "executing"
+    assert limit_node.read_status() == "limit"
+    assert fatal_node.read_status() == "fatal"

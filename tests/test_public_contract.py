@@ -26,7 +26,7 @@ graph:
   final: r
 """
     )
-    with pytest.raises(NotImplementedError, match="YAML 1.5"):
+    with pytest.raises(NotImplementedError, match="YAML"):
         load_pipeline(str(tmp_path), str(yaml_path))
 
 

@@ -76,10 +76,6 @@ def _validate_source_ref(ref: object, where: str) -> SourceRef:
     return ref
 
 
-def _normalize_source_key(source: SourceRef) -> tuple[str, str | None, str]:
-    return (source.kind, source.node_id, source.port_name)
-
-
 def validate_executable_pipe_spec(spec: PipeSpec) -> None:
     """Validate registry-resolved executable PipeSpec (Phase A only; no JSON / type strings)."""
     if not spec.nodes:
@@ -114,16 +110,6 @@ def validate_executable_pipe_spec(spec: PipeSpec) -> None:
         raise PipeSpecValidationError("pipe.output_sources must not be empty")
     for port in spec.pipe.output_sources:
         _validate_port_name(port)
-    source_to_target: dict[tuple[str, str | None, str], str] = {}
-
-    def _register_fanout_target(src: SourceRef, target_label: str) -> None:
-        sk = _normalize_source_key(src)
-        if sk in source_to_target:
-            raise PipeSpecValidationError(
-                "fan-out rejected: same source wired to multiple delivery targets "
-                f"{source_to_target[sk]!r} and {target_label!r}"
-            )
-        source_to_target[sk] = target_label
 
     for out_name, src in spec.pipe.output_sources.items():
         src = _validate_source_ref(src, f"pipe.output_sources[{out_name!r}]")
@@ -141,7 +127,6 @@ def validate_executable_pipe_spec(spec: PipeSpec) -> None:
                 f"pipe.output_sources[{out_name!r}] references port {src.port_name!r} "
                 f"not in output_ports of node {src.node_id!r}"
             )
-        _register_fanout_target(src, f"pipe.output:{out_name}")
 
     for target_nid, ns in spec.nodes.items():
         for op in ns.output_ports:
@@ -174,7 +159,6 @@ def validate_executable_pipe_spec(spec: PipeSpec) -> None:
                     )
             else:
                 raise PipeSpecValidationError(f"unsupported SourceRef.kind {src.kind!r}")
-            _register_fanout_target(src, f"node:{target_nid}.{target_port}")
 
     if _cycle_among_nodes(spec):
         raise PipeSpecValidationError("graph contains a cycle (node-to-node edges)")

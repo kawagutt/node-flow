@@ -116,7 +116,7 @@ class BaseNode:
     """
 
     def __init__(self) -> None:
-        self._status = "ready"
+        self._status = "idle"
         self._error: Exception | None = None
         self._limit_state: Dict[str, int] = {"calls": 0, "tokens": 0}
         self._current_context: ExecutionContext | None = None
@@ -130,10 +130,15 @@ class BaseNode:
     def execute(self, inputs: Dict[str, Any], params: Dict[str, Any]) -> Dict[str, Any]:
         """共通実行テンプレート。サブクラスは run() を実装する。"""
         if self._status == "done":
-            # done node may be called again by Runner; must not duplicate execution.
+            # Terminal episode: repeat calls are observation-only (doc §5 / §14.1).
             return self._build_observation()
-        if self._status != "ready":
-            raise RuntimeError("execute called when status is not ready")
+        if self._status == "executing":
+            # Active process: bounded poll/no-op for synchronous implementations (doc §5).
+            return self._build_observation()
+        if self._status in {"limit", "fatal"}:
+            return self._build_observation()
+        if self._status != "idle":
+            raise RuntimeError(f"execute called when status is {self._status!r}")
 
         # pre-limit は freeze 前の params を意図的に受け取る（execute の引数そのまま）
         if self._check_pre_limit(params):
@@ -199,7 +204,7 @@ class BaseNode:
 
     def _status_after_run(self, result: Dict[str, Any]) -> str:
         """Derive ``self._status`` after ``run()`` returns (fatal/limit already handled)."""
-        self._status = "ready"
+        self._status = "idle"
         self._refresh_status_from_output_occupancy()
         return self._status
 
@@ -250,7 +255,10 @@ class BaseNode:
     def _refresh_status_from_output_occupancy(self) -> None:
         if self._status in {"fatal", "limit", "executing"}:
             return
-        self._status = "done" if any(self._output_occupancy.values()) else "ready"
+        if self._status == "done":
+            # Terminal: do not implicitly revert to idle when ports drain (doc §4.1 / §5).
+            return
+        self._status = "done" if any(self._output_occupancy.values()) else "idle"
 
     def _build_observation(self, usage: Dict[str, Any] | None = None) -> Dict[str, Any]:
         domain_output = self.get_output_snapshot()
@@ -288,10 +296,10 @@ class BaseNode:
         return self._error if self._status == "fatal" else None
 
     def reset_status(self) -> None:
-        """status を ready に戻す。executing 状態では呼び出してはならない。"""
+        """status を idle に戻す。executing 状態では呼び出してはならない。"""
         if self._status == "executing":
             raise RuntimeError("cannot reset while executing")
-        self._status = "ready"
+        self._status = "idle"
         self._error = None
         self._input_ports = {}
         self._input_occupancy = {}

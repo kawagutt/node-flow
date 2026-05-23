@@ -55,17 +55,17 @@ class Runner:
         self._pipe_output_filled: Dict[str, bool] = {
             name: False for name in self.pipe_output_sources
         }
-        self._source_remaining: Dict[tuple[str, str | None, str], int] = {}
+        # Fan-out: child input edges only (doc §15). Pipe outputs are not fan-out consumers.
+        self._fanout_input_remaining: Dict[tuple[str, str | None, str], int] = {}
+        self._pipe_bindings: Dict[tuple[str, str | None, str], list[str]] = {}
         self._edge_consumed: set[tuple[str, str]] = set()
         for node_id, sources in self.node_input_sources.items():
             for port_name, source in sources.items():
                 key = self._source_key(source)
-                self._source_remaining[key] = self._source_remaining.get(key, 0) + 1
-        for _out_name, source in self.pipe_output_sources.items():
+                self._fanout_input_remaining[key] = self._fanout_input_remaining.get(key, 0) + 1
+        for out_name, source in self.pipe_output_sources.items():
             key = self._source_key(source)
-            self._source_remaining[key] = self._source_remaining.get(key, 0) + 1
-        self._zero_input_completed: set[str] = set()
-        self._idle_done_invoked: set[str] = set()
+            self._pipe_bindings.setdefault(key, []).append(out_name)
 
     @classmethod
     def from_pipe_spec(
@@ -140,6 +140,16 @@ class Runner:
             return snapshot.get(source.port_name)
         return _DELIVER_UNAVAILABLE
 
+    def _try_clear_source(self, source: SourceRef) -> None:
+        """Clear source occupancy after all fan-out inputs delivered and bound pipe outputs filled."""
+        key = self._source_key(source)
+        if self._fanout_input_remaining.get(key, 0) > 0:
+            return
+        for bound_out in self._pipe_bindings.get(key, ()):
+            if not self._pipe_output_filled.get(bound_out, False):
+                return
+        self._clear_source_occupancy(source)
+
     def _clear_source_occupancy(self, source: SourceRef) -> None:
         if source.kind == "input":
             if source.port_name in self.pipe_input_occupancy:
@@ -170,10 +180,11 @@ class Runner:
             return
         self._edge_consumed.add(edge_key)
         source_key = self._source_key(source)
-        remaining = self._source_remaining.get(source_key, 0) - 1
-        self._source_remaining[source_key] = remaining
-        if remaining <= 0:
-            self._clear_source_occupancy(source)
+        if target_node_id != _PIPE_OUTPUT_TARGET:
+            self._fanout_input_remaining[source_key] = (
+                self._fanout_input_remaining.get(source_key, 0) - 1
+            )
+        self._try_clear_source(source)
 
     def _deliver_to_node_input(
         self, target: BaseNode, target_node_id: str, target_port_name: str, source: SourceRef
@@ -215,53 +226,25 @@ class Runner:
         return progressed
 
     def _execution_phase(self) -> bool:
-        """Call ``execute`` on ``ready`` / ``done`` children; progress is occupancy/status deltas only.
+        """Call ``execute`` on each node in scan order (doc §13–§14).
 
-        The Runner does **not** decide semantic “required inputs”: it forwards the current input
-        snapshot and lets :meth:`BaseNode.execute` / ``run()`` decide. A synchronous ``step()``
-        counts execution as progress only when ``execute`` changes runner-visible **status or
-        port occupancy** (not dict payload contents).
-
-        Zero-declared-input nodes that produced a material change are not executed again in the
-        same runner instance (prevents duplicate runs after outputs are consumed). Idle ``done``
-        nodes without filled outputs are executed at most once per instance (the template’s
-        no-op ``done`` path).
-
-        Normative rationale (idempotency, not payload semantics): ``doc/nodeflow_spec.md`` §10.2.2.
+        Readiness / terminal handling / ``executing`` guard live in :class:`~nodeflow.core.base_node.BaseNode`.
+        Progress is occupancy/status deltas only (dict payload contents ignored).
         """
         progressed = False
         for node_id in self.graph_node_order:
             node = self.nodes.get(node_id)
             if node is None:
                 continue
-            status = node.read_status()
-            if status not in ("ready", "done"):
-                continue
-            if status == "done" and node.get_output_snapshot():
-                continue
-            declared_ports = set(self.node_input_sources.get(node_id, {}).keys())
-            if len(declared_ports) == 0 and node_id in self._zero_input_completed:
-                continue
-            empty_done = status == "done" and not node.get_output_snapshot()
-            if empty_done and node_id in self._idle_done_invoked:
-                continue
-
             input_snapshot = node.get_input_snapshot()
             ports_to_clear = list(input_snapshot.keys())
             before = self._port_occupancy_snapshot(node)
             node.execute(input_snapshot, self.node_params.get(node_id, {}))
             after = self._port_occupancy_snapshot(node)
-            material = before != after
-
-            if empty_done:
-                self._idle_done_invoked.add(node_id)
-
-            if material:
+            if before != after:
                 for port_name in ports_to_clear:
                     node.clear_input_occupancy(port_name)
                 progressed = True
-                if len(declared_ports) == 0:
-                    self._zero_input_completed.add(node_id)
         return progressed
 
     def step(self) -> bool:

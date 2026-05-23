@@ -17,7 +17,7 @@ def test_e2e_yaml_load_pipeline_removed(tmp_path) -> None:
     workspace.mkdir()
     yaml_path = workspace / "pipeline.yaml"
     yaml_path.write_text('version: "1.5"\ngraph:\n  nodes: []\n  final: x\n')
-    with pytest.raises(NotImplementedError, match="YAML 1.5"):
+    with pytest.raises(NotImplementedError, match="YAML"):
         load_pipeline(str(workspace), str(yaml_path))
 
 

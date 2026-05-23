@@ -1,20 +1,21 @@
 {
+  "kind": "pipe",
+  "version": "1.7",
   "pipe": {
-    "input_ports": ["incoming"],
-    "output_ports": {
+    "outputs": {
       "greeting": "demo.message"
     }
   },
-  "nodes": {
-    "demo": {
-      "type": "hello_demo",
-      "params": {
-        "message": "Hello from NodeFlow!"
-      },
-      "input_ports": {
+  "nodes": [
+    {
+      "id": "demo",
+      "path": "examples/nodes/hello_demo/node.json",
+      "inputs": {
         "tick": "input.incoming"
       },
-      "output_ports": ["message"]
+      "config": {
+        "message": "Hello from NodeFlow!"
+      }
     }
-  }
+  ]
 }

@@ -2,14 +2,11 @@ from __future__ import annotations
 
 from types import MappingProxyType
 
-import pytest
-
 from nodeflow.core.base_node import BaseNode, ExecutionContext
 from nodeflow.core.pipe_spec import (
     NodeSpec,
     PipeDeclaration,
     PipeSpec,
-    PipeSpecValidationError,
     validate_executable_pipe_spec,
 )
 from nodeflow.core.source_ref import SourceRef
@@ -50,7 +47,7 @@ def test_validate_accepts_minimal_executable_spec() -> None:
     validate_executable_pipe_spec(_minimal_linear_spec())
 
 
-def test_validate_rejects_fan_out_same_source_to_two_inputs() -> None:
+def test_validate_accepts_fan_out_same_source_to_two_inputs() -> None:
     src = _PassNode()
     left = _PassNode()
     right = _PassNode()
@@ -84,5 +81,4 @@ def test_validate_rejects_fan_out_same_source_to_two_inputs() -> None:
             ),
         },
     )
-    with pytest.raises(PipeSpecValidationError, match="fan-out"):
-        validate_executable_pipe_spec(spec)
+    validate_executable_pipe_spec(spec)

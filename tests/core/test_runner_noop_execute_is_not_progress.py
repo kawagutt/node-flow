@@ -31,5 +31,5 @@ def test_runner_second_step_false_when_waiting_second_input() -> None:
         pipe_inputs={"p1": {"x": 1}},
     )
     assert runner.step() is True
-    assert n.read_status() == "ready"
+    assert n.read_status() == "idle"
     assert runner.step() is False

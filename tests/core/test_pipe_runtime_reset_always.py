@@ -1,4 +1,4 @@
-"""reset_child_nodes_for_pipe_execution clears ready children too (stale port state)."""
+"""reset_child_nodes_for_pipe_execution clears idle children too (stale port state)."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def test_reset_clears_input_on_ready_child() -> None:
     assert n.get_input_snapshot()
     reset_child_nodes_for_pipe_execution({"n": n})
     assert n.get_input_snapshot() == {}
-    assert n.read_status() == "ready"
+    assert n.read_status() == "idle"
 
 
 def test_reset_raises_when_child_executing() -> None:
