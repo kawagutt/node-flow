@@ -40,6 +40,7 @@ def _optional_config_scalar(
     *,
     default: str | None = None,
 ) -> str | None:
+    """Resolve a scalar from port input, then node params, then default (in that order)."""
     raw = _port_scalar(inputs, name)
     if raw is not None and str(raw).strip():
         return str(raw).strip()
@@ -88,10 +89,7 @@ class DevProcessFlowNode(PythonActionNode):
             _port_scalar(inputs, "exec_argv") or params.get("exec_argv"),
             label="exec_argv",
         )
-        codex_argv = _argv_list_param(
-            _port_scalar(inputs, "codex_argv") or params.get("codex_argv"),
-            label="codex_argv",
-        )
+        exec_model = _optional_config_scalar(inputs, params, "exec_model")
 
         force_blocking = parse_bool_param(params.get("force_review_blocking", False))
 
@@ -120,7 +118,7 @@ class DevProcessFlowNode(PythonActionNode):
                 run_spec_plan_on_start=run_spec_plan_on_start,
                 human_comment_text=str(_port_scalar(inputs, "human_comment_text") or ""),
                 exec_argv=exec_argv,
-                codex_argv=codex_argv,
+                exec_model=exec_model,
                 force_review_blocking=force_blocking,
                 workspace_strategy=workspace_strategy,
                 exec_worker_kind=exec_worker_kind,

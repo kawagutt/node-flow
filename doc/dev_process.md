@@ -1,5 +1,13 @@
 # Dev Process Flow
 
+## Breaking changes (v1 refactor)
+
+- **`codex_argv` removed** — use **`exec_argv`** only.
+- **`standard` preset**: 5 reviewers → **3** (`review_diff`, `review_tests`, `review_spec`).
+- **`deep`**: only preset with full **5** reviewers (adds `review_wide`, `review_spec_revision`).
+- **`light`**: 2 reviewers (`review_diff`, `review_tests`).
+- Optional **`exec_model`** in checkpoint: audit/display metadata only; model selection stays in `exec_argv`.
+
 **v1 (2026-05-24): P0–P8 complete.** Core flow, real Codex smokes (`record_only` + `git_merge_branch`), stage interactive input, and named-pipe CLI.
 
 - **Recommended entry point:** `nodeflow --pipe dev-process` — see [dev_process_p8_named_pipe.md](./dev_process_p8_named_pipe.md)
@@ -64,7 +72,15 @@ Codex runs first; **`collect_diff` runs after Codex** so review receives post-im
 
 ## P2 — review presets
 
-`dev_process.review_depth_preset`: `light` (diff + tests), `standard` (5 reviewers), `deep` (same set as standard in v1).  
+`dev_process.review_depth_preset`:
+
+| preset | reviewers |
+|--------|-----------|
+| `light` | `review_diff`, `review_tests` |
+| `standard` (default) | `review_diff`, `review_tests`, `review_spec` |
+| `deep` | all five: + `review_wide`, `review_spec_revision` |
+
+Per-reviewer `max_diff_chars` is defined in `review_prompt_limits.py` (paired with preset contract).  
 Leaf registry: `dev_process.review_prompt.*`.
 
 ## P3 — exec evidence
@@ -159,7 +175,9 @@ nodeflow -w /path/to/repo-root examples/pipes/dev_process/dev_process.json \
 Input ports or node `default_config`: `workspace_strategy`, `exec_worker_kind` (input port first, then params, then start defaults).  
 On resume, a supplied value must match the checkpoint or the flow fails.
 
-`exec_argv` / `codex_argv`: pass via node `params`, PipeSpec list inputs, or CLI JSON: `-i exec_argv='["codex","exec"]'`.  
+`exec_argv`: pass via node `params`, PipeSpec list inputs, or CLI JSON: `-i exec_argv='["codex","exec"]'`.  
+Optional `exec_model` on start: audit/display metadata only (execution model is selected in `exec_argv`).  
+Set via PipeSpec / `DevProcessFlowNode` port or `params` only — not exposed on `nodeflow-dev-process` / `nodeflow --pipe dev-process` CLI flags. On resume, an explicit `exec_model` must match the checkpoint.  
 CLI `-i` values starting with `[` or `{` are parsed as JSON (arrays/objects).
 
 Scalar `-i` values are wrapped for PipeSpec delivery; `dev_process.flow` accepts both flat and per-port dict payloads.

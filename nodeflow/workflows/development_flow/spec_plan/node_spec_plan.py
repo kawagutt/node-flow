@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import subprocess
 from pathlib import Path
 from types import MappingProxyType
@@ -176,34 +175,6 @@ class CollectRepoContextNode(PythonActionNode):
             max_bytes=excerpt_max_bytes,
         )
 
-        repo_context_block = (
-            f"Repository status (git status --short):\n{status_short or '(clean)'}\n\n"
-            f"Changed files (up to 50):\n{json.dumps(changed_files, ensure_ascii=False)}\n\n"
-            f"Diff excerpt vs {base_ref}:\n{diff_excerpt or '(empty)'}\n\n"
-            "## Untracked paths (git ls-files --others --exclude-standard)\n"
-            f"{json.dumps(untracked_files, ensure_ascii=False)}\n\n"
-            "## Untracked file excerpts (text only; may be truncated)\n"
-            f"{json.dumps(untracked_excerpts, ensure_ascii=False, indent=2)}\n"
-        )
-
-        revision_block = ""
-        if revision_context:
-            revision_text = (
-                revision_context
-                if isinstance(revision_context, str)
-                else json.dumps(revision_context, ensure_ascii=False, indent=2)
-            )
-            revision_block = f"## Revision context\n{revision_text}\n\n"
-
-        codex_body = (
-            "Draft SPEC and PLAN for the following task.\n\n"
-            f"## Task\n{task_prompt}\n\n"
-            f"## Base ref\n{base_ref}\n\n"
-            f"{revision_block}"
-            "## Repository context\n"
-            f"{repo_context_block}\n"
-        )
-
         checkpoint_request = {
             "ok": True,
             "stage": "spec_plan",
@@ -239,7 +210,5 @@ class CollectRepoContextNode(PythonActionNode):
                 "untracked_file_excerpts": untracked_excerpts,
                 "untracked_ls_returncode": rc_untracked,
             },
-            "codex_task_prompt": {"text": codex_body},
-            "task_meta": {"task_type": "spec_plan"},
             "checkpoint_request": checkpoint_request,
         }

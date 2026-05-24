@@ -287,6 +287,7 @@ def build_review_prompt(
     test_result: Dict[str, Any],
     approved_spec: str,
     approved_plan: str,
+    prompt_params: Dict[str, Any] | None = None,
 ) -> str:
     from nodeflow.workflows.development_flow.review.build_diff_review_prompt import (
         BuildDiffReviewPromptNode,
@@ -324,7 +325,7 @@ def build_review_prompt(
             "test_result": test_result,
             "approved_spec_plan": {"spec": approved_spec, "plan": approved_plan},
         },
-        {},
+        dict(prompt_params or {}),
     )
     prompt = out.get("codex_task_prompt") or {}
     if isinstance(prompt, dict):
@@ -338,13 +339,17 @@ def aggregate_reviews(
     test_result: Dict[str, Any],
     diff_result: Dict[str, Any],
     spec_revision_needed_default: bool = False,
+    expected_review_keys: Tuple[str, ...] | None = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     from nodeflow.workflows.development_flow.review.aggregate_reviews import AggregateReviewsNode
 
     node = AggregateReviewsNode()
+    params: Dict[str, Any] = {"spec_revision_needed_default": spec_revision_needed_default}
+    if expected_review_keys is not None:
+        params["expected_review_keys"] = list(expected_review_keys)
     out = execute_or_raise(
         node,
         {**review_inputs, "test_result": test_result, "diff_result": diff_result},
-        {"spec_revision_needed_default": spec_revision_needed_default},
+        params,
     )
     return out.get("review_result") or {}, out.get("checkpoint_request") or {}

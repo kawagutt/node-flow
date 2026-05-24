@@ -12,7 +12,7 @@
     "workspace_strategy",
     "exec_worker_kind",
     "exec_argv",
-    "codex_argv",
+    "exec_model",
     "merge_policy"
   ],
   "output_ports": ["flow_output"],

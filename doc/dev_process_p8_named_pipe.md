@@ -1,5 +1,7 @@
 # Dev Process — P8 Named Pipe + Stage Input
 
+**Breaking (v1 refactor):** `codex_argv` removed (use `exec_argv` only). `standard` review preset is 3 reviewers; `deep` is the full 5.
+
 P8 adds a unified NodeFlow entry point and stage-level interactive input collection. It does **not** grow the dev-process orchestration surface.
 
 Related:

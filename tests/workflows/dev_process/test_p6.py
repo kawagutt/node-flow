@@ -263,7 +263,7 @@ def _commit_during_implement(monkeypatch: pytest.MonkeyPatch) -> None:
         return out
 
     monkeypatch.setattr(
-        "nodeflow.workflows.dev_process.flow_runner.run_implement_stage",
+        "nodeflow.workflows.dev_process.flow_actions.run_implement_stage",
         _wrapped,
     )
 
@@ -526,7 +526,7 @@ def test_merge_summary_failure_after_git_merge_uses_fallback_and_merged_state(
         raise NodeExecutionFailure("summary boom")
 
     monkeypatch.setattr(
-        "nodeflow.workflows.dev_process.flow_runner.write_development_summary",
+        "nodeflow.workflows.dev_process.flow_merge.write_development_summary",
         _boom_summary,
     )
     merged = DevProcessFlowNode().execute(

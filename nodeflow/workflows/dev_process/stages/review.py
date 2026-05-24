@@ -17,6 +17,7 @@ from nodeflow.workflows.dev_process.reuse import (
     write_stage_checkpoint,
 )
 from nodeflow.workflows.dev_process.review_presets import normalize_preset, reviewer_keys_for_preset
+from nodeflow.workflows.dev_process.review_prompt_limits import prompt_params_for_reviewer
 from nodeflow.workflows.dev_process.workers import ExecWorker, resolve_exec_worker, run_exec
 
 
@@ -29,6 +30,7 @@ def _run_one_reviewer(
     approved_spec: str,
     approved_plan: str,
     reviewer_key: str,
+    preset: str,
     exec_argv: list[str],
     worker: ExecWorker,
 ) -> tuple[Dict[str, Any], str, str]:
@@ -40,6 +42,7 @@ def _run_one_reviewer(
         test_result=test_result,
         approved_spec=approved_spec,
         approved_plan=approved_plan,
+        prompt_params=prompt_params_for_reviewer(preset, reviewer_key),
     )
     cwd = str(repo_root)
     er = run_exec(worker, prompt=text, cwd=cwd, argv=exec_argv, timeout=EXEC_TIMEOUT_SECONDS)
@@ -57,14 +60,12 @@ def run_review_stage(
     diff_result: Dict[str, Any],
     test_result: Dict[str, Any],
     exec_argv: list[str] | None = None,
-    codex_argv: list[str] | None = None,
     force_blocking: bool = False,
     review_depth_preset: str = "standard",
     exec_worker_kind: Optional[str] = None,
 ) -> Dict[str, Any]:
     worker = resolve_exec_worker(exec_worker_kind)
-    argv = exec_argv if exec_argv is not None else codex_argv
-    argv = argv if argv is not None else review_argv(blocking=force_blocking)
+    argv = exec_argv if exec_argv is not None else review_argv(blocking=force_blocking)
     preset = normalize_preset(review_depth_preset)
     active_keys = reviewer_keys_for_preset(preset)
     expected = set(active_keys)
@@ -79,6 +80,7 @@ def run_review_stage(
             approved_spec=approved_spec,
             approved_plan=approved_plan,
             reviewer_key=input_key,
+            preset=preset,
             exec_argv=argv,
             worker=worker,
         )
@@ -109,6 +111,7 @@ def run_review_stage(
         review_inputs=review_inputs,
         test_result=test_result,
         diff_result=diff_result,
+        expected_review_keys=active_keys,
     )
 
     stage_result = write_stage_checkpoint(

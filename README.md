@@ -143,9 +143,8 @@ nodeflow/
 │   ├── exec/             # e.g. node_exec.py + per-provider modules
 │   └── git/collect_diff/
 └── workflows/
-    ├── development_flow/   # ActionNodes + helpers; node_development_flow.py
-    ├── review_with_claude/
-    └── implement_with_codex/
+    ├── dev_process/          # v1 product flow (checkpoint / evidence / CLI)
+    └── development_flow/     # ActionNode parts library (used via dev_process/reuse.py)
 ```
 
 ## Custom nodes

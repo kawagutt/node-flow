@@ -24,7 +24,6 @@ def run_implement_stage(
     approved_spec: str,
     approved_plan: str,
     exec_argv: list[str] | None = None,
-    codex_argv: list[str] | None = None,
     test_argv: list[str] | None = None,
     rework_context: str | None = None,
     exec_worker_kind: Optional[str] = None,
@@ -41,8 +40,7 @@ def run_implement_stage(
         "Leave the worktree clean except for ignored paths.\n"
     )
     worker: ExecWorker = resolve_exec_worker(exec_worker_kind)
-    argv = exec_argv if exec_argv is not None else codex_argv
-    argv = argv if argv is not None else implement_argv()
+    argv = exec_argv if exec_argv is not None else implement_argv()
     cwd = str(repo_root)
     execution_output = run_exec(
         worker, prompt=prompt, cwd=cwd, argv=argv, timeout=EXEC_TIMEOUT_SECONDS

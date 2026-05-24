@@ -121,7 +121,7 @@ on disposable repos only. Prefer `--sandbox workspace-write` when bubblewrap wor
 263 passed (pytest, full suite)
 ```
 
-(Current suite: **280+** after P7 CLI tests.)
+(Current test count may change; see latest `pytest` output.)
 
 New/updated coverage:
 
@@ -183,7 +183,7 @@ Verified:
 
 | Item | Status |
 |------|--------|
-| P0–P6.5 core + tests | ✅ (280+ pytest) |
+| P0–P6.5 core + tests | ✅ (see latest pytest) |
 | real Codex record_only smoke | ✅ |
 | P7 wrapper (`nodeflow-dev-process`) | ✅ |
 | wrapper real Codex record_only smoke | ✅ (~87s) |

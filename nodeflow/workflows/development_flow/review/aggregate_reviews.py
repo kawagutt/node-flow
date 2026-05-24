@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import MappingProxyType
 from typing import Any, Dict, List, Tuple
 
-from nodeflow.core.base_node import ExecutionContext
+from nodeflow.core.base_node import ExecutionContext, NodeExecutionFailure
 from nodeflow.core.node_kinds import PythonActionNode
 from nodeflow.workflows.development_flow.review.review_parse import (
     parse_review_contract_from_execution_output,
@@ -128,11 +128,31 @@ class AggregateReviewsNode(PythonActionNode):
             inputs.get("diff_result") if isinstance(inputs.get("diff_result"), dict) else {}
         )
 
+        raw_expected = params.get("expected_review_keys")
+        if raw_expected is None:
+            expected_keys = {input_key for _, (input_key, _) in review_map.items()}
+        else:
+            if not isinstance(raw_expected, (list, tuple)) or not all(
+                isinstance(x, str) for x in raw_expected
+            ):
+                raise NodeExecutionFailure(
+                    "expected_review_keys must be a list of reviewer input_key strings"
+                )
+            expected_keys = set(raw_expected)
+            valid_keys = {input_key for _, (input_key, _) in review_map.items()}
+            unknown = expected_keys - valid_keys
+            if unknown:
+                raise NodeExecutionFailure(
+                    f"expected_review_keys contains unknown keys: {sorted(unknown)!r}"
+                )
+
         blocking_findings: List[Dict[str, Any]] = []
         non_blocking_findings: List[Dict[str, Any]] = []
         spec_flags: List[bool] = []
 
         for label, (input_key, area) in review_map.items():
+            if input_key not in expected_keys:
+                continue
             er = inputs.get(input_key)
             if not isinstance(er, dict):
                 blocking_findings.append(

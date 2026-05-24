@@ -14,12 +14,16 @@ VALID_PRESETS = frozenset({PRESET_LIGHT, PRESET_STANDARD, PRESET_DEEP})
 _REVIEWER_KEYS_LIGHT: Tuple[str, ...] = ("review_diff", "review_tests")
 _REVIEWER_KEYS_STANDARD: Tuple[str, ...] = (
     "review_diff",
+    "review_tests",
+    "review_spec",
+)
+_REVIEWER_KEYS_DEEP: Tuple[str, ...] = (
+    "review_diff",
     "review_wide",
     "review_tests",
     "review_spec",
     "review_spec_revision",
 )
-_REVIEWER_KEYS_DEEP: Tuple[str, ...] = _REVIEWER_KEYS_STANDARD
 
 
 def normalize_preset(raw: str | None) -> str:
@@ -38,3 +42,13 @@ def reviewer_keys_for_preset(preset: str) -> Tuple[str, ...]:
     if preset == PRESET_DEEP:
         return _REVIEWER_KEYS_DEEP
     return _REVIEWER_KEYS_STANDARD
+
+
+def expected_review_evidence_count(preset: str) -> int:
+    """Number of review-stage exec evidence files for one review run."""
+    return len(reviewer_keys_for_preset(preset))
+
+
+def expected_exec_evidence_count_for_full_flow(preset: str) -> int:
+    """spec_plan + implement + review reviewers for one complete implement/review cycle."""
+    return 2 + expected_review_evidence_count(preset)

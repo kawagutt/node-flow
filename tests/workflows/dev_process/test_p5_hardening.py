@@ -262,6 +262,7 @@ def test_revise_spec_resets_human_gates_final(tmp_path: Path) -> None:
             "action": "revise_spec",
             "repo_root": str(ctx["repo"]),
             "flow_checkpoint_path": cp2,
+            "task_prompt": "narrow the scope",
         },
         {},
     )["flow_output"]
@@ -480,4 +481,51 @@ def test_exec_argv_persisted_in_checkpoint(tmp_path: Path) -> None:
     body = load_flow_checkpoint(cp)
     assert body["dev_process"]["exec_argv"] == argv
     assert _stored_exec_argv(body) == argv
-    assert _resolve_exec_argv(None, None, body=body) == argv
+    assert _resolve_exec_argv(None, body=body) == argv
+
+
+def test_exec_model_from_params_on_start(tmp_path: Path) -> None:
+    from nodeflow.workflows.dev_process.checkpoint import load_flow_checkpoint
+
+    repo = tmp_path / "repo_exec_model_params"
+    repo.mkdir()
+    git_repo_with_commit(repo)
+    out = DevProcessFlowNode().execute(
+        {"action": "start", "repo_root": str(repo), "task_prompt": "model params"},
+        {"exec_model": "from-params-only"},
+    )["flow_output"]
+    body = load_flow_checkpoint(out["flow_result"]["flow_checkpoint_path"])
+    assert body["dev_process"]["exec_model"] == "from-params-only"
+
+
+def test_exec_model_mismatch_on_resume(tmp_path: Path) -> None:
+    import pytest
+
+    from nodeflow.core.base_node import NodeExecutionFailure
+    from nodeflow.workflows.dev_process.hermetic_argv import spec_plan_argv
+
+    repo = tmp_path / "repo_exec_model_resume"
+    repo.mkdir()
+    git_repo_with_commit(repo)
+    argv = spec_plan_argv()
+    start = DevProcessFlowNode().execute(
+        {
+            "action": "start",
+            "repo_root": str(repo),
+            "task_prompt": "model resume",
+            "exec_argv": argv,
+            "exec_model": "gpt-test",
+        },
+        {},
+    )["flow_output"]
+    cp = start["flow_result"]["flow_checkpoint_path"]
+    with pytest.raises(NodeExecutionFailure, match="exec_model mismatch"):
+        DevProcessFlowNode().execute(
+            {
+                "action": "approve_spec",
+                "repo_root": str(repo),
+                "flow_checkpoint_path": cp,
+                "exec_model": "other-model",
+            },
+            {},
+        )
