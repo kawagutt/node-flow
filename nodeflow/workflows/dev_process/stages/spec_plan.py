@@ -11,6 +11,7 @@ from nodeflow.workflows.dev_process.evidence import record_exec_evidence
 from nodeflow.workflows.dev_process.hermetic_argv import spec_plan_argv
 from nodeflow.workflows.dev_process.paths import assert_path_under_run_dir
 from nodeflow.workflows.dev_process.reuse import collect_repo_context, write_stage_checkpoint
+from nodeflow.workflows.dev_process.constants import EXEC_TIMEOUT_SECONDS
 from nodeflow.workflows.dev_process.workers import ExecWorker, resolve_exec_worker, run_exec
 
 
@@ -61,7 +62,7 @@ def run_spec_plan_stage(
     argv = exec_argv if exec_argv is not None else codex_argv
     argv = argv if argv is not None else spec_plan_argv()
     cwd = str(repo_root)
-    execution_output = run_exec(worker, prompt=prompt_text, cwd=cwd, argv=argv, timeout=120)
+    execution_output = run_exec(worker, prompt=prompt_text, cwd=cwd, argv=argv, timeout=EXEC_TIMEOUT_SECONDS)
     evidence_path = record_exec_evidence(
         artifact_root=artifact_root,
         run_id=run_id,

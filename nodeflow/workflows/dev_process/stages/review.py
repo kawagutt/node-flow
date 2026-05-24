@@ -16,6 +16,7 @@ from nodeflow.workflows.dev_process.reuse import (
     write_stage_checkpoint,
 )
 from nodeflow.workflows.dev_process.review_presets import normalize_preset, reviewer_keys_for_preset
+from nodeflow.workflows.dev_process.constants import EXEC_TIMEOUT_SECONDS
 from nodeflow.workflows.dev_process.workers import ExecWorker, resolve_exec_worker, run_exec
 
 
@@ -41,7 +42,7 @@ def _run_one_reviewer(
         approved_plan=approved_plan,
     )
     cwd = str(repo_root)
-    er = run_exec(worker, prompt=text, cwd=cwd, argv=exec_argv, timeout=120)
+    er = run_exec(worker, prompt=text, cwd=cwd, argv=exec_argv, timeout=EXEC_TIMEOUT_SECONDS)
     return er, text, cwd
 
 

@@ -57,6 +57,28 @@ def test_load_and_kick_dev_process_workspace_strategy_via_pipe(tmp_path) -> None
     assert out["flow_output"]["run_context"]["workspace_strategy"] == "git_worktree"
 
 
+def test_load_and_kick_dev_process_exec_argv_json_array(tmp_path) -> None:
+    from nodeflow.workflows.dev_process.hermetic_argv import spec_plan_argv
+    from tests.workflows.dev_process.git_fixtures import git_repo_with_commit
+
+    repo = tmp_path / "repo_argv"
+    repo.mkdir()
+    git_repo_with_commit(repo)
+    repo_root = Path(__file__).resolve().parents[1]
+    out = load_and_kick_pipeline(
+        str(repo_root),
+        "examples/pipes/dev_process/dev_process.json",
+        initial_inputs={
+            "action": "start",
+            "repo_root": str(repo),
+            "task_prompt": "argv array",
+            "exec_argv": spec_plan_argv(),
+        },
+    )
+    fr = out["flow_output"]["flow_result"]
+    assert fr["state"] == "awaiting_spec_approval"
+
+
 def test_load_and_kick_dev_process_start_initialized(tmp_path) -> None:
     from tests.workflows.dev_process.git_fixtures import git_repo_with_commit
 

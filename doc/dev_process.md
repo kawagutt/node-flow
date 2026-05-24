@@ -205,3 +205,5 @@ Example: `examples/reference/dev_process/codex_params.example.json`.
 ## Real Codex dry-run
 
 See [dev_process_real_codex_dry_run.md](./dev_process_real_codex_dry_run.md) for manual smoke-test procedures with real Codex, `git_worktree`, and merge policies (before P7 wrapper UX).
+
+Recorded real Codex smoke result (2026-05-24): [dev_process_smoke_log.md](./dev_process_smoke_log.md).

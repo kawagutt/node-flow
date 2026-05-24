@@ -117,13 +117,29 @@ def _clear_git_worktree_on_revise(body: Dict[str, Any]) -> None:
     _increment_workspace_attempt(body)
 
 
+def _stored_exec_argv(body: Dict[str, Any]) -> Optional[list[str]]:
+    dp = body.get("dev_process") if isinstance(body.get("dev_process"), dict) else {}
+    raw = dp.get("exec_argv")
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not all(isinstance(x, str) for x in raw):
+        return None
+    return raw
+
+
 def _resolve_exec_argv(
     exec_argv: Optional[list[str]],
     codex_argv: Optional[list[str]],
+    *,
+    body: Optional[Dict[str, Any]] = None,
 ) -> Optional[list[str]]:
     if exec_argv is not None:
         return exec_argv
-    return codex_argv
+    if codex_argv is not None:
+        return codex_argv
+    if body is not None:
+        return _stored_exec_argv(body)
+    return None
 
 
 def _exec_worker_kind(body: Dict[str, Any]) -> str:
@@ -286,11 +302,11 @@ def run_flow(
     exec_worker_kind: Optional[str] = None,
     merge_policy: Optional[str] = None,
 ) -> Dict[str, Any]:
-    argv = _resolve_exec_argv(exec_argv, codex_argv)
     if action == ACTION_START and flow_checkpoint_path:
         raise NodeExecutionFailure("start does not accept flow_checkpoint_path")
 
     if action == ACTION_START:
+        argv = _resolve_exec_argv(exec_argv, codex_argv)
         return _handle_start(
             repo_root=repo_root,
             task_prompt=task_prompt,
@@ -329,6 +345,13 @@ def run_flow(
             raise NodeExecutionFailure(
                 f"merge_policy mismatch on resume: checkpoint {stored_mp!r} != request {merge_policy!r}"
             )
+    stored_argv = _stored_exec_argv(body)
+    requested_argv = exec_argv if exec_argv is not None else codex_argv
+    if requested_argv is not None and stored_argv is not None and requested_argv != stored_argv:
+        raise NodeExecutionFailure(
+            f"exec_argv mismatch on resume: checkpoint {stored_argv!r} != request {requested_argv!r}"
+        )
+    argv = _resolve_exec_argv(exec_argv, codex_argv, body=body)
     stored_run_id = str(run_context.get("run_id") or "")
     if run_id and run_id != stored_run_id:
         raise NodeExecutionFailure(
@@ -422,6 +445,7 @@ def _handle_start(
             "merge_policy": policy,
             "workspace_attempt": 1,
             "human_gates": {"spec": "pending", "final": "not_reached"},
+            **({"exec_argv": exec_argv} if exec_argv else {}),
         },
         "stages": _empty_stages(),
         "task_prompt": task_prompt,

@@ -16,15 +16,13 @@ from nodeflow.core.runner import Runner
 
 
 def _normalize_pipe_inputs(initial_inputs: Dict[str, Any]) -> Dict[str, Any]:
-    """Wrap scalar CLI values so Runner can deliver dict payloads per port."""
+    """Wrap CLI values so Runner can deliver dict payloads per port."""
     out: Dict[str, Any] = {}
     for key, value in initial_inputs.items():
         if isinstance(value, dict):
             out[key] = value
-        elif isinstance(value, str):
-            out[key] = {key: value}
         else:
-            out[key] = value
+            out[key] = {key: value}
     return out
 
 

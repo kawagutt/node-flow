@@ -47,6 +47,20 @@ Read [dev_process.md](./dev_process.md) for architecture, state machine, and mer
 
 2. **`codex` CLI** on `PATH` and authenticated for your environment.
 
+   Install example: `npm install -g @openai/codex` (ensure the npm global `bin` directory is on `PATH`).
+
+   On hosts **without bubblewrap / user namespaces**, prefer:
+
+   ```bash
+   -i exec_argv='["codex","exec","--dangerously-bypass-approvals-and-sandbox"]'
+   ```
+
+   on disposable repos only. `--full-auto` is deprecated (Codex 0.133+ warns to use `--sandbox workspace-write`).
+
+   **`exec_argv` is stored in the checkpoint at `start`**; resume actions do not need to repeat it unless you intentionally override (mismatch fails).
+
+   Recorded smoke run: [dev_process_smoke_log.md](./dev_process_smoke_log.md).
+
 3. **Disposable git repo** (example):
 
    ```bash
@@ -70,7 +84,7 @@ Read [dev_process.md](./dev_process.md) for architecture, state machine, and mer
    }
 
    save_cp() {
-     python -c "import sys,json; print(json.load(sys.stdin)['flow_output']['flow_result']['flow_checkpoint_path'])"
+     $NF/.venv/bin/python -c "import sys,json; t=sys.stdin.read(); i=t.find('{'); print(json.loads(t[i:])['flow_output']['flow_result']['flow_checkpoint_path'])"
    }
    ```
 
@@ -147,7 +161,7 @@ CP=$(run_nf \
   -i task_prompt='small safe dry-run task' \
   -i workspace_strategy=git_worktree \
   -i merge_policy=record_only \
-  -i exec_argv='["codex","exec","--full-auto"]' \
+  -i exec_argv='["codex","exec","--dangerously-bypass-approvals-and-sandbox"]' \
   | tee /tmp/nf_start.json | save_cp)
 ```
 
@@ -255,7 +269,7 @@ Use `git_merge_branch` only when you expect **committed changes** on the attempt
      -i task_prompt='merge dry-run' \
      -i workspace_strategy=git_worktree \
      -i merge_policy=git_merge_branch \
-     -i exec_argv='["codex","exec","--full-auto"]' \
+     -i exec_argv='["codex","exec","--dangerously-bypass-approvals-and-sandbox"]' \
      | tee /tmp/nf_start_merge.json | save_cp)
    ```
 
@@ -292,7 +306,7 @@ CP=$(run_nf \
   -i task_prompt='current repo smoke' \
   -i workspace_strategy=current_repo \
   -i merge_policy=record_only \
-  -i exec_argv='["codex","exec","--full-auto"]' \
+  -i exec_argv='["codex","exec","--dangerously-bypass-approvals-and-sandbox"]' \
   | tee /tmp/nf_start_current.json | save_cp)
 ```
 

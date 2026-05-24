@@ -29,5 +29,8 @@ WORKSPACE_STRATEGY_GIT_WORKTREE = "git_worktree"
 
 EXEC_WORKER_CODEX = "codex"
 
+# Real Codex runs (spec_plan / implement / review) need more than quick hermetic stubs.
+EXEC_TIMEOUT_SECONDS = 300
+
 MERGE_POLICY_RECORD_ONLY = "record_only"
 MERGE_POLICY_GIT_MERGE_BRANCH = "git_merge_branch"

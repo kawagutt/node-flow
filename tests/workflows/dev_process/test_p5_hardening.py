@@ -455,3 +455,29 @@ def test_exec_argv_via_params_hermetic(tmp_path: Path) -> None:
     assert out["flow_result"]["state"] == STATE_AWAITING_SPEC
     artifact_root = Path(out["run_context"]["artifact_root"])
     assert (artifact_root / "spec_plan" / "spec.md").is_file()
+
+
+def test_exec_argv_persisted_in_checkpoint(tmp_path: Path) -> None:
+    from nodeflow.workflows.dev_process.checkpoint import load_flow_checkpoint
+    from nodeflow.workflows.dev_process.flow_runner import _resolve_exec_argv, _stored_exec_argv
+    from nodeflow.workflows.dev_process.hermetic_argv import spec_plan_argv
+
+    repo = tmp_path / "repo_exec_argv_resume"
+    repo.mkdir()
+    git_repo_with_commit(repo)
+    argv = spec_plan_argv()
+    start = DevProcessFlowNode().execute(
+        {
+            "action": "start",
+            "repo_root": str(repo),
+            "task_prompt": "argv resume",
+            "exec_argv": argv,
+            "workspace_strategy": "git_worktree",
+        },
+        {},
+    )["flow_output"]
+    cp = start["flow_result"]["flow_checkpoint_path"]
+    body = load_flow_checkpoint(cp)
+    assert body["dev_process"]["exec_argv"] == argv
+    assert _stored_exec_argv(body) == argv
+    assert _resolve_exec_argv(None, None, body=body) == argv
