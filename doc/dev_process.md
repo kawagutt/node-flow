@@ -201,3 +201,7 @@ Allowed git commands in `git_merge_branch` are local-only: `status`, `show-ref`,
 
 Set on `start` via input port or node `default_config` (validated at start).  
 Example: `examples/reference/dev_process/codex_params.example.json`.
+
+## Real Codex dry-run
+
+See [dev_process_real_codex_dry_run.md](./dev_process_real_codex_dry_run.md) for manual smoke-test procedures with real Codex, `git_worktree`, and merge policies (before P7 wrapper UX).
