@@ -4,17 +4,13 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
-from nodeflow.core.base_node import NodeExecutionFailure
-from nodeflow.nodes.exec.codex_exec import CodexExecNode
 from nodeflow.workflows.dev_process.evidence import record_exec_evidence
+from nodeflow.workflows.dev_process.hermetic_argv import implement_argv
 from nodeflow.workflows.dev_process.paths import assert_path_under_run_dir
 from nodeflow.workflows.dev_process.reuse import collect_diff, run_tests, write_stage_checkpoint
-
-
-def _hermetic_implement_argv() -> list[str]:
-    return [sys.executable, "-c", "print('implementation stub ok')"]
+from nodeflow.workflows.dev_process.workers import ExecWorker, resolve_exec_worker, run_exec
 
 
 def run_implement_stage(
@@ -26,30 +22,25 @@ def run_implement_stage(
     base_revision: str,
     approved_spec: str,
     approved_plan: str,
+    exec_argv: list[str] | None = None,
     codex_argv: list[str] | None = None,
     test_argv: list[str] | None = None,
+    exec_worker_kind: Optional[str] = None,
 ) -> Dict[str, Any]:
     prompt = (
         "Implement the approved plan in the repository working tree.\n\n"
         f"## Spec\n{approved_spec}\n\n## Plan\n{approved_plan}\n\n## Task\n{task_prompt}\n"
     )
-    argv = codex_argv if codex_argv is not None else _hermetic_implement_argv()
+    worker: ExecWorker = resolve_exec_worker(exec_worker_kind)
+    argv = exec_argv if exec_argv is not None else codex_argv
+    argv = argv if argv is not None else implement_argv()
     cwd = str(repo_root)
-    codex = CodexExecNode()
-    exec_out = codex.execute(
-        {"prompt": prompt},
-        {"argv": argv, "timeout": 120, "cwd": cwd},
-    )
-    execution_output = exec_out.get("execution_output") or {}
-    if not execution_output.get("ok"):
-        raise NodeExecutionFailure(
-            f"implement codex_exec failed: {execution_output.get('stderr') or execution_output}"
-        )
+    execution_output = run_exec(worker, prompt=prompt, cwd=cwd, argv=argv, timeout=120)
     evidence_path = record_exec_evidence(
         artifact_root=artifact_root,
         run_id=run_id,
         stage="implement",
-        invoker="codex_exec",
+        invoker=worker.invoker,
         execution_output=execution_output,
         argv=argv,
         prompt=prompt,

@@ -3,23 +3,15 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from nodeflow.core.base_node import NodeExecutionFailure
-from nodeflow.nodes.exec.codex_exec import CodexExecNode
 from nodeflow.workflows.dev_process.evidence import record_exec_evidence
+from nodeflow.workflows.dev_process.hermetic_argv import spec_plan_argv
 from nodeflow.workflows.dev_process.paths import assert_path_under_run_dir
 from nodeflow.workflows.dev_process.reuse import collect_repo_context, write_stage_checkpoint
-
-
-def _hermetic_codex_argv() -> list[str]:
-    script = (
-        "import json; "
-        'print(json.dumps({"spec": "# Spec\\n\\nTask spec.", "plan": "# Plan\\n\\nTask plan."}))'
-    )
-    return [sys.executable, "-c", script]
+from nodeflow.workflows.dev_process.workers import ExecWorker, resolve_exec_worker, run_exec
 
 
 def _parse_spec_plan_stdout(stdout: str) -> Tuple[str, str]:
@@ -45,8 +37,10 @@ def run_spec_plan_stage(
     run_id: str,
     task_prompt: str,
     base_revision: str,
+    exec_argv: list[str] | None = None,
     codex_argv: list[str] | None = None,
     revision_context: str | None = None,
+    exec_worker_kind: Optional[str] = None,
 ) -> Dict[str, Any]:
     repo_context = collect_repo_context(
         repo_root=repo_root,
@@ -63,23 +57,16 @@ def run_spec_plan_stage(
     if revision_context:
         prompt_text += f"\n\nRevision context:\n{revision_context}"
 
-    argv = codex_argv if codex_argv is not None else _hermetic_codex_argv()
+    worker: ExecWorker = resolve_exec_worker(exec_worker_kind)
+    argv = exec_argv if exec_argv is not None else codex_argv
+    argv = argv if argv is not None else spec_plan_argv()
     cwd = str(repo_root)
-    codex = CodexExecNode()
-    exec_out = codex.execute(
-        {"prompt": prompt_text},
-        {"argv": argv, "timeout": 120, "cwd": cwd},
-    )
-    execution_output = exec_out.get("execution_output") or {}
-    if not execution_output.get("ok"):
-        raise NodeExecutionFailure(
-            f"spec_plan codex_exec failed: {execution_output.get('stderr') or execution_output}"
-        )
+    execution_output = run_exec(worker, prompt=prompt_text, cwd=cwd, argv=argv, timeout=120)
     evidence_path = record_exec_evidence(
         artifact_root=artifact_root,
         run_id=run_id,
         stage="spec_plan",
-        invoker="codex_exec",
+        invoker=worker.invoker,
         execution_output=execution_output,
         argv=argv,
         prompt=prompt_text,

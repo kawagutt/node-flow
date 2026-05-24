@@ -11,7 +11,8 @@ Outbound registry keys are **`dev_process.*` only**.
 ## Goals
 
 - Checkpoint/resume orchestration with explicit human gate states
-- Codex worker (P0); pluggable workers later
+- Codex exec worker (default); `params.exec_worker_kind` selects worker (`codex` in v1)
+- Workspace strategies: `current_repo` (default) or `git_worktree` (`params.workspace_strategy`)
 - Mechanical merge gate and review JSON contract
 - Exec evidence under `artifact_root/evidence/`
 
@@ -122,11 +123,38 @@ Every line: `ts`, `run_id`, `event` (required).
 
 Requires `awaiting_merge` (after `approve_final`), `merge_ready=true`, all stages `completed`, `blocking_count==0`, non-stale review, and expected `stages.*.evidence_paths` on disk.
 
+## P4 — exec workers
+
+Stages call `resolve_exec_worker(kind)` then `run_exec`. Default kind is `codex` (`CodexExecWorker` → `codex_exec` node).  
+Checkpoint stores `dev_process.exec_worker_kind`. Unknown kinds fail at stage start.
+
+## P5 — git_worktree workspace
+
+`PrepareWorkspaceNode` is a shared mechanical component; `dev_process` uses it only via `reuse.py`.  
+No `development_flow.*` composite registry is restored.
+
+On `approve_spec`, `prepare_workspace` with `strategy=git_worktree` creates  
+`artifact_root/worktrees/<attempt>/` via `git worktree add -b <planned_branch> ...` (first attempt)  
+or reattaches to the existing branch on later attempts after `revise_spec`.  
+`planned_branch_name` is `feat/nodeflow/<run_id>` (dots/underscores normalized).  
+Implement/review run in `workspace_context.workspace_root`; `run_context.workspace_root` stays frozen at source repo.  
+`revise_spec` removes the prior worktree, increments `dev_process.workspace_attempt`, and clears `workspace_context`.  
+`rework_implementation` passes `existing workspace_context` to reuse the same worktree.
+
 ## CLI
 
 ```bash
 nodeflow -w /path/to/repo-root examples/pipes/dev_process/dev_process.json \
-  -i action=start -i repo_root=/path/to/git/repo -i task_prompt='my task'
+  -i action=start -i repo_root=/path/to/git/repo -i task_prompt='my task' \
+  -i workspace_strategy=git_worktree
 ```
 
+Input ports or node `default_config`: `workspace_strategy`, `exec_worker_kind` (input port first, then params, then start defaults).  
+On resume, a supplied value must match the checkpoint or the flow fails.
+
+`exec_argv` / `codex_argv` are **PipeSpec / programmatic-only** in P5: pass via node `params` or wired list inputs.  
+The scalar `-i` CLI cannot pass list-valued inputs; do not use `-i exec_argv='[...]'` (string values fail validation).
+
 Scalar `-i` values are wrapped for PipeSpec delivery; `dev_process.flow` accepts both flat and per-port dict payloads.
+
+P5 assumes implementation workers do not commit. If workers may commit, `revise_spec` must reset the branch to `source_base_revision` or use an attempt-specific branch.

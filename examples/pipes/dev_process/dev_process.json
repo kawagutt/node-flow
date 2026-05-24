@@ -16,7 +16,11 @@
         "task_prompt": "input.task_prompt",
         "flow_checkpoint_path": "input.flow_checkpoint_path",
         "run_id": "input.run_id",
-        "human_comment_text": "input.human_comment_text"
+        "human_comment_text": "input.human_comment_text",
+        "workspace_strategy": "input.workspace_strategy",
+        "exec_worker_kind": "input.exec_worker_kind",
+        "exec_argv": "input.exec_argv",
+        "codex_argv": "input.codex_argv"
       }
     }
   ]

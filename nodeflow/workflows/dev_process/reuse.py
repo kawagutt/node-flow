@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
@@ -59,21 +60,67 @@ def prepare_workspace(
     source_repo_root: str,
     run_context: Dict[str, Any],
     strategy: str = "current_repo",
+    existing_workspace: Dict[str, Any] | None = None,
     ignored_dirty_prefixes: Tuple[str, ...] = (".nodeflow/",),
 ) -> Dict[str, Any]:
     from nodeflow.workflows.development_flow.prepare_workspace.node_prepare_workspace import (
         PrepareWorkspaceNode,
     )
 
-    df_rc = (
-        run_context_for_df(run_context) if "source_repo_root" not in run_context else run_context
-    )
+    if "source_repo_root" in run_context:
+        df_rc = dict(run_context)
+    else:
+        df_rc = run_context_for_df(run_context)
+        artifact_root = run_context.get("artifact_root")
+        if isinstance(artifact_root, str) and artifact_root.strip():
+            df_rc["artifact_root"] = artifact_root.strip()
+        attempt = run_context.get("workspace_attempt")
+        if isinstance(attempt, int) and attempt >= 1:
+            df_rc["workspace_attempt"] = attempt
+        subdir = run_context.get("worktree_subdirectory")
+        if isinstance(subdir, str) and subdir.strip():
+            df_rc["worktree_subdirectory"] = subdir.strip()
+    inputs: Dict[str, Any] = {
+        "source_repo_root": source_repo_root,
+        "run_context": df_rc,
+    }
+    if isinstance(existing_workspace, dict) and existing_workspace:
+        inputs["workspace_context"] = existing_workspace
     node = PrepareWorkspaceNode()
     out = node.execute(
-        {"source_repo_root": source_repo_root, "run_context": df_rc},
+        inputs,
         {"strategy": strategy, "ignored_dirty_prefixes": list(ignored_dirty_prefixes)},
     )
     return out.get("workspace_context") or {}
+
+
+def remove_git_worktree(
+    *,
+    source_repo_root: str,
+    artifact_root: str,
+    workspace_root: str,
+) -> None:
+    """Remove a git worktree only when workspace_root is under artifact_root/worktrees/."""
+    artifact = Path(artifact_root).resolve()
+    worktrees_root = (artifact / "worktrees").resolve()
+    path = Path(workspace_root).resolve()
+    try:
+        path.relative_to(worktrees_root)
+    except ValueError as e:
+        raise NodeExecutionFailure(
+            f"workspace_root must be under {worktrees_root}, got {path}"
+        ) from e
+    if not path.exists():
+        return
+    cp = subprocess.run(
+        ["git", "-C", source_repo_root, "worktree", "remove", "--force", str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if cp.returncode != 0:
+        err = (cp.stderr or cp.stdout or "").strip() or "git worktree remove failed"
+        raise NodeExecutionFailure(f"failed to remove git worktree {path}: {err}")
 
 
 def collect_repo_context(

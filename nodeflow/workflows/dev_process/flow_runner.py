@@ -18,12 +18,15 @@ from nodeflow.workflows.dev_process.constants import (
     ACTION_REVISE_SPEC,
     ACTION_REWORK,
     ACTION_START,
+    EXEC_WORKER_CODEX,
     STATE_AWAITING_FINAL,
     STATE_AWAITING_REVIEW,
     STATE_AWAITING_SPEC,
     STATE_FAILED,
     STATE_INITIALIZED,
     STATE_MERGED,
+    WORKSPACE_STRATEGY_CURRENT_REPO,
+    WORKSPACE_STRATEGY_GIT_WORKTREE,
 )
 from nodeflow.workflows.dev_process.evidence import assert_expected_stage_evidence
 from nodeflow.workflows.dev_process.paths import (
@@ -32,12 +35,15 @@ from nodeflow.workflows.dev_process.paths import (
     git_current_branch,
     git_head_revision,
     new_run_id,
+    planned_branch_name_for_run,
     resolve_git_toplevel,
     validate_run_id,
+    workspace_attempt_subdir,
 )
 from nodeflow.workflows.dev_process.reuse import (
     check_source_workspace,
     prepare_workspace,
+    remove_git_worktree,
     run_context_for_df,
 )
 from nodeflow.workflows.dev_process.stages import (
@@ -50,6 +56,80 @@ from nodeflow.workflows.dev_process.state_machine import (
     assert_action_allowed,
     next_action_for_state,
 )
+
+
+def _workspace_attempt(body: Dict[str, Any]) -> int:
+    dp = body.setdefault("dev_process", {})
+    attempt = dp.get("workspace_attempt")
+    if not isinstance(attempt, int) or attempt < 1:
+        dp["workspace_attempt"] = 1
+        return 1
+    return attempt
+
+
+def _increment_workspace_attempt(body: Dict[str, Any]) -> int:
+    dp = body.setdefault("dev_process", {})
+    n = _workspace_attempt(body) + 1
+    dp["workspace_attempt"] = n
+    return n
+
+
+def _run_context_for_prepare_workspace(body: Dict[str, Any]) -> Dict[str, Any]:
+    run_context = body["run_context"]
+    attempt = _workspace_attempt(body)
+    return run_context_for_df(run_context) | {
+        "artifact_root": run_context["artifact_root"],
+        "workspace_attempt": attempt,
+        "worktree_subdirectory": workspace_attempt_subdir(attempt),
+    }
+
+
+def _clear_git_worktree_on_revise(body: Dict[str, Any]) -> None:
+    run_context = body["run_context"]
+    if _workspace_strategy(run_context) != WORKSPACE_STRATEGY_GIT_WORKTREE:
+        body.pop("workspace_context", None)
+        return
+    wc = body.get("workspace_context")
+    if isinstance(wc, dict):
+        root = wc.get("workspace_root")
+        if isinstance(root, str) and root.strip():
+            remove_git_worktree(
+                source_repo_root=run_context["repo_root"],
+                artifact_root=run_context["artifact_root"],
+                workspace_root=root,
+            )
+    body.pop("workspace_context", None)
+    _increment_workspace_attempt(body)
+
+
+def _resolve_exec_argv(
+    exec_argv: Optional[list[str]],
+    codex_argv: Optional[list[str]],
+) -> Optional[list[str]]:
+    if exec_argv is not None:
+        return exec_argv
+    return codex_argv
+
+
+def _exec_worker_kind(body: Dict[str, Any]) -> str:
+    dp = body.get("dev_process") if isinstance(body.get("dev_process"), dict) else {}
+    return str(dp.get("exec_worker_kind") or "codex")
+
+
+def _workspace_strategy(run_context: Dict[str, Any]) -> str:
+    strategy = str(run_context.get("workspace_strategy") or WORKSPACE_STRATEGY_CURRENT_REPO).strip()
+    if strategy not in (WORKSPACE_STRATEGY_CURRENT_REPO, WORKSPACE_STRATEGY_GIT_WORKTREE):
+        raise NodeExecutionFailure(f"unsupported workspace_strategy: {strategy!r}")
+    return strategy
+
+
+def _workspace_repo_root(body: Dict[str, Any]) -> Path:
+    wc = body.get("workspace_context")
+    if isinstance(wc, dict):
+        root = wc.get("workspace_root")
+        if isinstance(root, str) and root.strip():
+            return Path(root).resolve()
+    return Path(body["run_context"]["repo_root"]).resolve()
 
 
 def _empty_stages() -> Dict[str, Any]:
@@ -160,11 +240,15 @@ def _finalize(
         path=path,
         action=action,
     )
-    return {
+    out: Dict[str, Any] = {
         "flow_checkpoint_path": path,
         "flow_result": doc["flow_result"],
         "run_context": doc["run_context"],
     }
+    wc = doc.get("workspace_context")
+    if isinstance(wc, dict) and wc:
+        out["workspace_context"] = wc
+    return out
 
 
 def run_flow(
@@ -177,8 +261,12 @@ def run_flow(
     run_spec_plan_on_start: bool = True,
     human_comment_text: str = "",
     codex_argv: Optional[list[str]] = None,
+    exec_argv: Optional[list[str]] = None,
     force_review_blocking: bool = False,
+    workspace_strategy: Optional[str] = None,
+    exec_worker_kind: Optional[str] = None,
 ) -> Dict[str, Any]:
+    argv = _resolve_exec_argv(exec_argv, codex_argv)
     if action == ACTION_START and flow_checkpoint_path:
         raise NodeExecutionFailure("start does not accept flow_checkpoint_path")
 
@@ -188,7 +276,9 @@ def run_flow(
             task_prompt=task_prompt,
             run_id=run_id,
             run_spec_plan_on_start=run_spec_plan_on_start,
-            codex_argv=codex_argv,
+            exec_argv=argv,
+            workspace_strategy=workspace_strategy or WORKSPACE_STRATEGY_CURRENT_REPO,
+            exec_worker_kind=exec_worker_kind or EXEC_WORKER_CODEX,
         )
 
     if not flow_checkpoint_path:
@@ -197,6 +287,19 @@ def run_flow(
     doc = load_flow_checkpoint(flow_checkpoint_path)
     body = dict(doc)
     run_context = dict(body.get("run_context") or {})
+    if workspace_strategy is not None:
+        requested = _workspace_strategy({"workspace_strategy": workspace_strategy})
+        stored = _workspace_strategy(run_context)
+        if requested != stored:
+            raise NodeExecutionFailure(
+                f"workspace_strategy mismatch on resume: checkpoint {stored!r} != request {requested!r}"
+            )
+    if exec_worker_kind is not None:
+        stored_worker = _exec_worker_kind(body)
+        if exec_worker_kind != stored_worker:
+            raise NodeExecutionFailure(
+                f"exec_worker_kind mismatch on resume: checkpoint {stored_worker!r} != request {exec_worker_kind!r}"
+            )
     stored_run_id = str(run_context.get("run_id") or "")
     if run_id and run_id != stored_run_id:
         raise NodeExecutionFailure(
@@ -215,15 +318,13 @@ def run_flow(
 
     if action == ACTION_APPROVE_SPEC:
         return _handle_approve_spec(
-            body, run_id=run_id, codex_argv=codex_argv, force_review_blocking=force_review_blocking
+            body, run_id=run_id, exec_argv=argv, force_review_blocking=force_review_blocking
         )
     if action == ACTION_REVISE_SPEC:
-        return _handle_revise_spec(
-            body, run_id=run_id, task_prompt=task_prompt, codex_argv=codex_argv
-        )
+        return _handle_revise_spec(body, run_id=run_id, task_prompt=task_prompt, exec_argv=argv)
     if action == ACTION_REWORK:
         return _handle_rework(
-            body, run_id=run_id, codex_argv=codex_argv, force_review_blocking=force_review_blocking
+            body, run_id=run_id, exec_argv=argv, force_review_blocking=force_review_blocking
         )
     if action == ACTION_MERGE:
         return _handle_merge(body, run_id=run_id)
@@ -246,7 +347,9 @@ def _handle_start(
     task_prompt: str,
     run_id: Optional[str],
     run_spec_plan_on_start: bool,
-    codex_argv: Optional[list[str]],
+    exec_argv: Optional[list[str]],
+    workspace_strategy: str,
+    exec_worker_kind: str,
 ) -> Dict[str, Any]:
     repo = resolve_git_toplevel(Path(repo_root))
     swc = check_source_workspace(repo)
@@ -254,7 +357,8 @@ def _handle_start(
     artifact_root, _run_dir_name = allocate_run_dir(repo, task_prompt=task_prompt, run_id=rid)
     head = git_head_revision(repo)
     branch = git_current_branch(repo)
-    planned = f"feat/nodeflow/{rid[:8]}"
+    planned = planned_branch_name_for_run(rid)
+    strategy = _workspace_strategy({"workspace_strategy": workspace_strategy})
 
     run_context = {
         "run_id": rid,
@@ -264,7 +368,7 @@ def _handle_start(
         "created_at": datetime.now(timezone.utc).isoformat(),
         "source_base_revision": head,
         "source_current_branch": branch,
-        "workspace_strategy": "current_repo",
+        "workspace_strategy": strategy,
         "planned_branch_name": planned,
     }
     body: Dict[str, Any] = {
@@ -278,6 +382,8 @@ def _handle_start(
         },
         "dev_process": {
             "review_depth_preset": "standard",
+            "exec_worker_kind": exec_worker_kind,
+            "workspace_attempt": 1,
             "human_gates": {"spec": "pending", "final": "not_reached"},
         },
         "stages": _empty_stages(),
@@ -297,7 +403,7 @@ def _handle_start(
         body,
         run_id=rid,
         task_prompt=task_prompt,
-        codex_argv=codex_argv,
+        exec_argv=exec_argv,
         action=ACTION_START,
     )
 
@@ -307,12 +413,15 @@ def _run_spec_plan_and_finalize(
     *,
     run_id: str,
     task_prompt: str,
-    codex_argv: Optional[list[str]],
+    exec_argv: Optional[list[str]],
     action: str,
     revision_context: Optional[str] = None,
 ) -> Dict[str, Any]:
     run_context = body["run_context"]
+    if action == ACTION_REVISE_SPEC:
+        _clear_git_worktree_on_revise(body)
     repo = Path(run_context["repo_root"])
+    worker_kind = _exec_worker_kind(body)
     timeline.append_event(run_context["artifact_root"], run_id, "stage_started", stage="spec_plan")
     try:
         sp = run_spec_plan_stage(
@@ -321,8 +430,9 @@ def _run_spec_plan_and_finalize(
             run_id=run_id,
             task_prompt=task_prompt or body.get("task_prompt", ""),
             base_revision=run_context["source_base_revision"],
-            codex_argv=codex_argv,
+            exec_argv=exec_argv,
             revision_context=revision_context,
+            exec_worker_kind=worker_kind,
         )
     except NodeExecutionFailure as e:
         _fail_checkpoint(body=body, run_id=run_id, action=action, reason=str(e))
@@ -337,7 +447,9 @@ def _run_spec_plan_and_finalize(
         stage="spec_plan",
         ok=True,
     )
-    body["dev_process"]["human_gates"]["spec"] = "pending"
+    gates = body.setdefault("dev_process", {}).setdefault("human_gates", {})
+    gates["spec"] = "pending"
+    gates["final"] = "not_reached"
     return _finalize(
         body=body,
         run_id=run_id,
@@ -351,20 +463,24 @@ def _handle_approve_spec(
     body: Dict[str, Any],
     *,
     run_id: str,
-    codex_argv: Optional[list[str]],
+    exec_argv: Optional[list[str]],
     force_review_blocking: bool,
     action: str = ACTION_APPROVE_SPEC,
 ) -> Dict[str, Any]:
     run_context = body["run_context"]
-    repo = Path(run_context["repo_root"])
+    strategy = _workspace_strategy(run_context)
+    existing_workspace = body.get("workspace_context")
     workspace_context = prepare_workspace(
         source_repo_root=run_context["repo_root"],
-        run_context=run_context_for_df(run_context),
-        strategy="current_repo",
+        run_context=_run_context_for_prepare_workspace(body),
+        strategy=strategy,
+        existing_workspace=existing_workspace if isinstance(existing_workspace, dict) else None,
     )
     body["workspace_context"] = workspace_context
+    repo = _workspace_repo_root(body)
     gates = body.setdefault("dev_process", {}).setdefault("human_gates", {})
     gates["spec"] = "approved"
+    gates["final"] = "not_reached"
     spec_text, plan_text = _read_approved_text(run_context["artifact_root"])
     task_prompt = str(body.get("task_prompt") or "")
 
@@ -379,7 +495,8 @@ def _handle_approve_spec(
             or run_context["source_base_revision"],
             approved_spec=spec_text,
             approved_plan=plan_text,
-            codex_argv=codex_argv,
+            exec_argv=exec_argv,
+            exec_worker_kind=_exec_worker_kind(body),
         )
     except NodeExecutionFailure as e:
         _fail_checkpoint(body=body, run_id=run_id, action=action, reason=str(e))
@@ -406,9 +523,10 @@ def _handle_approve_spec(
             approved_plan=plan_text,
             diff_result=impl.get("diff_result") or {},
             test_result=impl.get("test_result") or {},
-            codex_argv=codex_argv,
+            exec_argv=exec_argv,
             force_blocking=force_review_blocking,
             review_depth_preset=preset,
+            exec_worker_kind=_exec_worker_kind(body),
         )
     except NodeExecutionFailure as e:
         _fail_checkpoint(body=body, run_id=run_id, action=action, reason=str(e))
@@ -424,6 +542,8 @@ def _handle_approve_spec(
     merge_ready = bool(rev.get("merge_ready"))
     if merge_ready:
         gates["final"] = "pending"
+    else:
+        gates["final"] = "not_reached"
     return _finalize(
         body=body,
         run_id=run_id,
@@ -438,14 +558,14 @@ def _handle_revise_spec(
     *,
     run_id: str,
     task_prompt: str,
-    codex_argv: Optional[list[str]],
+    exec_argv: Optional[list[str]],
 ) -> Dict[str, Any]:
     comment = task_prompt or "revise spec"
     return _run_spec_plan_and_finalize(
         body,
         run_id=run_id,
         task_prompt=str(body.get("task_prompt") or ""),
-        codex_argv=codex_argv,
+        exec_argv=exec_argv,
         action=ACTION_REVISE_SPEC,
         revision_context=comment,
     )
@@ -455,7 +575,7 @@ def _handle_rework(
     body: Dict[str, Any],
     *,
     run_id: str,
-    codex_argv: Optional[list[str]],
+    exec_argv: Optional[list[str]],
     force_review_blocking: bool,
 ) -> Dict[str, Any]:
     workspace_context = body.get("workspace_context")
@@ -472,7 +592,7 @@ def _handle_rework(
     return _handle_approve_spec(
         body_for_approve,
         run_id=run_id,
-        codex_argv=codex_argv,
+        exec_argv=exec_argv,
         force_review_blocking=force_review_blocking,
         action=ACTION_REWORK,
     )

@@ -136,3 +136,30 @@ def git_current_branch(repo_root: Path) -> str:
 
 def new_run_id() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+
+
+def planned_branch_name_for_run(run_id: str) -> str:
+    """Unique branch name per run; safe for git ref and worktree -b."""
+    validate_run_id(run_id)
+    safe = re.sub(r"[^A-Za-z0-9-]+", "-", run_id)
+    safe = safe.strip("-")
+    if not safe:
+        raise NodeExecutionFailure(f"run_id {run_id!r} yields empty branch component")
+    return f"feat/nodeflow/{safe}"
+
+
+def assert_safe_worktree_subdirectory(subdir: str) -> str:
+    """Reject paths that escape artifact_root/worktrees."""
+    if not subdir or not subdir.strip():
+        raise NodeExecutionFailure("worktree_subdirectory must be non-empty")
+    subdir = subdir.strip()
+    rel = Path(subdir)
+    if rel.is_absolute() or ".." in rel.parts:
+        raise NodeExecutionFailure(f"invalid worktree_subdirectory: {subdir!r}")
+    return subdir
+
+
+def workspace_attempt_subdir(attempt: int) -> str:
+    if attempt < 1:
+        raise NodeExecutionFailure(f"workspace_attempt must be >= 1, got {attempt}")
+    return assert_safe_worktree_subdirectory(f"worktrees/{attempt:03d}")

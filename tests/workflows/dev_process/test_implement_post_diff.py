@@ -11,16 +11,15 @@ from nodeflow.workflows.dev_process.stages.implement import run_implement_stage
 def test_implement_collects_diff_after_codex(tmp_path: Path) -> None:
     call_order: list[str] = []
 
-    def _codex_execute(self, inputs, params):
+    def _run_exec(worker, *, prompt, cwd, argv, timeout=120):
+        del worker, prompt, cwd, argv, timeout
         call_order.append("codex")
         return {
-            "execution_output": {
-                "ok": True,
-                "stdout": "done",
-                "stderr": "",
-                "raw_output": {"returncode": 0},
-                "provider_meta": {},
-            }
+            "ok": True,
+            "stdout": "done",
+            "stderr": "",
+            "raw_output": {"returncode": 0},
+            "provider_meta": {},
         }
 
     def _collect_diff(**_kwargs):
@@ -36,9 +35,7 @@ def test_implement_collects_diff_after_codex(tmp_path: Path) -> None:
     artifact_root = tmp_path / "artifacts"
     artifact_root.mkdir()
 
-    with patch(
-        "nodeflow.workflows.dev_process.stages.implement.CodexExecNode.execute", _codex_execute
-    ):
+    with patch("nodeflow.workflows.dev_process.stages.implement.run_exec", _run_exec):
         with patch(
             "nodeflow.workflows.dev_process.stages.implement.collect_diff",
             side_effect=_collect_diff,

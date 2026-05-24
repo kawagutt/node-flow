@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from nodeflow.core.base_node import ExecutionContext, NodeExecutionFailure
 from nodeflow.core.node_kinds import PythonActionNode
@@ -109,6 +109,13 @@ class PrepareWorkspaceNode(PythonActionNode):
                 f"source_repo_root is not a git repository: {source_repo_root}"
             )
         source_repo_root = _resolve_git_toplevel(source_repo_root)
+
+        if strategy == "git_worktree":
+            return self._prepare_git_worktree(
+                source_repo_root=source_repo_root,
+                run_context=run_context,
+                existing_workspace=existing_workspace,
+            )
 
         if strategy != "current_repo":
             raise NodeExecutionFailure(f"unsupported prepare_workspace.strategy: {strategy}")
@@ -245,6 +252,172 @@ class PrepareWorkspaceNode(PythonActionNode):
                 "source_repo_root": str(source_repo_root),
                 "workspace_root": str(source_repo_root),
                 "current_branch": current_branch,
+                "planned_branch_name": planned_branch_name,
+                "base_revision": base_revision,
+            }
+        }
+
+    def _prepare_git_worktree(
+        self,
+        *,
+        source_repo_root: Path,
+        run_context: Dict[str, Any],
+        existing_workspace: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        artifact_root = str(run_context.get("artifact_root") or "").strip()
+        if not artifact_root:
+            raise NodeExecutionFailure("git_worktree requires run_context.artifact_root")
+
+        planned_branch_name = str(run_context.get("planned_branch_name") or "").strip()
+        if not planned_branch_name:
+            raise NodeExecutionFailure("prepare_workspace requires run_context.planned_branch_name")
+        cp_ref = _run_git(source_repo_root, ["check-ref-format", "--branch", planned_branch_name])
+        if cp_ref.returncode != 0:
+            raise NodeExecutionFailure(f"invalid planned_branch_name: {planned_branch_name}")
+
+        source_base_revision = str(run_context.get("source_base_revision") or "").strip()
+        if not source_base_revision:
+            raise NodeExecutionFailure("run_context.source_base_revision is required")
+        run_source_repo_root_raw = str(run_context.get("source_repo_root") or "").strip()
+        if not run_source_repo_root_raw:
+            raise NodeExecutionFailure("run_context.source_repo_root is required")
+        run_source_repo_root = _resolve_git_toplevel(Path(run_source_repo_root_raw).resolve())
+        if run_source_repo_root != source_repo_root:
+            raise NodeExecutionFailure(
+                "source_repo_root does not match run_context.source_repo_root"
+            )
+
+        worktree_subdir = str(run_context.get("worktree_subdirectory") or "").strip()
+        if not worktree_subdir:
+            raise NodeExecutionFailure("git_worktree requires run_context.worktree_subdirectory")
+        rel = Path(worktree_subdir)
+        if rel.is_absolute() or ".." in rel.parts:
+            raise NodeExecutionFailure(f"invalid worktree_subdirectory: {worktree_subdir!r}")
+        artifact_resolved = Path(artifact_root).resolve()
+        worktree_path = (artifact_resolved / worktree_subdir).resolve()
+        try:
+            worktree_path.relative_to(artifact_resolved)
+        except ValueError as e:
+            raise NodeExecutionFailure(
+                f"worktree_subdirectory escapes artifact_root: {worktree_subdir!r}"
+            ) from e
+        workspace_attempt = run_context.get("workspace_attempt")
+        if not isinstance(workspace_attempt, int) or workspace_attempt < 1:
+            raise NodeExecutionFailure("git_worktree requires run_context.workspace_attempt >= 1")
+
+        if existing_workspace:
+            prev_strategy = existing_workspace.get("strategy")
+            if prev_strategy != "git_worktree":
+                raise NodeExecutionFailure(
+                    f"existing workspace_context.strategy must be 'git_worktree', got {prev_strategy!r}"
+                )
+            prev_root = existing_workspace.get("workspace_root")
+            if not isinstance(prev_root, str) or Path(prev_root).resolve() != worktree_path:
+                raise NodeExecutionFailure(
+                    "existing workspace_context.workspace_root does not match git_worktree path"
+                )
+            prev_subdir = existing_workspace.get("worktree_subdirectory")
+            if (
+                isinstance(prev_subdir, str)
+                and prev_subdir.strip()
+                and prev_subdir != worktree_subdir
+            ):
+                raise NodeExecutionFailure(
+                    "existing workspace_context.worktree_subdirectory does not match run_context"
+                )
+            prev_planned = existing_workspace.get("planned_branch_name")
+            if (
+                isinstance(prev_planned, str)
+                and prev_planned.strip()
+                and prev_planned != planned_branch_name
+            ):
+                raise NodeExecutionFailure(
+                    "existing workspace_context.planned_branch_name does not match run_context"
+                )
+            base_revision = str(existing_workspace.get("base_revision") or "").strip()
+            if not base_revision:
+                raise NodeExecutionFailure("existing workspace_context.base_revision is invalid")
+            if base_revision != source_base_revision:
+                raise NodeExecutionFailure(
+                    "workspace_context.base_revision must match run_context.source_base_revision"
+                )
+            cp_branch = _run_git(worktree_path, ["branch", "--show-current"])
+            if cp_branch.returncode != 0:
+                err = (cp_branch.stderr or cp_branch.stdout or "").strip() or "failed branch"
+                raise NodeExecutionFailure(err)
+            current_branch = (cp_branch.stdout or "").strip()
+            if current_branch != planned_branch_name:
+                raise NodeExecutionFailure(
+                    "git_worktree branch changed since previous checkpoint: "
+                    f"expected={planned_branch_name}, current={current_branch}"
+                )
+            return {
+                "workspace_context": {
+                    "strategy": "git_worktree",
+                    "source_repo_root": str(source_repo_root),
+                    "workspace_root": str(worktree_path),
+                    "worktree_subdirectory": worktree_subdir,
+                    "current_branch": current_branch,
+                    "planned_branch_name": planned_branch_name,
+                    "base_revision": base_revision,
+                }
+            }
+
+        check_in = _run_git(
+            source_repo_root, ["rev-parse", "--verify", f"{source_base_revision}^{{commit}}"]
+        )
+        if check_in.returncode != 0:
+            raise NodeExecutionFailure(
+                "run_context.source_base_revision is not a valid commit: " f"{source_base_revision}"
+            )
+        base_revision = (check_in.stdout or "").strip()
+        if not base_revision:
+            raise NodeExecutionFailure("failed to resolve source_base_revision to commit")
+
+        if worktree_path.exists():
+            raise NodeExecutionFailure(f"git_worktree path already exists: {worktree_path}")
+
+        branch_exists = (
+            _run_git(
+                source_repo_root,
+                ["show-ref", "--verify", "--quiet", f"refs/heads/{planned_branch_name}"],
+            ).returncode
+            == 0
+        )
+
+        worktree_path.parent.mkdir(parents=True, exist_ok=True)
+        if workspace_attempt == 1:
+            if branch_exists:
+                raise NodeExecutionFailure(
+                    f"planned_branch_name already exists: {planned_branch_name}"
+                )
+            add_argv = [
+                "worktree",
+                "add",
+                "-b",
+                planned_branch_name,
+                str(worktree_path),
+                base_revision,
+            ]
+        else:
+            if not branch_exists:
+                raise NodeExecutionFailure(
+                    f"git_worktree retry expected existing branch {planned_branch_name!r}"
+                )
+            add_argv = ["worktree", "add", str(worktree_path), planned_branch_name]
+
+        cp_add = _run_git(source_repo_root, add_argv)
+        if cp_add.returncode != 0:
+            err = (cp_add.stderr or cp_add.stdout or "").strip() or "git worktree add failed"
+            raise NodeExecutionFailure(err)
+
+        return {
+            "workspace_context": {
+                "strategy": "git_worktree",
+                "source_repo_root": str(source_repo_root),
+                "workspace_root": str(worktree_path),
+                "worktree_subdirectory": worktree_subdir,
+                "current_branch": planned_branch_name,
                 "planned_branch_name": planned_branch_name,
                 "base_revision": base_revision,
             }

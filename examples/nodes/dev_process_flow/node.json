@@ -8,7 +8,11 @@
     "task_prompt",
     "flow_checkpoint_path",
     "run_id",
-    "human_comment_text"
+    "human_comment_text",
+    "workspace_strategy",
+    "exec_worker_kind",
+    "exec_argv",
+    "codex_argv"
   ],
   "output_ports": ["flow_output"],
   "default_config": {

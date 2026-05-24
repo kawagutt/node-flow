@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from nodeflow.core.base_node import NodeExecutionFailure
-from nodeflow.nodes.exec.codex_exec import CodexExecNode
 from nodeflow.workflows.dev_process.evidence import record_exec_evidence
+from nodeflow.workflows.dev_process.hermetic_argv import review_argv
 from nodeflow.workflows.dev_process.paths import assert_path_under_run_dir
 from nodeflow.workflows.dev_process.reuse import (
     aggregate_reviews,
@@ -17,26 +16,7 @@ from nodeflow.workflows.dev_process.reuse import (
     write_stage_checkpoint,
 )
 from nodeflow.workflows.dev_process.review_presets import normalize_preset, reviewer_keys_for_preset
-
-
-def _hermetic_review_argv(*, blocking: bool = False) -> list[str]:
-    payload = {
-        "ok": not blocking,
-        "blocking_findings": []
-        if not blocking
-        else [
-            {
-                "id": "R001",
-                "area": "diff",
-                "summary": "hermetic blocking",
-                "suggested_fix": "fix",
-            }
-        ],
-        "non_blocking_findings": [],
-        "spec_revision_needed": False,
-    }
-    script = f"import json; print(json.dumps({payload!r}))"
-    return [sys.executable, "-c", script]
+from nodeflow.workflows.dev_process.workers import ExecWorker, resolve_exec_worker, run_exec
 
 
 def _run_one_reviewer(
@@ -48,8 +28,9 @@ def _run_one_reviewer(
     approved_spec: str,
     approved_plan: str,
     reviewer_key: str,
-    codex_argv: list[str],
-) -> Dict[str, Any]:
+    exec_argv: list[str],
+    worker: ExecWorker,
+) -> tuple[Dict[str, Any], str, str]:
     text = build_review_prompt(
         reviewer_key,
         repo_root=repo_root,
@@ -59,13 +40,8 @@ def _run_one_reviewer(
         approved_spec=approved_spec,
         approved_plan=approved_plan,
     )
-    codex = CodexExecNode()
     cwd = str(repo_root)
-    exec_out = codex.execute(
-        {"prompt": text},
-        {"argv": codex_argv, "timeout": 120, "cwd": cwd},
-    )
-    er = exec_out.get("execution_output") or {}
+    er = run_exec(worker, prompt=text, cwd=cwd, argv=exec_argv, timeout=120)
     return er, text, cwd
 
 
@@ -79,11 +55,15 @@ def run_review_stage(
     approved_plan: str,
     diff_result: Dict[str, Any],
     test_result: Dict[str, Any],
+    exec_argv: list[str] | None = None,
     codex_argv: list[str] | None = None,
     force_blocking: bool = False,
     review_depth_preset: str = "standard",
+    exec_worker_kind: Optional[str] = None,
 ) -> Dict[str, Any]:
-    argv = codex_argv if codex_argv is not None else _hermetic_review_argv(blocking=force_blocking)
+    worker = resolve_exec_worker(exec_worker_kind)
+    argv = exec_argv if exec_argv is not None else codex_argv
+    argv = argv if argv is not None else review_argv(blocking=force_blocking)
     preset = normalize_preset(review_depth_preset)
     active_keys = reviewer_keys_for_preset(preset)
     expected = set(active_keys)
@@ -98,7 +78,8 @@ def run_review_stage(
             approved_spec=approved_spec,
             approved_plan=approved_plan,
             reviewer_key=input_key,
-            codex_argv=argv,
+            exec_argv=argv,
+            worker=worker,
         )
         review_inputs[input_key] = er
         if not er.get("ok"):

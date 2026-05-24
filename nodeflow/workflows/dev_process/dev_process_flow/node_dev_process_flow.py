@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from types import MappingProxyType
-from typing import Any, Dict, Mapping
+from typing import Any, Dict, Mapping, Optional
 
 from nodeflow.core.base_node import ExecutionContext, NodeExecutionFailure
 from nodeflow.core.node_kinds import PythonActionNode
@@ -23,6 +23,32 @@ def _port_scalar(inputs: Dict[str, Any], name: str) -> Any:
         if len(raw) == 1:
             return next(iter(raw.values()))
     return raw
+
+
+def _argv_list_param(raw: Any, *, label: str) -> Optional[list[str]]:
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not all(isinstance(x, str) for x in raw):
+        raise NodeExecutionFailure(f"{label} must be a list[str] when set")
+    return raw
+
+
+def _optional_config_scalar(
+    inputs: Dict[str, Any],
+    params: MappingProxyType,
+    name: str,
+    *,
+    default: str | None = None,
+) -> str | None:
+    raw = _port_scalar(inputs, name)
+    if raw is not None and str(raw).strip():
+        return str(raw).strip()
+
+    fallback = params.get(name)
+    if fallback is not None and str(fallback).strip():
+        return str(fallback).strip()
+
+    return default
 
 
 class DevProcessFlowNode(PythonActionNode):
@@ -58,13 +84,27 @@ class DevProcessFlowNode(PythonActionNode):
             params.get("run_spec_plan_on_start", True), default=True
         )
 
-        codex_argv = params.get("codex_argv")
-        if codex_argv is not None and not (
-            isinstance(codex_argv, list) and all(isinstance(x, str) for x in codex_argv)
-        ):
-            raise NodeExecutionFailure("params.codex_argv must be a list[str] when set")
+        exec_argv = _argv_list_param(
+            _port_scalar(inputs, "exec_argv") or params.get("exec_argv"),
+            label="exec_argv",
+        )
+        codex_argv = _argv_list_param(
+            _port_scalar(inputs, "codex_argv") or params.get("codex_argv"),
+            label="codex_argv",
+        )
 
         force_blocking = parse_bool_param(params.get("force_review_blocking", False))
+
+        if action == ACTION_START:
+            workspace_strategy = _optional_config_scalar(
+                inputs, params, "workspace_strategy", default="current_repo"
+            )
+            exec_worker_kind = _optional_config_scalar(
+                inputs, params, "exec_worker_kind", default="codex"
+            )
+        else:
+            workspace_strategy = _optional_config_scalar(inputs, params, "workspace_strategy")
+            exec_worker_kind = _optional_config_scalar(inputs, params, "exec_worker_kind")
 
         try:
             result = run_flow(
@@ -75,8 +115,11 @@ class DevProcessFlowNode(PythonActionNode):
                 run_id=run_id_s,
                 run_spec_plan_on_start=run_spec_plan_on_start,
                 human_comment_text=str(_port_scalar(inputs, "human_comment_text") or ""),
+                exec_argv=exec_argv,
                 codex_argv=codex_argv,
                 force_review_blocking=force_blocking,
+                workspace_strategy=workspace_strategy,
+                exec_worker_kind=exec_worker_kind,
             )
         except NodeExecutionFailure:
             raise
