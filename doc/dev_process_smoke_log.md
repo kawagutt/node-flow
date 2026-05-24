@@ -139,3 +139,29 @@ New/updated coverage:
 | smoke-driven small fixes reflected | ✅ (see above) |
 
 **Next:** P7 wrapper UX; later `git_merge_branch` dry-run on disposable repo.
+
+---
+
+## P7 wrapper smoke (2026-05-24)
+
+Real Codex + `git_worktree` + `record_only` via `nodeflow-dev-process` (no manual `CP=...`):
+
+```bash
+nodeflow-dev-process --repo-root /tmp/dev-process-wrapper-codex start \
+  --task-prompt 'Add one-line CONTRIBUTING.md and commit it.' \
+  --workspace-strategy git_worktree --merge-policy record_only \
+  --exec-argv '["codex","exec","--dangerously-bypass-approvals-and-sandbox"]'
+
+nodeflow-dev-process --repo-root /tmp/dev-process-wrapper-codex approve-spec
+nodeflow-dev-process --repo-root /tmp/dev-process-wrapper-codex approve-final
+nodeflow-dev-process --repo-root /tmp/dev-process-wrapper-codex merge
+```
+
+| Field | Value |
+|-------|-------|
+| Result | **PASS** → `merged` |
+| Duration | ~87s |
+| Run ID | `20260524T025642581075Z` |
+| Repo | `/tmp/dev-process-wrapper-codex` |
+
+Spec: [dev_process_p7_wrapper.md](./dev_process_p7_wrapper.md)

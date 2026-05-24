@@ -207,3 +207,17 @@ Example: `examples/reference/dev_process/codex_params.example.json`.
 See [dev_process_real_codex_dry_run.md](./dev_process_real_codex_dry_run.md) for manual smoke-test procedures with real Codex, `git_worktree`, and merge policies (before P7 wrapper UX).
 
 Recorded real Codex smoke result (2026-05-24): [dev_process_smoke_log.md](./dev_process_smoke_log.md).
+
+## P7 wrapper CLI
+
+See [dev_process_p7_wrapper.md](./dev_process_p7_wrapper.md). Entry point:
+
+```bash
+nodeflow-dev-process --repo-root /path/to/repo start --task-prompt '...'
+nodeflow-dev-process --repo-root /path/to/repo status
+nodeflow-dev-process --repo-root /path/to/repo approve-spec
+nodeflow-dev-process --repo-root /path/to/repo approve-final
+nodeflow-dev-process --repo-root /path/to/repo merge
+```
+
+The wrapper discovers the latest checkpoint under `.nodeflow/runs/` and calls `run_flow` — no manual `CP=...` handling.

@@ -76,6 +76,20 @@ Field semantics for workspace / checkpoints / summaries are **`doc/nodeflow_spec
 
 **`nodeflow.core.loader.load_pipeline()`** confirms removal of YAML v1.5 by raising `NotImplementedError`.
 
+## Dev-process (recommended CLI)
+
+For the **dev-process** orchestration flow (spec → implement → review → merge), use the thin wrapper CLI — no manual checkpoint handling:
+
+```bash
+nodeflow-dev-process --repo-root /path/to/target-repo start --task-prompt '...'
+nodeflow-dev-process --repo-root /path/to/target-repo status
+nodeflow-dev-process --repo-root /path/to/target-repo approve-spec
+nodeflow-dev-process --repo-root /path/to/target-repo approve-final
+nodeflow-dev-process --repo-root /path/to/target-repo merge
+```
+
+Docs: [`doc/dev_process_p7_wrapper.md`](doc/dev_process_p7_wrapper.md) (wrapper spec), [`doc/dev_process.md`](doc/dev_process.md) (architecture). Lower-level manual path: [`doc/dev_process_real_codex_dry_run.md`](doc/dev_process_real_codex_dry_run.md).
+
 ## API keys (optional)
 
 - **Kimi (Moonshot)**: `MOONSHOT_API_KEY` for `kimi_exec`.

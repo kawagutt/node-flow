@@ -3,6 +3,8 @@
 This guide describes how to **manually** exercise NodeFlow dev-process with **real Codex**
 on a **disposable git repository**, without a wrapper CLI.
 
+**Preferred (P7):** use [dev_process_p7_wrapper.md](./dev_process_p7_wrapper.md) and `nodeflow-dev-process` — no manual checkpoint handling.
+
 Read [dev_process.md](./dev_process.md) for architecture, state machine, and merge contracts.
 
 ## Goals

@@ -40,6 +40,7 @@ dev = [
 
 [project.scripts]
 nodeflow = "nodeflow.cli:main"
+nodeflow-dev-process = "nodeflow.workflows.dev_process.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
