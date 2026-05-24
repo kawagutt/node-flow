@@ -78,7 +78,7 @@ Field semantics for workspace / checkpoints / summaries are **`doc/nodeflow_spec
 
 ## Dev-process (recommended CLI)
 
-For the **dev-process** orchestration flow (spec → implement → review → merge), use the thin wrapper CLI — no manual checkpoint handling:
+For the **dev-process** orchestration flow (spec → implement → review → merge), use the thin wrapper CLI — no manual checkpoint handling. **Recommended v1 entry point.**
 
 ```bash
 nodeflow-dev-process --repo-root /path/to/target-repo start --task-prompt '...'
@@ -88,7 +88,7 @@ nodeflow-dev-process --repo-root /path/to/target-repo approve-final
 nodeflow-dev-process --repo-root /path/to/target-repo merge
 ```
 
-Docs: [`doc/dev_process_p7_wrapper.md`](doc/dev_process_p7_wrapper.md) (wrapper spec), [`doc/dev_process.md`](doc/dev_process.md) (architecture). Lower-level manual path: [`doc/dev_process_real_codex_dry_run.md`](doc/dev_process_real_codex_dry_run.md).
+Merge policy on `start`: `record_only` (audit) or `git_merge_branch` (local merge). Docs: [`doc/dev_process_p7_wrapper.md`](doc/dev_process_p7_wrapper.md), [`doc/dev_process.md`](doc/dev_process.md), [`doc/dev_process_smoke_log.md`](doc/dev_process_smoke_log.md) (recorded real Codex runs). Manual PipeSpec path: [`doc/dev_process_real_codex_dry_run.md`](doc/dev_process_real_codex_dry_run.md).
 
 ## API keys (optional)
 

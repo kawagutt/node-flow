@@ -121,6 +121,8 @@ on disposable repos only. Prefer `--sandbox workspace-write` when bubblewrap wor
 263 passed (pytest, full suite)
 ```
 
+(Current suite: **280+** after P7 CLI tests.)
+
 New/updated coverage:
 
 - `tests/test_cli_kick_pipeline.py::test_load_and_kick_dev_process_exec_argv_json_array`
@@ -138,11 +140,61 @@ New/updated coverage:
 | smoke result log in doc | ✅ (this file) |
 | smoke-driven small fixes reflected | ✅ (see above) |
 
-**Next:** P7 wrapper UX; later `git_merge_branch` dry-run on disposable repo.
+**Next:** ~~P7 wrapper UX; later `git_merge_branch` dry-run on disposable repo.~~ Done — see below.
 
 ---
 
-## P7 wrapper smoke (2026-05-24)
+## git_merge_branch smoke (2026-05-24)
+
+Real Codex + `git_worktree` + **`git_merge_branch`** via `nodeflow-dev-process`:
+
+```bash
+REPO=/tmp/dev-process-merge-smoke
+
+nodeflow-dev-process --repo-root "$REPO" start \
+  --task-prompt 'Add one-line CONTRIBUTING.md and commit it on the attempt branch.' \
+  --workspace-strategy git_worktree \
+  --merge-policy git_merge_branch \
+  --exec-argv '["codex","exec","--dangerously-bypass-approvals-and-sandbox"]'
+
+nodeflow-dev-process --repo-root "$REPO" approve-spec
+nodeflow-dev-process --repo-root "$REPO" approve-final
+nodeflow-dev-process --repo-root "$REPO" merge
+```
+
+| Field | Value |
+|-------|-------|
+| Result | **PASS** → `merged`, `merge_policy=git_merge_branch` |
+| Duration | ~86s |
+| Run ID | `20260524T034415922152Z` |
+| Repo | `/tmp/dev-process-merge-smoke` |
+
+Verified:
+
+- Attempt branch commit `cb2c252` (CONTRIBUTING.md) on `feat/nodeflow/.../attempt-001`
+- Worktree clean before merge
+- **`main` advanced** to `cb2c252` (local merge; init was `8b45e0a`)
+- No push / remote operations
+- `summary/merge_development_summary.json` written
+
+---
+
+## Dev-process v1 Done checklist
+
+| Item | Status |
+|------|--------|
+| P0–P6.5 core + tests | ✅ (280+ pytest) |
+| real Codex record_only smoke | ✅ |
+| P7 wrapper (`nodeflow-dev-process`) | ✅ |
+| wrapper real Codex record_only smoke | ✅ (~87s) |
+| real Codex **git_merge_branch** smoke | ✅ (~86s) |
+| smoke logs in doc | ✅ (this file) |
+
+**Later (post-v1):** original branch restore, `cleanup_worktrees` / `cleanup_branches` actions.
+
+---
+
+## P7 wrapper smoke — record_only (2026-05-24)
 
 Real Codex + `git_worktree` + `record_only` via `nodeflow-dev-process` (no manual `CP=...`):
 

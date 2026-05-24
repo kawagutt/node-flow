@@ -1,5 +1,7 @@
 # Dev Process Flow
 
+**v1 (2026-05-24):** P0–P6.5 core, real Codex smokes (`record_only` + `git_merge_branch`), and **`nodeflow-dev-process`** wrapper are complete. Recorded runs: [dev_process_smoke_log.md](./dev_process_smoke_log.md).
+
 ## Positioning
 
 NodeFlow **dev-process** is independent from Hermes `skills/dev-process`.  
@@ -204,9 +206,9 @@ Example: `examples/reference/dev_process/codex_params.example.json`.
 
 ## Real Codex dry-run
 
-See [dev_process_real_codex_dry_run.md](./dev_process_real_codex_dry_run.md) for manual smoke-test procedures with real Codex, `git_worktree`, and merge policies (before P7 wrapper UX).
+See [dev_process_real_codex_dry_run.md](./dev_process_real_codex_dry_run.md) for manual `nodeflow` PipeSpec procedures (optional; prefer the wrapper below).
 
-Recorded real Codex smoke result (2026-05-24): [dev_process_smoke_log.md](./dev_process_smoke_log.md).
+Recorded real Codex smoke results (2026-05-24): [dev_process_smoke_log.md](./dev_process_smoke_log.md) (`record_only` and `git_merge_branch`).
 
 ## P7 wrapper CLI
 

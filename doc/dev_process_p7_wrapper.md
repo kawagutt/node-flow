@@ -139,6 +139,24 @@ nodeflow-dev-process --repo-root "$REPO" merge
 
 See [dev_process_smoke_log.md](./dev_process_smoke_log.md) for environment notes (bubblewrap, commit prompt, timeout).
 
+### git_merge_branch (disposable repo)
+
+Use `--merge-policy git_merge_branch` on `start`. Codex must **commit** on the attempt branch (implement prompt requires this). Then the same resume commands:
+
+```bash
+nodeflow-dev-process --repo-root "$REPO" start \
+  --task-prompt 'Add CONTRIBUTING.md and commit on the attempt branch.' \
+  --workspace-strategy git_worktree \
+  --merge-policy git_merge_branch \
+  --exec-argv '["codex","exec","--dangerously-bypass-approvals-and-sandbox"]'
+
+nodeflow-dev-process --repo-root "$REPO" approve-spec
+nodeflow-dev-process --repo-root "$REPO" approve-final
+nodeflow-dev-process --repo-root "$REPO" merge
+```
+
+Verify `main` has the feature commit locally; still no push.
+
 ## P7 Done checklist
 
 | Item | Status |
@@ -152,6 +170,7 @@ See [dev_process_smoke_log.md](./dev_process_smoke_log.md) for environment notes
 | `--run-id` run scoping | ✅ |
 | wrapper hermetic path to `merged` (tests) | ✅ |
 | wrapper real Codex record_only smoke | ✅ (2026-05-24, ~87s) |
+| wrapper real Codex git_merge_branch smoke | ✅ (2026-05-24, ~86s) |
 
 ## Tests
 

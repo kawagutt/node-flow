@@ -467,7 +467,7 @@ No new upstream tracking from dev-process is expected.
 ```text
 1. current_repo + record_only        (fast smoke, optional)
 2. git_worktree + record_only        (recommended first real Codex run)
-3. git_worktree + git_merge_branch   (when you expect committed attempt-branch changes)
+3. git_worktree + git_merge_branch   (recorded PASS 2026-05-24 — see dev_process_smoke_log.md)
 4. Document any Codex argv / prompt tweaks needed for your repo
 5. Proceed to P7 wrapper UX
 ```
