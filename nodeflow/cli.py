@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -12,13 +13,23 @@ from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.core.run import load_and_kick_pipeline
 
 
-def _parse_kv_pairs(items: tuple[str, ...]) -> dict[str, str]:
-    out: dict[str, str] = {}
+def _parse_cli_value(value: str) -> Any:
+    s = value.strip()
+    if s.startswith("[") or s.startswith("{"):
+        try:
+            return json.loads(s)
+        except json.JSONDecodeError as e:
+            raise click.ClickException(f"invalid JSON value {value!r}: {e}") from e
+    return value
+
+
+def _parse_kv_pairs(items: tuple[str, ...]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
     for item in items:
         if "=" not in item:
             raise click.ClickException(f"expected key=value, got {item!r}")
         key, value = item.split("=", 1)
-        out[key.strip()] = value
+        out[key.strip()] = _parse_cli_value(value)
     return out
 
 

@@ -102,9 +102,13 @@ class DevProcessFlowNode(PythonActionNode):
             exec_worker_kind = _optional_config_scalar(
                 inputs, params, "exec_worker_kind", default="codex"
             )
+            merge_policy = _optional_config_scalar(
+                inputs, params, "merge_policy", default="record_only"
+            )
         else:
             workspace_strategy = _optional_config_scalar(inputs, params, "workspace_strategy")
             exec_worker_kind = _optional_config_scalar(inputs, params, "exec_worker_kind")
+            merge_policy = _optional_config_scalar(inputs, params, "merge_policy")
 
         try:
             result = run_flow(
@@ -120,6 +124,7 @@ class DevProcessFlowNode(PythonActionNode):
                 force_review_blocking=force_blocking,
                 workspace_strategy=workspace_strategy,
                 exec_worker_kind=exec_worker_kind,
+                merge_policy=merge_policy,
             )
         except NodeExecutionFailure:
             raise

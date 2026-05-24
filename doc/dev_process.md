@@ -152,9 +152,52 @@ nodeflow -w /path/to/repo-root examples/pipes/dev_process/dev_process.json \
 Input ports or node `default_config`: `workspace_strategy`, `exec_worker_kind` (input port first, then params, then start defaults).  
 On resume, a supplied value must match the checkpoint or the flow fails.
 
-`exec_argv` / `codex_argv` are **PipeSpec / programmatic-only** in P5: pass via node `params` or wired list inputs.  
-The scalar `-i` CLI cannot pass list-valued inputs; do not use `-i exec_argv='[...]'` (string values fail validation).
+`exec_argv` / `codex_argv`: pass via node `params`, PipeSpec list inputs, or CLI JSON: `-i exec_argv='["codex","exec"]'`.  
+CLI `-i` values starting with `[` or `{` are parsed as JSON (arrays/objects).
 
 Scalar `-i` values are wrapped for PipeSpec delivery; `dev_process.flow` accepts both flat and per-port dict payloads.
 
-P5 assumes implementation workers do not commit. If workers may commit, `revise_spec` must reset the branch to `source_base_revision` or use an attempt-specific branch.
+Each workspace attempt uses branch `feat/nodeflow/<run_id>/attempt-NNN` (see P6).
+
+## P6 — merge policy and summary
+
+`approve_final` does not merge. It only moves the flow to `awaiting_merge`.
+
+`action=merge` is the only action that may perform a local merge.
+
+`merge_policy` only controls what happens when the user explicitly runs `action=merge`.
+It does not merge during `approve_final`.
+
+Push is prohibited:
+
+- dev_process never runs `git push`
+- dev_process never publishes branches or tags
+- remote operations are outside this workflow
+
+On `merge`, dev_process writes `summary/merge_development_summary.json` via `reuse.write_development_summary`.
+If summary generation fails after a successful local merge, a fallback summary is written and the flow still reaches `merged`.
+
+| `merge_policy` | Behavior |
+|----------------|----------|
+| `record_only` (default) | Writes merged checkpoint only; no git merge |
+| `git_merge_branch` | Locally merges this run's expected attempt branch into the recorded source branch |
+
+`git_merge_branch` restrictions:
+
+- requires `workspace_strategy=git_worktree`
+- requires source repo on a named branch at start (not detached HEAD)
+- merge branch must equal `feat/nodeflow/<run_id>/attempt-NNN` derived from checkpoint identity
+- merge branch must match `workspace_context.current_branch`
+- `workspace_context.workspace_root` must be under `artifact_root/worktrees/`
+- source repo must be clean before merge, ignoring `.nodeflow/`
+- worktree must be clean (implementation changes must be committed to the attempt branch)
+- merge branch HEAD must match `stages.review.reviewed_branch_head` recorded at review completion
+- `run_context.source_base_revision` must be an ancestor of both the attempt branch and merge target branch
+- no push is performed
+- merge conflicts fail the flow and run `git merge --abort`
+- on merge failure the source repo may remain checked out on the merge target branch (no automatic restore)
+
+Allowed git commands in `git_merge_branch` are local-only: `status`, `show-ref`, `rev-parse`, `merge-base`, `checkout`, `merge`, and `merge --abort`. No `push`, `fetch`, `pull`, or remote operations.
+
+Set on `start` via input port or node `default_config` (validated at start).  
+Example: `examples/reference/dev_process/codex_params.example.json`.

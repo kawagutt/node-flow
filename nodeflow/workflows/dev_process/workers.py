@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional, Protocol, runtime_checkable
 
 from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.nodes.exec.codex_exec import CodexExecNode
+from nodeflow.workflows.dev_process.action_node_utils import execute_or_raise
 from nodeflow.workflows.dev_process.constants import EXEC_WORKER_CODEX
 
 
@@ -37,11 +38,14 @@ class CodexExecWorker:
         argv: list[str],
         timeout: int = 120,
     ) -> Dict[str, Any]:
-        out = CodexExecNode().execute(
+        out = execute_or_raise(
+            CodexExecNode(),
             {"prompt": prompt},
             {"argv": argv, "timeout": timeout, "cwd": cwd},
         )
         execution_output = out.get("execution_output") or {}
+        if not isinstance(execution_output, dict):
+            raise NodeExecutionFailure("codex_exec returned invalid execution_output")
         if not execution_output.get("ok"):
             raise NodeExecutionFailure(
                 f"codex_exec failed: {execution_output.get('stderr') or execution_output}"

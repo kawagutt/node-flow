@@ -8,12 +8,20 @@ from pathlib import Path
 import pytest
 
 from nodeflow.core.base_node import NodeExecutionFailure
-from nodeflow.workflows.dev_process.constants import STATE_AWAITING_REVIEW, STATE_AWAITING_SPEC
+from nodeflow.workflows.dev_process.constants import (
+    MERGE_POLICY_GIT_MERGE_BRANCH,
+    MERGE_POLICY_RECORD_ONLY,
+    STATE_AWAITING_REVIEW,
+    STATE_AWAITING_SPEC,
+)
 from nodeflow.workflows.dev_process.dev_process_flow.node_dev_process_flow import (
     DevProcessFlowNode,
 )
 from nodeflow.workflows.dev_process.flow_runner import run_flow
-from nodeflow.workflows.dev_process.paths import planned_branch_name_for_run
+from nodeflow.workflows.dev_process.paths import (
+    planned_branch_name_for_attempt,
+    planned_branch_name_for_run,
+)
 from nodeflow.workflows.dev_process.reuse import remove_git_worktree
 from nodeflow.workflows.development_flow.prepare_workspace import PrepareWorkspaceNode
 from tests.workflows.dev_process.git_fixtures import git_repo_with_commit
@@ -143,9 +151,13 @@ def test_revise_spec_then_approve_uses_new_worktree_attempt(tmp_path: Path) -> N
     assert wt2.is_dir()
     assert wt2 != wt1
     assert wt2.name == "002"
+    run_id = second["run_context"]["run_id"]
+    assert second["workspace_context"]["current_branch"] == planned_branch_name_for_attempt(
+        run_id, 2
+    )
     assert (
         second["workspace_context"]["current_branch"]
-        == first["workspace_context"]["planned_branch_name"]
+        != first["workspace_context"]["current_branch"]
     )
 
 
@@ -326,6 +338,29 @@ def test_resume_workspace_strategy_mismatch_fails(tmp_path: Path) -> None:
             repo_root=str(repo),
             flow_checkpoint_path=cp,
             workspace_strategy="git_worktree",
+        )
+
+
+def test_resume_merge_policy_mismatch_fails(tmp_path: Path) -> None:
+    repo = tmp_path / "repo_resume_mp"
+    repo.mkdir()
+    git_repo_with_commit(repo)
+    start = DevProcessFlowNode().execute(
+        {
+            "action": "start",
+            "repo_root": str(repo),
+            "task_prompt": "resume mp",
+            "merge_policy": MERGE_POLICY_RECORD_ONLY,
+        },
+        {},
+    )["flow_output"]
+    cp = start["flow_result"]["flow_checkpoint_path"]
+    with pytest.raises(NodeExecutionFailure, match="merge_policy mismatch"):
+        run_flow(
+            action="approve_spec",
+            repo_root=str(repo),
+            flow_checkpoint_path=cp,
+            merge_policy=MERGE_POLICY_GIT_MERGE_BRANCH,
         )
 
 

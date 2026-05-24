@@ -20,7 +20,8 @@
         "workspace_strategy": "input.workspace_strategy",
         "exec_worker_kind": "input.exec_worker_kind",
         "exec_argv": "input.exec_argv",
-        "codex_argv": "input.codex_argv"
+        "codex_argv": "input.codex_argv",
+        "merge_policy": "input.merge_policy"
       }
     }
   ]

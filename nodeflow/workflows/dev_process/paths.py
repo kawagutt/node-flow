@@ -139,13 +139,20 @@ def new_run_id() -> str:
 
 
 def planned_branch_name_for_run(run_id: str) -> str:
-    """Unique branch name per run; safe for git ref and worktree -b."""
+    """Run-level branch family prefix (resume identity)."""
     validate_run_id(run_id)
     safe = re.sub(r"[^A-Za-z0-9-]+", "-", run_id)
     safe = safe.strip("-")
     if not safe:
         raise NodeExecutionFailure(f"run_id {run_id!r} yields empty branch component")
     return f"feat/nodeflow/{safe}"
+
+
+def planned_branch_name_for_attempt(run_id: str, attempt: int) -> str:
+    """Per-workspace-attempt branch; safe when workers commit between revise cycles."""
+    if attempt < 1:
+        raise NodeExecutionFailure(f"workspace attempt must be >= 1, got {attempt}")
+    return f"{planned_branch_name_for_run(run_id)}/attempt-{attempt:03d}"
 
 
 def assert_safe_worktree_subdirectory(subdir: str) -> str:

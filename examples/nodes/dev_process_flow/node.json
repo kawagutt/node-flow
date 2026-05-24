@@ -12,11 +12,13 @@
     "workspace_strategy",
     "exec_worker_kind",
     "exec_argv",
-    "codex_argv"
+    "codex_argv",
+    "merge_policy"
   ],
   "output_ports": ["flow_output"],
   "default_config": {
     "run_spec_plan_on_start": true,
-    "force_review_blocking": false
+    "force_review_blocking": false,
+    "merge_policy": "record_only"
   }
 }

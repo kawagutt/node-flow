@@ -1,0 +1,7 @@
+{
+  "description": "Example for real Codex on git_worktree runs. Review carefully before using --full-auto on a real repository.",
+  "exec_worker_kind": "codex",
+  "exec_argv": ["codex", "exec", "--full-auto"],
+  "workspace_strategy": "git_worktree",
+  "merge_policy": "git_merge_branch"
+}

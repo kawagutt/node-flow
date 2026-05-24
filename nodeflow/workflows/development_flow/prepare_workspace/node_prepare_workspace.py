@@ -386,25 +386,16 @@ class PrepareWorkspaceNode(PythonActionNode):
         )
 
         worktree_path.parent.mkdir(parents=True, exist_ok=True)
-        if workspace_attempt == 1:
-            if branch_exists:
-                raise NodeExecutionFailure(
-                    f"planned_branch_name already exists: {planned_branch_name}"
-                )
-            add_argv = [
-                "worktree",
-                "add",
-                "-b",
-                planned_branch_name,
-                str(worktree_path),
-                base_revision,
-            ]
-        else:
-            if not branch_exists:
-                raise NodeExecutionFailure(
-                    f"git_worktree retry expected existing branch {planned_branch_name!r}"
-                )
-            add_argv = ["worktree", "add", str(worktree_path), planned_branch_name]
+        if branch_exists:
+            raise NodeExecutionFailure(f"planned_branch_name already exists: {planned_branch_name}")
+        add_argv = [
+            "worktree",
+            "add",
+            "-b",
+            planned_branch_name,
+            str(worktree_path),
+            base_revision,
+        ]
 
         cp_add = _run_git(source_repo_root, add_argv)
         if cp_add.returncode != 0:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -19,6 +20,8 @@ from nodeflow.workflows.dev_process.constants import (
     ACTION_REWORK,
     ACTION_START,
     EXEC_WORKER_CODEX,
+    MERGE_POLICY_GIT_MERGE_BRANCH,
+    MERGE_POLICY_RECORD_ONLY,
     STATE_AWAITING_FINAL,
     STATE_AWAITING_REVIEW,
     STATE_AWAITING_SPEC,
@@ -29,12 +32,20 @@ from nodeflow.workflows.dev_process.constants import (
     WORKSPACE_STRATEGY_GIT_WORKTREE,
 )
 from nodeflow.workflows.dev_process.evidence import assert_expected_stage_evidence
+from nodeflow.workflows.dev_process.merge import (
+    assert_merge_policy_allowed_at_start,
+    execute_merge_policy,
+    record_reviewed_branch_snapshot,
+    resolve_merge_policy,
+    validate_merge_policy,
+)
 from nodeflow.workflows.dev_process.paths import (
     abs_path,
     allocate_run_dir,
     git_current_branch,
     git_head_revision,
     new_run_id,
+    planned_branch_name_for_attempt,
     planned_branch_name_for_run,
     resolve_git_toplevel,
     validate_run_id,
@@ -45,6 +56,7 @@ from nodeflow.workflows.dev_process.reuse import (
     prepare_workspace,
     remove_git_worktree,
     run_context_for_df,
+    write_development_summary,
 )
 from nodeflow.workflows.dev_process.stages import (
     run_implement_stage,
@@ -77,10 +89,13 @@ def _increment_workspace_attempt(body: Dict[str, Any]) -> int:
 def _run_context_for_prepare_workspace(body: Dict[str, Any]) -> Dict[str, Any]:
     run_context = body["run_context"]
     attempt = _workspace_attempt(body)
+    run_id = str(run_context.get("run_id") or "")
+    branch = planned_branch_name_for_attempt(run_id, attempt)
     return run_context_for_df(run_context) | {
         "artifact_root": run_context["artifact_root"],
         "workspace_attempt": attempt,
         "worktree_subdirectory": workspace_attempt_subdir(attempt),
+        "planned_branch_name": branch,
     }
 
 
@@ -248,6 +263,10 @@ def _finalize(
     wc = doc.get("workspace_context")
     if isinstance(wc, dict) and wc:
         out["workspace_context"] = wc
+    if isinstance(doc.get("development_summary"), dict) and doc["development_summary"]:
+        out["development_summary"] = doc["development_summary"]
+    if isinstance(doc.get("merge_result"), dict) and doc["merge_result"]:
+        out["merge_result"] = doc["merge_result"]
     return out
 
 
@@ -265,6 +284,7 @@ def run_flow(
     force_review_blocking: bool = False,
     workspace_strategy: Optional[str] = None,
     exec_worker_kind: Optional[str] = None,
+    merge_policy: Optional[str] = None,
 ) -> Dict[str, Any]:
     argv = _resolve_exec_argv(exec_argv, codex_argv)
     if action == ACTION_START and flow_checkpoint_path:
@@ -279,6 +299,7 @@ def run_flow(
             exec_argv=argv,
             workspace_strategy=workspace_strategy or WORKSPACE_STRATEGY_CURRENT_REPO,
             exec_worker_kind=exec_worker_kind or EXEC_WORKER_CODEX,
+            merge_policy=merge_policy or MERGE_POLICY_RECORD_ONLY,
         )
 
     if not flow_checkpoint_path:
@@ -299,6 +320,14 @@ def run_flow(
         if exec_worker_kind != stored_worker:
             raise NodeExecutionFailure(
                 f"exec_worker_kind mismatch on resume: checkpoint {stored_worker!r} != request {exec_worker_kind!r}"
+            )
+    if merge_policy is not None:
+        stored_mp = str(
+            (body.get("dev_process") or {}).get("merge_policy") or MERGE_POLICY_RECORD_ONLY
+        )
+        if merge_policy != stored_mp:
+            raise NodeExecutionFailure(
+                f"merge_policy mismatch on resume: checkpoint {stored_mp!r} != request {merge_policy!r}"
             )
     stored_run_id = str(run_context.get("run_id") or "")
     if run_id and run_id != stored_run_id:
@@ -350,6 +379,7 @@ def _handle_start(
     exec_argv: Optional[list[str]],
     workspace_strategy: str,
     exec_worker_kind: str,
+    merge_policy: str,
 ) -> Dict[str, Any]:
     repo = resolve_git_toplevel(Path(repo_root))
     swc = check_source_workspace(repo)
@@ -359,6 +389,12 @@ def _handle_start(
     branch = git_current_branch(repo)
     planned = planned_branch_name_for_run(rid)
     strategy = _workspace_strategy({"workspace_strategy": workspace_strategy})
+    policy = validate_merge_policy(merge_policy)
+    assert_merge_policy_allowed_at_start(
+        merge_policy=policy,
+        workspace_strategy=strategy,
+        source_current_branch=branch,
+    )
 
     run_context = {
         "run_id": rid,
@@ -383,6 +419,7 @@ def _handle_start(
         "dev_process": {
             "review_depth_preset": "standard",
             "exec_worker_kind": exec_worker_kind,
+            "merge_policy": policy,
             "workspace_attempt": 1,
             "human_gates": {"spec": "pending", "final": "not_reached"},
         },
@@ -531,6 +568,9 @@ def _handle_approve_spec(
     except NodeExecutionFailure as e:
         _fail_checkpoint(body=body, run_id=run_id, action=action, reason=str(e))
         raise
+    branch_name, branch_head = record_reviewed_branch_snapshot(body)
+    rev["reviewed_branch_name"] = branch_name
+    rev["reviewed_branch_head"] = branch_head
     body["stages"]["review"] = rev
     timeline.append_event(
         run_context["artifact_root"],
@@ -658,16 +698,66 @@ def _merge_gate_ok(body: Dict[str, Any]) -> None:
         raise NodeExecutionFailure("stages.review is stale; rework or re-run review before merge")
 
 
+def _write_fallback_development_summary(
+    body: Dict[str, Any],
+    *,
+    action: str,
+    reason: str,
+) -> Dict[str, Any]:
+    run_context = body["run_context"]
+    artifact_root = Path(run_context["artifact_root"])
+    path = artifact_root / "summary" / f"{action}_development_summary.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    summary: Dict[str, Any] = {
+        "status": "fallback",
+        "reason": reason,
+        "artifact_path": str(path.resolve()),
+        "merge_result": body.get("merge_result"),
+    }
+    path.write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return summary
+
+
 def _handle_merge(body: Dict[str, Any], *, run_id: str) -> Dict[str, Any]:
     run_context = body["run_context"]
     assert_expected_stage_evidence(body, run_id=run_id)
     _merge_gate_ok(body)
+    policy = resolve_merge_policy(body)
+    artifact_root = run_context["artifact_root"]
     timeline.append_event(
-        run_context["artifact_root"],
+        artifact_root,
         run_id,
         "merge_attempted",
         merge_ready=True,
+        merge_policy=policy,
     )
+    try:
+        merge_result = execute_merge_policy(body)
+        body["merge_result"] = merge_result
+    except NodeExecutionFailure as e:
+        _fail_checkpoint(body=body, run_id=run_id, action=ACTION_MERGE, reason=str(e))
+        raise
+    try:
+        summary = write_development_summary(
+            body=body,
+            action=ACTION_MERGE,
+            merge_ready=True,
+        )
+        body["development_summary"] = summary
+    except NodeExecutionFailure as e:
+        timeline.append_event(
+            artifact_root,
+            run_id,
+            "summary_failed",
+            reason=str(e),
+            merge_policy=policy,
+        )
+        summary = _write_fallback_development_summary(
+            body,
+            action=ACTION_MERGE,
+            reason=str(e),
+        )
+        body["development_summary"] = summary
     return _finalize(
         body=body,
         run_id=run_id,

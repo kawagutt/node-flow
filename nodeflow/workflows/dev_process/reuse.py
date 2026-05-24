@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Tuple
 
 from nodeflow.core.base_node import NodeExecutionFailure
+from nodeflow.workflows.dev_process.action_node_utils import execute_or_raise
 
 # Field mapping: dev_process run_context -> development_flow stage inputs
 RUN_CONTEXT_TO_DF: Dict[str, str] = {
@@ -48,7 +49,8 @@ def check_source_workspace(
     )
 
     node = CheckSourceWorkspaceNode()
-    out = node.execute(
+    out = execute_or_raise(
+        node,
         {"source_repo_root": str(repo_root)},
         {"ignored_dirty_prefixes": list(ignored_dirty_prefixes)},
     )
@@ -87,7 +89,8 @@ def prepare_workspace(
     if isinstance(existing_workspace, dict) and existing_workspace:
         inputs["workspace_context"] = existing_workspace
     node = PrepareWorkspaceNode()
-    out = node.execute(
+    out = execute_or_raise(
+        node,
         inputs,
         {"strategy": strategy, "ignored_dirty_prefixes": list(ignored_dirty_prefixes)},
     )
@@ -121,6 +124,15 @@ def remove_git_worktree(
     if cp.returncode != 0:
         err = (cp.stderr or cp.stdout or "").strip() or "git worktree remove failed"
         raise NodeExecutionFailure(f"failed to remove git worktree {path}: {err}")
+    prune = subprocess.run(
+        ["git", "-C", source_repo_root, "worktree", "prune"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if prune.returncode != 0:
+        err = (prune.stderr or prune.stdout or "").strip() or "git worktree prune failed"
+        raise NodeExecutionFailure(f"git worktree prune failed after remove: {err}")
 
 
 def collect_repo_context(
@@ -141,7 +153,11 @@ def collect_repo_context(
     if revision_context:
         inputs["revision_context"] = revision_context
     node = CollectRepoContextNode()
-    out = node.execute(inputs, {"ignored_untracked_prefixes": list(ignored_untracked_prefixes)})
+    out = execute_or_raise(
+        node,
+        inputs,
+        {"ignored_untracked_prefixes": list(ignored_untracked_prefixes)},
+    )
     return out.get("repo_context") or {}
 
 
@@ -154,7 +170,8 @@ def collect_diff(
     from nodeflow.nodes.git.collect_diff.node_collect_diff import CollectDiffNode
 
     node = CollectDiffNode()
-    out = node.execute(
+    out = execute_or_raise(
+        node,
         {"repo_root": str(repo_root), "base_ref": base_revision},
         {"ignored_changed_file_prefixes": list(ignored_changed_file_prefixes)},
     )
@@ -170,7 +187,7 @@ def run_tests(
     from nodeflow.workflows.development_flow.implement.node_implement import RunTestsNode
 
     node = RunTestsNode()
-    out = node.execute({"repo_root": str(repo_root)}, {"argv": argv, "timeout": timeout})
+    out = execute_or_raise(node, {"repo_root": str(repo_root)}, {"argv": argv, "timeout": timeout})
     return out.get("test_result") or {}
 
 
@@ -197,8 +214,68 @@ def write_stage_checkpoint(
         "_repo_root_for_paths": str(repo_root),
         **(params or {}),
     }
-    out = node.execute(inputs, p)
+    out = execute_or_raise(node, inputs, p)
     return out.get("stage_result") or {}
+
+
+def write_development_summary(
+    *,
+    body: Dict[str, Any],
+    action: str,
+    merge_ready: bool,
+) -> Dict[str, Any]:
+    from nodeflow.workflows.dev_process.paths import assert_path_under_run_dir
+    from nodeflow.workflows.development_flow.write_development_summary import (
+        WriteDevelopmentSummaryNode,
+    )
+
+    run_context = body["run_context"]
+    artifact_root = str(run_context["artifact_root"])
+    expected_path = Path(artifact_root) / "summary" / f"{action}_development_summary.json"
+    wc = body.get("workspace_context")
+    if not isinstance(wc, dict):
+        wc = {
+            "strategy": run_context.get("workspace_strategy") or "current_repo",
+            "source_repo_root": run_context["repo_root"],
+            "workspace_root": run_context["repo_root"],
+            "current_branch": run_context.get("source_current_branch") or "",
+            "planned_branch_name": run_context.get("planned_branch_name") or "",
+            "base_revision": run_context.get("source_base_revision") or "",
+        }
+    df_run_context = {
+        **run_context,
+        "source_repo_root": run_context["repo_root"],
+    }
+    impl_st = (body.get("stages") or {}).get("implement") or {}
+    rev_st = (body.get("stages") or {}).get("review") or {}
+    node = WriteDevelopmentSummaryNode()
+    out = execute_or_raise(
+        node,
+        {
+            "action": action,
+            "task_prompt": str(body.get("task_prompt") or ""),
+            "run_context": df_run_context,
+            "workspace_context": wc,
+            "implement_stage_result": impl_st.get("stage_result") or {},
+            "review_stage_result": rev_st.get("stage_result") or rev_st,
+            "next_action": None,
+            "merge_ready": merge_ready,
+        },
+        {},
+    )
+    summary = out.get("development_summary") or {}
+    artifact_path = summary.get("artifact_path")
+    if not isinstance(artifact_path, str) or not artifact_path.strip():
+        raise NodeExecutionFailure("development summary missing artifact_path")
+    assert_path_under_run_dir(artifact_root, artifact_path)
+    resolved = Path(artifact_path).resolve()
+    if resolved != expected_path.resolve():
+        raise NodeExecutionFailure(
+            f"development summary path mismatch: expected {expected_path}, got {resolved}"
+        )
+    if not resolved.is_file():
+        raise NodeExecutionFailure(f"development summary was not written: {resolved}")
+    return summary
 
 
 def build_review_prompt(
@@ -238,7 +315,8 @@ def build_review_prompt(
     if cls is None:
         raise NodeExecutionFailure(f"unknown reviewer key {reviewer_key!r}")
     node = cls()
-    out = node.execute(
+    out = execute_or_raise(
+        node,
         {
             "repo_root": str(repo_root),
             "base_ref": base_revision,
@@ -264,7 +342,8 @@ def aggregate_reviews(
     from nodeflow.workflows.development_flow.review.aggregate_reviews import AggregateReviewsNode
 
     node = AggregateReviewsNode()
-    out = node.execute(
+    out = execute_or_raise(
+        node,
         {**review_inputs, "test_result": test_result, "diff_result": diff_result},
         {"spec_revision_needed_default": spec_revision_needed_default},
     )

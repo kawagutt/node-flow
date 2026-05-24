@@ -37,3 +37,25 @@ def test_codex_worker_hermetic_run(tmp_path) -> None:
     )
     assert out.get("ok") is True
     assert '"spec"' in str(out.get("stdout") or "")
+
+
+def test_codex_worker_propagates_codex_node_fatal(monkeypatch) -> None:
+    err = NodeExecutionFailure("child failed")
+
+    class FakeCodexExecNode:
+        def execute(self, inputs, params):
+            return {}
+
+        def read_status(self):
+            return "fatal"
+
+        def read_error(self):
+            return err
+
+    monkeypatch.setattr(
+        "nodeflow.workflows.dev_process.workers.CodexExecNode",
+        FakeCodexExecNode,
+    )
+
+    with pytest.raises(NodeExecutionFailure, match="child failed"):
+        CodexExecWorker().run(prompt="p", cwd=".", argv=["x"])
