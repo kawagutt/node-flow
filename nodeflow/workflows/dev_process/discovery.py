@@ -123,7 +123,9 @@ def find_latest_checkpoint(
 
     if best_path is None or best_doc is None:
         hint = f" for run_id={run_id!r}" if run_id else ""
-        raise NodeExecutionFailure(f"no dev-process checkpoint found under {runs_dir(repo_root)}{hint}")
+        raise NodeExecutionFailure(
+            f"no dev-process checkpoint found under {runs_dir(repo_root)}{hint}"
+        )
 
     return best_path, best_doc
 

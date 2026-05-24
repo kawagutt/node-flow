@@ -7,11 +7,11 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from nodeflow.core.base_node import NodeExecutionFailure
+from nodeflow.workflows.dev_process.constants import EXEC_TIMEOUT_SECONDS
 from nodeflow.workflows.dev_process.evidence import record_exec_evidence
 from nodeflow.workflows.dev_process.hermetic_argv import spec_plan_argv
 from nodeflow.workflows.dev_process.paths import assert_path_under_run_dir
 from nodeflow.workflows.dev_process.reuse import collect_repo_context, write_stage_checkpoint
-from nodeflow.workflows.dev_process.constants import EXEC_TIMEOUT_SECONDS
 from nodeflow.workflows.dev_process.workers import ExecWorker, resolve_exec_worker, run_exec
 
 
@@ -31,6 +31,20 @@ def _parse_spec_plan_stdout(stdout: str) -> Tuple[str, str]:
     return spec.strip(), plan.strip()
 
 
+def _format_reference_block(reference_materials: list[dict[str, Any]] | None) -> str:
+    if not reference_materials:
+        return ""
+    lines = ["\n\n## Reference materials"]
+    for mat in reference_materials:
+        path = mat.get("path", "")
+        lines.append(f"\n### {path}")
+        if mat.get("text"):
+            lines.append(str(mat["text"]))
+        elif mat.get("binary_or_unsupported"):
+            lines.append("(binary or unsupported — path only)")
+    return "\n".join(lines)
+
+
 def run_spec_plan_stage(
     *,
     repo_root: Path,
@@ -41,6 +55,8 @@ def run_spec_plan_stage(
     exec_argv: list[str] | None = None,
     codex_argv: list[str] | None = None,
     revision_context: str | None = None,
+    notes: str | None = None,
+    reference_materials: list[dict[str, Any]] | None = None,
     exec_worker_kind: Optional[str] = None,
 ) -> Dict[str, Any]:
     repo_context = collect_repo_context(
@@ -55,6 +71,9 @@ def run_spec_plan_stage(
         f"Task:\n{task_prompt}\n\n"
         f"Repository context:\n{json.dumps(repo_context, ensure_ascii=False)[:12000]}"
     )
+    if notes and notes.strip():
+        prompt_text += f"\n\nAdditional constraints or notes:\n{notes.strip()}"
+    prompt_text += _format_reference_block(reference_materials)
     if revision_context:
         prompt_text += f"\n\nRevision context:\n{revision_context}"
 
@@ -62,7 +81,9 @@ def run_spec_plan_stage(
     argv = exec_argv if exec_argv is not None else codex_argv
     argv = argv if argv is not None else spec_plan_argv()
     cwd = str(repo_root)
-    execution_output = run_exec(worker, prompt=prompt_text, cwd=cwd, argv=argv, timeout=EXEC_TIMEOUT_SECONDS)
+    execution_output = run_exec(
+        worker, prompt=prompt_text, cwd=cwd, argv=argv, timeout=EXEC_TIMEOUT_SECONDS
+    )
     evidence_path = record_exec_evidence(
         artifact_root=artifact_root,
         run_id=run_id,

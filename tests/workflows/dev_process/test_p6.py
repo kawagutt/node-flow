@@ -581,9 +581,7 @@ def test_git_merge_rejects_branch_changed_after_review(
         )
 
 
-def test_git_merge_rejects_dirty_worktree(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_git_merge_rejects_dirty_worktree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = tmp_path / "repo_dirty_wt"
     repo.mkdir()
     git_repo_with_commit(repo)
@@ -704,7 +702,9 @@ def test_git_merge_rejects_attempt_branch_unrelated_to_source_base(tmp_path: Pat
         },
     }
     _sync_review_snapshot(body, repo)
-    with pytest.raises(NodeExecutionFailure, match="attempt branch .* unrelated to flow start base"):
+    with pytest.raises(
+        NodeExecutionFailure, match="attempt branch .* unrelated to flow start base"
+    ):
         execute_merge_policy(body)
 
 
@@ -712,13 +712,6 @@ def test_git_merge_rejects_target_branch_unrelated_to_source_base(tmp_path: Path
     repo = tmp_path / "repo_unrelated_target"
     repo.mkdir()
     git_repo_with_commit(repo)
-    base_revision = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=str(repo),
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
     run_id = "20260524T120000000009Z"
     body, wt_dir, branch = _setup_git_merge_worktree_with_review(tmp_path, repo, run_id)
     _git_commit_file(wt_dir, "feature.txt", "x\n", "feat")
@@ -738,5 +731,7 @@ def test_git_merge_rejects_target_branch_unrelated_to_source_base(tmp_path: Path
         capture_output=True,
     )
     body["run_context"]["source_current_branch"] = "side"
-    with pytest.raises(NodeExecutionFailure, match="merge target branch .* unrelated to flow start base"):
+    with pytest.raises(
+        NodeExecutionFailure, match="merge target branch .* unrelated to flow start base"
+    ):
         execute_merge_policy(body)

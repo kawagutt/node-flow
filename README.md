@@ -76,19 +76,35 @@ Field semantics for workspace / checkpoints / summaries are **`doc/nodeflow_spec
 
 **`nodeflow.core.loader.load_pipeline()`** confirms removal of YAML v1.5 by raising `NotImplementedError`.
 
-## Dev-process (recommended CLI)
+## Dev-process CLI
 
-For the **dev-process** orchestration flow (spec → implement → review → merge), use the thin wrapper CLI — no manual checkpoint handling. **Recommended v1 entry point.**
+For the **dev-process** orchestration flow (spec → implement → review → merge). Stage-specific inputs (task prompt, revision comments, rework feedback) are collected by each stage — not as dev-process CLI flags.
+
+### Recommended (`nodeflow --pipe dev-process`)
+
+```bash
+nodeflow --pipe dev-process --repo-root /path/to/target-repo start
+nodeflow --pipe dev-process --repo-root /path/to/target-repo status
+nodeflow --pipe dev-process --repo-root /path/to/target-repo approve-spec
+nodeflow --pipe dev-process --repo-root /path/to/target-repo revise-spec
+nodeflow --pipe dev-process --repo-root /path/to/target-repo rework
+nodeflow --pipe dev-process --repo-root /path/to/target-repo approve-final
+nodeflow --pipe dev-process --repo-root /path/to/target-repo merge
+```
+
+See [doc/dev_process_p8_named_pipe.md](doc/dev_process_p8_named_pipe.md). Use `--non-interactive` in CI.
+
+### Compatibility (`nodeflow-dev-process`)
 
 ```bash
 nodeflow-dev-process --repo-root /path/to/target-repo start --task-prompt '...'
 nodeflow-dev-process --repo-root /path/to/target-repo status
 nodeflow-dev-process --repo-root /path/to/target-repo approve-spec
-nodeflow-dev-process --repo-root /path/to/target-repo approve-final
-nodeflow-dev-process --repo-root /path/to/target-repo merge
 ```
 
-Merge policy on `start`: `record_only` (audit) or `git_merge_branch` (local merge). Docs: [`doc/dev_process_p7_wrapper.md`](doc/dev_process_p7_wrapper.md), [`doc/dev_process.md`](doc/dev_process.md), [`doc/dev_process_smoke_log.md`](doc/dev_process_smoke_log.md) (recorded real Codex runs). Manual PipeSpec path: [`doc/dev_process_real_codex_dry_run.md`](doc/dev_process_real_codex_dry_run.md).
+Same `run_flow` backend; see [doc/dev_process_p7_wrapper.md](doc/dev_process_p7_wrapper.md).
+
+Merge policy on `start`: `record_only` (audit) or `git_merge_branch` (local merge). Architecture: [`doc/dev_process.md`](doc/dev_process.md). Recorded Codex runs: [`doc/dev_process_smoke_log.md`](doc/dev_process_smoke_log.md). Manual PipeSpec: [`doc/dev_process_real_codex_dry_run.md`](doc/dev_process_real_codex_dry_run.md).
 
 ## API keys (optional)
 
@@ -138,7 +154,7 @@ Register classes on `nodeflow.core.registry.registry` with `register("your_type"
 
 ## Upgrading from legacy YAML
 
-- **CLI / file loading:** The old **YAML `graph` + `final`** pipeline is gone. Use **`nodeflow.core.loader.load_pipeline(workspace, "relative/or/abs/path/to/pipe.json")`** (JSON only) or construct a **`PipeNode`** and call **`execute(...)`** from Python. The `nodeflow` console script still wires to the removed `load_and_kick_pipeline` helper and always raises, so treat it as a compatibility stub (see [CHANGELOG.md](CHANGELOG.md)).
+- **CLI / file loading:** Use **`nodeflow examples/pipes/hello.json -w . -i key=value`** for JSON PipeSpec execution, or **`nodeflow --pipe dev-process`** for the dev-process orchestration flow. Legacy YAML `graph` + `final` pipelines are removed.
 
 ## License
 

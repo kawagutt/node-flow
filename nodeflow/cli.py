@@ -1,4 +1,4 @@
-"""NodeFlow CLI — run v1.7 JSON PipeSpec pipelines."""
+"""NodeFlow CLI — run v1.7 JSON PipeSpec pipelines and named pipes."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import click
 
 from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.core.run import load_and_kick_pipeline
+from nodeflow.pipes.dispatch import dispatch_named_pipe, has_named_pipe
 
 
 def _parse_cli_value(value: str) -> Any:
@@ -42,7 +43,7 @@ def _parse_kv_pairs(items: tuple[str, ...]) -> dict[str, Any]:
     help="Workspace directory (resolves relative paths in PipeSpec)",
 )
 @click.option("--input", "-i", "input_", multiple=True, help="Pipe input port (key=value)")
-def main(pipeline: str, workspace: str, input_: tuple) -> None:
+def pipeline_main(pipeline: str, workspace: str, input_: tuple) -> None:
     """Run a v1.7 JSON PipeSpec (``*.json``) to completion and print pipe outputs."""
     try:
         workspace_dir = str(Path(workspace).resolve())
@@ -59,5 +60,25 @@ def main(pipeline: str, workspace: str, input_: tuple) -> None:
         sys.exit(1)
 
 
+def main(args: list[str] | None = None) -> int:
+    """Console script entrypoint: named pipe dispatch or JSON PipeSpec execution."""
+    argv = list(sys.argv[1:] if args is None else args)
+    try:
+        if has_named_pipe(argv):
+            return dispatch_named_pipe(argv)
+        pipeline_main.main(args=argv, standalone_mode=False)
+    except click.ClickException as e:
+        click.echo(f"Error: {e.message}", err=True)
+        return 1
+    except SystemExit as exc:
+        code = exc.code
+        if code is None:
+            return 0
+        if isinstance(code, int):
+            return code
+        return 1
+    return 0
+
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

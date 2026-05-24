@@ -133,7 +133,9 @@ def test_wrapper_hermetic_full_path_to_merged(tmp_path: Path, cli_runner: CliRun
     assert doc["flow_result"]["state"] == STATE_MERGED
 
 
-def test_resume_uses_latest_checkpoint_without_manual_cp(tmp_path: Path, cli_runner: CliRunner) -> None:
+def test_resume_uses_latest_checkpoint_without_manual_cp(
+    tmp_path: Path, cli_runner: CliRunner
+) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repo_with_commit(repo)
@@ -325,7 +327,9 @@ def test_explicit_checkpoint_other_repo_fails(tmp_path: Path, cli_runner: CliRun
     assert "repo_root does not match" in result.output.lower() or "Error:" in result.output
 
 
-def test_run_id_substring_does_not_match_unrelated_run(tmp_path: Path, cli_runner: CliRunner) -> None:
+def test_run_id_substring_does_not_match_unrelated_run(
+    tmp_path: Path, cli_runner: CliRunner
+) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repo_with_commit(repo)

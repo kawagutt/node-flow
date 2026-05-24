@@ -1,9 +1,13 @@
 # Dev Process — P7 Wrapper Spec
 
+For new usage, prefer **`nodeflow --pipe dev-process`** ([dev_process_p8_named_pipe.md](./dev_process_p8_named_pipe.md)).  
+This document describes the **compatibility** wrapper **`nodeflow-dev-process`**.
+
 Thin CLI wrapper that removes manual checkpoint (`CP=...`) handling. It does **not** implement a new workflow engine.
 
 Related:
 
+- [dev_process_p8_named_pipe.md](./dev_process_p8_named_pipe.md) — **recommended** `nodeflow --pipe dev-process` entry
 - [dev_process.md](./dev_process.md) — architecture and merge contracts
 - [dev_process_real_codex_dry_run.md](./dev_process_real_codex_dry_run.md) — manual `nodeflow` path (pre-P7)
 - [dev_process_smoke_log.md](./dev_process_smoke_log.md) — real Codex smoke record

@@ -1,4 +1,4 @@
-"""P7 thin CLI wrapper for dev-process — no duplicated state machine or git ops."""
+"""P7/P8 thin CLI wrapper for dev-process — no duplicated state machine or git ops."""
 
 from __future__ import annotations
 
@@ -112,7 +112,7 @@ def _run_resume_action(
     checkpoint: Optional[str],
     run_id: Optional[str],
     as_json: bool,
-    task_prompt: str = "",
+    interactive: bool,
     human_comment_text: str = "",
     **run_flow_kwargs: Any,
 ) -> None:
@@ -125,8 +125,8 @@ def _run_resume_action(
             repo_root=str(repo_root),
             flow_checkpoint_path=cp_path,
             run_id=run_id,
-            task_prompt=task_prompt,
             human_comment_text=human_comment_text,
+            interactive=interactive,
             **run_flow_kwargs,
         )
     except NodeExecutionFailure as e:
@@ -137,13 +137,19 @@ def _run_resume_action(
 @click.group()
 @click.option(
     "--repo-root",
+    "--repo_root",
     type=click.Path(exists=True, file_okay=False),
     default=".",
     help="Target git repository (dev-process artifact host).",
 )
 @click.option("--json", "as_json", is_flag=True, help="Print raw flow output JSON.")
+@click.option(
+    "--non-interactive",
+    is_flag=True,
+    help="Do not prompt for stage inputs; fail when required input is missing.",
+)
 @click.pass_context
-def main(ctx: click.Context, repo_root: str, as_json: bool) -> None:
+def main(ctx: click.Context, repo_root: str, as_json: bool, non_interactive: bool) -> None:
     """Thin wrapper around dev_process.flow — discovers checkpoints, calls run_flow."""
     ctx.ensure_object(dict)
     try:
@@ -151,10 +157,15 @@ def main(ctx: click.Context, repo_root: str, as_json: bool) -> None:
     except NodeExecutionFailure as e:
         raise click.ClickException(str(e)) from e
     ctx.obj["as_json"] = as_json
+    ctx.obj["interactive"] = not non_interactive
 
 
 @main.command("start")
-@click.option("--task-prompt", required=True, help="Task description for spec_plan.")
+@click.option(
+    "--task-prompt",
+    default="",
+    help="Optional initial provided input for spec_plan stage (not a dev-process business arg).",
+)
 @click.option(
     "--workspace-strategy",
     default=WORKSPACE_STRATEGY_GIT_WORKTREE,
@@ -187,16 +198,21 @@ def cmd_start(
     """Start a new dev-process run (spec_plan on start)."""
     repo_root: Path = ctx.obj["repo_root"]
     argv = _parse_exec_argv(exec_argv)
+    spec_plan_provided: Dict[str, Any] = {}
+    if task_prompt.strip():
+        spec_plan_provided["task_prompt"] = task_prompt.strip()
     try:
         out = run_flow(
             action=ACTION_START,
             repo_root=str(repo_root),
-            task_prompt=task_prompt,
+            task_prompt=task_prompt.strip(),
             run_id=run_id,
             workspace_strategy=workspace_strategy,
             merge_policy=merge_policy,
             exec_worker_kind=exec_worker_kind,
             exec_argv=argv,
+            interactive=ctx.obj["interactive"],
+            spec_plan_provided=spec_plan_provided,
         )
     except NodeExecutionFailure as e:
         raise click.ClickException(str(e)) from e
@@ -250,6 +266,7 @@ def cmd_approve_spec(ctx: click.Context, checkpoint: Optional[str], run_id: Opti
         checkpoint=checkpoint,
         run_id=run_id,
         as_json=ctx.obj["as_json"],
+        interactive=ctx.obj["interactive"],
     )
 
 
@@ -265,17 +282,16 @@ def cmd_rework(ctx: click.Context, checkpoint: Optional[str], run_id: Optional[s
         checkpoint=checkpoint,
         run_id=run_id,
         as_json=ctx.obj["as_json"],
+        interactive=ctx.obj["interactive"],
     )
 
 
 @main.command("revise-spec")
-@click.option("--task-prompt", default="", help="Revision comment / updated task prompt.")
 @click.option("--checkpoint", default=None)
 @click.option("--run-id", default=None)
 @click.pass_context
 def cmd_revise_spec(
     ctx: click.Context,
-    task_prompt: str,
     checkpoint: Optional[str],
     run_id: Optional[str],
 ) -> None:
@@ -286,7 +302,7 @@ def cmd_revise_spec(
         checkpoint=checkpoint,
         run_id=run_id,
         as_json=ctx.obj["as_json"],
-        task_prompt=task_prompt,
+        interactive=ctx.obj["interactive"],
     )
 
 
@@ -302,6 +318,7 @@ def cmd_approve_final(ctx: click.Context, checkpoint: Optional[str], run_id: Opt
         checkpoint=checkpoint,
         run_id=run_id,
         as_json=ctx.obj["as_json"],
+        interactive=ctx.obj["interactive"],
     )
 
 
@@ -317,6 +334,7 @@ def cmd_merge(ctx: click.Context, checkpoint: Optional[str], run_id: Optional[st
         checkpoint=checkpoint,
         run_id=run_id,
         as_json=ctx.obj["as_json"],
+        interactive=ctx.obj["interactive"],
     )
 
 

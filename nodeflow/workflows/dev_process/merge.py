@@ -162,7 +162,9 @@ def assert_worktree_clean_for_merge(workspace_root: str | Path) -> None:
         )
 
 
-def assert_reviewed_branch_unchanged(body: Dict[str, Any], *, branch: str, source_repo: str | Path) -> None:
+def assert_reviewed_branch_unchanged(
+    body: Dict[str, Any], *, branch: str, source_repo: str | Path
+) -> None:
     review_st = (body.get("stages") or {}).get("review") or {}
     if not isinstance(review_st, dict):
         raise NodeExecutionFailure("stages.review is required for git merge")
@@ -176,9 +178,7 @@ def assert_reviewed_branch_unchanged(body: Dict[str, Any], *, branch: str, sourc
         )
     current_head = git_branch_head(source_repo, branch)
     if current_head != expected_head:
-        raise NodeExecutionFailure(
-            "merge branch changed after review; rerun review before merge"
-        )
+        raise NodeExecutionFailure("merge branch changed after review; rerun review before merge")
 
 
 def assert_revision_is_ancestor(
@@ -211,17 +211,13 @@ def assert_source_base_revision_ancestry(
         source,
         base,
         f"refs/heads/{attempt_branch}",
-        label=(
-            f"attempt branch {attempt_branch!r} is unrelated to flow start base {base!r}"
-        ),
+        label=(f"attempt branch {attempt_branch!r} is unrelated to flow start base {base!r}"),
     )
     assert_revision_is_ancestor(
         source,
         base,
         f"refs/heads/{target_branch}",
-        label=(
-            f"merge target branch {target_branch!r} is unrelated to flow start base {base!r}"
-        ),
+        label=(f"merge target branch {target_branch!r} is unrelated to flow start base {base!r}"),
     )
 
 

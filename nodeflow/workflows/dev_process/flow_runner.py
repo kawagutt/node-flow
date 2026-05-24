@@ -20,7 +20,6 @@ from nodeflow.workflows.dev_process.constants import (
     ACTION_REWORK,
     ACTION_START,
     EXEC_WORKER_CODEX,
-    MERGE_POLICY_GIT_MERGE_BRANCH,
     MERGE_POLICY_RECORD_ONLY,
     STATE_AWAITING_FINAL,
     STATE_AWAITING_REVIEW,
@@ -57,6 +56,13 @@ from nodeflow.workflows.dev_process.reuse import (
     remove_git_worktree,
     run_context_for_df,
     write_development_summary,
+)
+from nodeflow.workflows.dev_process.stage_inputs import (
+    build_rework_context,
+    collect_revision_inputs,
+    collect_rework_inputs,
+    collect_spec_plan_inputs,
+    format_revision_context,
 )
 from nodeflow.workflows.dev_process.stages import (
     run_implement_stage,
@@ -301,12 +307,19 @@ def run_flow(
     workspace_strategy: Optional[str] = None,
     exec_worker_kind: Optional[str] = None,
     merge_policy: Optional[str] = None,
+    interactive: bool = False,
+    spec_plan_provided: Optional[Dict[str, Any]] = None,
+    revision_provided: Optional[Dict[str, Any]] = None,
+    rework_provided: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     if action == ACTION_START and flow_checkpoint_path:
         raise NodeExecutionFailure("start does not accept flow_checkpoint_path")
 
     if action == ACTION_START:
         argv = _resolve_exec_argv(exec_argv, codex_argv)
+        provided = dict(spec_plan_provided or {})
+        if task_prompt.strip() and not provided.get("task_prompt"):
+            provided["task_prompt"] = task_prompt.strip()
         return _handle_start(
             repo_root=repo_root,
             task_prompt=task_prompt,
@@ -316,6 +329,8 @@ def run_flow(
             workspace_strategy=workspace_strategy or WORKSPACE_STRATEGY_CURRENT_REPO,
             exec_worker_kind=exec_worker_kind or EXEC_WORKER_CODEX,
             merge_policy=merge_policy or MERGE_POLICY_RECORD_ONLY,
+            interactive=interactive,
+            spec_plan_provided=provided,
         )
 
     if not flow_checkpoint_path:
@@ -373,10 +388,31 @@ def run_flow(
             body, run_id=run_id, exec_argv=argv, force_review_blocking=force_review_blocking
         )
     if action == ACTION_REVISE_SPEC:
-        return _handle_revise_spec(body, run_id=run_id, task_prompt=task_prompt, exec_argv=argv)
+        rev_provided = dict(revision_provided or {})
+        if task_prompt.strip() and not rev_provided.get("revision_comment"):
+            rev_provided["revision_comment"] = task_prompt.strip()
+        if not rev_provided.get("revision_comment") and not interactive:
+            rev_provided.setdefault("revision_comment", "revise spec")
+        return _handle_revise_spec(
+            body,
+            run_id=run_id,
+            exec_argv=argv,
+            interactive=interactive,
+            revision_provided=rev_provided,
+        )
     if action == ACTION_REWORK:
+        rw_provided = dict(rework_provided or {})
+        if human_comment_text.strip() and not rw_provided.get("rework_comment"):
+            rw_provided["rework_comment"] = human_comment_text.strip()
+        if not rw_provided.get("rework_comment") and not interactive:
+            rw_provided.setdefault("rework_comment", "rework requested")
         return _handle_rework(
-            body, run_id=run_id, exec_argv=argv, force_review_blocking=force_review_blocking
+            body,
+            run_id=run_id,
+            exec_argv=argv,
+            force_review_blocking=force_review_blocking,
+            interactive=interactive,
+            rework_provided=rw_provided,
         )
     if action == ACTION_MERGE:
         return _handle_merge(body, run_id=run_id)
@@ -403,6 +439,8 @@ def _handle_start(
     workspace_strategy: str,
     exec_worker_kind: str,
     merge_policy: str,
+    interactive: bool = False,
+    spec_plan_provided: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     repo = resolve_git_toplevel(Path(repo_root))
     swc = check_source_workspace(repo)
@@ -466,7 +504,20 @@ def _handle_start(
         task_prompt=task_prompt,
         exec_argv=exec_argv,
         action=ACTION_START,
+        interactive=interactive,
+        spec_plan_provided=spec_plan_provided or {},
     )
+
+
+def _attach_spec_plan_input_artifacts(
+    stage_result: Dict[str, Any],
+    *,
+    input_artifact: Path,
+    reference_materials_artifact: Optional[Path],
+) -> None:
+    stage_result["input_artifact"] = str(input_artifact)
+    if reference_materials_artifact is not None:
+        stage_result["reference_materials_artifact"] = str(reference_materials_artifact)
 
 
 def _run_spec_plan_and_finalize(
@@ -477,24 +528,69 @@ def _run_spec_plan_and_finalize(
     exec_argv: Optional[list[str]],
     action: str,
     revision_context: Optional[str] = None,
+    interactive: bool = False,
+    spec_plan_provided: Optional[Dict[str, Any]] = None,
+    revision_provided: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     run_context = body["run_context"]
     if action == ACTION_REVISE_SPEC:
         _clear_git_worktree_on_revise(body)
     repo = Path(run_context["repo_root"])
     worker_kind = _exec_worker_kind(body)
+
+    notes = ""
+    sp_materials: list[dict[str, Any]] | None = None
+    sp_input_path: Path | None = None
+    sp_ref_path: Path | None = None
+
+    if action == ACTION_REVISE_SPEC:
+        rev_inputs, rev_materials, rev_input_path, rev_ref_path = collect_revision_inputs(
+            artifact_root=run_context["artifact_root"],
+            repo_root=repo,
+            provided=revision_provided or {},
+            interactive=interactive,
+        )
+        revision_context = format_revision_context(
+            str(rev_inputs.get("revision_comment") or ""),
+            rev_materials,
+        )
+        body.setdefault("stages", {}).setdefault("revision", {})["input_artifact"] = str(
+            rev_input_path
+        )
+        if rev_ref_path is not None:
+            body["stages"]["revision"]["reference_materials_artifact"] = str(rev_ref_path)
+        resolved_task_prompt = str(body.get("task_prompt") or task_prompt or "")
+    else:
+        sp_inputs, sp_materials, sp_input_path, sp_ref_path = collect_spec_plan_inputs(
+            artifact_root=run_context["artifact_root"],
+            repo_root=repo,
+            provided=spec_plan_provided or {},
+            interactive=interactive,
+        )
+        resolved_task_prompt = str(sp_inputs.get("task_prompt") or "")
+        body["task_prompt"] = resolved_task_prompt
+        notes = str(sp_inputs.get("notes") or "")
+
     timeline.append_event(run_context["artifact_root"], run_id, "stage_started", stage="spec_plan")
     try:
         sp = run_spec_plan_stage(
             repo_root=repo,
             artifact_root=run_context["artifact_root"],
             run_id=run_id,
-            task_prompt=task_prompt or body.get("task_prompt", ""),
+            task_prompt=resolved_task_prompt,
             base_revision=run_context["source_base_revision"],
             exec_argv=exec_argv,
             revision_context=revision_context,
+            notes=notes or None,
+            reference_materials=sp_materials,
             exec_worker_kind=worker_kind,
         )
+        if sp_input_path is not None:
+            _attach_spec_plan_input_artifacts(
+                sp,
+                input_artifact=sp_input_path,
+                reference_materials_artifact=sp_ref_path,
+            )
     except NodeExecutionFailure as e:
         _fail_checkpoint(body=body, run_id=run_id, action=action, reason=str(e))
         raise
@@ -527,6 +623,7 @@ def _handle_approve_spec(
     exec_argv: Optional[list[str]],
     force_review_blocking: bool,
     action: str = ACTION_APPROVE_SPEC,
+    rework_context: Optional[str] = None,
 ) -> Dict[str, Any]:
     run_context = body["run_context"]
     strategy = _workspace_strategy(run_context)
@@ -558,6 +655,7 @@ def _handle_approve_spec(
             approved_plan=plan_text,
             exec_argv=exec_argv,
             exec_worker_kind=_exec_worker_kind(body),
+            rework_context=rework_context,
         )
     except NodeExecutionFailure as e:
         _fail_checkpoint(body=body, run_id=run_id, action=action, reason=str(e))
@@ -621,17 +719,18 @@ def _handle_revise_spec(
     body: Dict[str, Any],
     *,
     run_id: str,
-    task_prompt: str,
     exec_argv: Optional[list[str]],
+    interactive: bool = False,
+    revision_provided: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    comment = task_prompt or "revise spec"
     return _run_spec_plan_and_finalize(
         body,
         run_id=run_id,
         task_prompt=str(body.get("task_prompt") or ""),
         exec_argv=exec_argv,
         action=ACTION_REVISE_SPEC,
-        revision_context=comment,
+        interactive=interactive,
+        revision_provided=revision_provided or {},
     )
 
 
@@ -641,24 +740,40 @@ def _handle_rework(
     run_id: str,
     exec_argv: Optional[list[str]],
     force_review_blocking: bool,
+    interactive: bool = False,
+    rework_provided: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     workspace_context = body.get("workspace_context")
     if not isinstance(workspace_context, dict):
         raise NodeExecutionFailure(
             "rework_implementation requires workspace_context from prior approve_spec"
         )
+    run_context = body["run_context"]
+    review_st = body.get("stages", {}).get("review")
+    rw_inputs, rw_input_path = collect_rework_inputs(
+        artifact_root=run_context["artifact_root"],
+        provided=rework_provided or {},
+        interactive=interactive,
+    )
+    rework_context = build_rework_context(
+        str(rw_inputs.get("rework_comment") or ""),
+        review_st if isinstance(review_st, dict) else None,
+    )
     body_for_approve = dict(body)
-    review_st = body_for_approve.get("stages", {}).get("review")
     if isinstance(review_st, dict):
-        review_st = dict(review_st)
-        review_st["stale"] = True
-        body_for_approve.setdefault("stages", {})["review"] = review_st
+        review_st_copy = dict(review_st)
+        review_st_copy["stale"] = True
+        body_for_approve.setdefault("stages", {})["review"] = review_st_copy
+    body_for_approve.setdefault("stages", {}).setdefault("rework", {})["input_artifact"] = str(
+        rw_input_path
+    )
     return _handle_approve_spec(
         body_for_approve,
         run_id=run_id,
         exec_argv=exec_argv,
         force_review_blocking=force_review_blocking,
         action=ACTION_REWORK,
+        rework_context=rework_context,
     )
 
 

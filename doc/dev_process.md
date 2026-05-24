@@ -1,6 +1,11 @@
 # Dev Process Flow
 
-**v1 (2026-05-24):** P0–P6.5 core, real Codex smokes (`record_only` + `git_merge_branch`), and **`nodeflow-dev-process`** wrapper are complete. Recorded runs: [dev_process_smoke_log.md](./dev_process_smoke_log.md).
+**v1 (2026-05-24): P0–P8 complete.** Core flow, real Codex smokes (`record_only` + `git_merge_branch`), stage interactive input, and named-pipe CLI.
+
+- **Recommended entry point:** `nodeflow --pipe dev-process` — see [dev_process_p8_named_pipe.md](./dev_process_p8_named_pipe.md)
+- **Compatibility wrapper:** `nodeflow-dev-process` — see [dev_process_p7_wrapper.md](./dev_process_p7_wrapper.md)
+
+Recorded runs: [dev_process_smoke_log.md](./dev_process_smoke_log.md).
 
 ## Positioning
 
@@ -206,11 +211,27 @@ Example: `examples/reference/dev_process/codex_params.example.json`.
 
 ## Real Codex dry-run
 
-See [dev_process_real_codex_dry_run.md](./dev_process_real_codex_dry_run.md) for manual `nodeflow` PipeSpec procedures (optional; prefer the wrapper below).
+See [dev_process_real_codex_dry_run.md](./dev_process_real_codex_dry_run.md) for manual `nodeflow` PipeSpec procedures (optional; prefer [dev_process_p8_named_pipe.md](./dev_process_p8_named_pipe.md) for day-to-day use).
 
 Recorded real Codex smoke results (2026-05-24): [dev_process_smoke_log.md](./dev_process_smoke_log.md) (`record_only` and `git_merge_branch`).
 
-## P7 wrapper CLI
+## P8 named pipe CLI (recommended)
+
+See [dev_process_p8_named_pipe.md](./dev_process_p8_named_pipe.md). Unified entry:
+
+```bash
+nodeflow --pipe dev-process --repo-root /path/to/repo start
+nodeflow --pipe dev-process --repo-root /path/to/repo status
+nodeflow --pipe dev-process --repo-root /path/to/repo approve-spec
+nodeflow --pipe dev-process --repo-root /path/to/repo revise-spec
+nodeflow --pipe dev-process --repo-root /path/to/repo rework
+nodeflow --pipe dev-process --repo-root /path/to/repo approve-final
+nodeflow --pipe dev-process --repo-root /path/to/repo merge
+```
+
+Stage-specific inputs (task prompt, reference paths, revision/rework comments) are collected by the corresponding stage — not as dev-process CLI business arguments. Use `--non-interactive` in CI.
+
+## P7 wrapper CLI (compatibility)
 
 See [dev_process_p7_wrapper.md](./dev_process_p7_wrapper.md). Entry point:
 
