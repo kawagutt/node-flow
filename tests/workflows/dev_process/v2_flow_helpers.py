@@ -20,11 +20,40 @@ from nodeflow.workflows.dev_process.constants import (
 from nodeflow.workflows.dev_process.dev_process_flow.node_dev_process_flow import (
     DevProcessFlowNode,
 )
+from nodeflow.workflows.dev_process.hermetic_argv import (
+    implement_argv,
+    plan_argv,
+    plan_review_argv,
+    review_argv,
+    spec_argv,
+    spec_review_argv,
+)
 
 
 def run_action(repo: Path, payload: dict[str, Any], params: dict | None = None) -> dict[str, Any]:
     out = DevProcessFlowNode().execute(payload, params or {})
     return out["flow_output"]
+
+
+def _hermetic_exec_policy() -> dict[str, Any]:
+    """Return exec_policy overrides with per-node hermetic argv for testing."""
+    return {
+        "schema": "dev_process.exec_policy.v1",
+        "default_worker": "codex",
+        "nodes": {
+            "write_spec": {"worker": "codex", "argv": spec_argv()},
+            "review_spec": {"worker": "codex", "argv": spec_review_argv()},
+            "write_plan": {"worker": "codex", "argv": plan_argv()},
+            "review_plan": {"worker": "codex", "argv": plan_review_argv()},
+            "write_implementation": {"worker": "codex", "argv": implement_argv()},
+            "write_tests": {"worker": "codex", "argv": implement_argv()},
+            "review_diff": {"worker": "codex", "argv": review_argv()},
+            "review_tests": {"worker": "codex", "argv": review_argv()},
+            "review_spec_conformance": {"worker": "codex", "argv": review_argv()},
+            "review_wide": {"worker": "codex", "argv": review_argv()},
+            "review_spec_revision": {"worker": "codex", "argv": review_argv()},
+        },
+    }
 
 
 def start_spec_human_gate(
@@ -43,7 +72,7 @@ def start_spec_human_gate(
         payload["workspace_strategy"] = workspace_strategy
     if merge_policy:
         payload["merge_policy"] = merge_policy
-    return run_action(repo, payload)
+    return run_action(repo, payload, {"_exec_policy_overrides": _hermetic_exec_policy()})
 
 
 def approve_spec_to_implementation(repo: Path, cp: str) -> dict[str, Any]:

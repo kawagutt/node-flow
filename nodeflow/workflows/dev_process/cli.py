@@ -98,6 +98,16 @@ def _format_result(out: Dict[str, Any]) -> str:
         lines.append(f"summary: {paths['summary_path']}")
     if isinstance(out.get("merge_result"), dict) and out["merge_result"]:
         lines.append(f"merge_policy: {out['merge_result'].get('policy')}")
+    dp = out.get("dev_process") if isinstance(out.get("dev_process"), dict) else {}
+    snapshot = (
+        dp.get("exec_policy_snapshot") if isinstance(dp.get("exec_policy_snapshot"), dict) else {}
+    )
+    constraints = snapshot.get("constraints")
+    if isinstance(constraints, list) and constraints:
+        lines.append(f"constraints: {json.dumps(constraints, ensure_ascii=False)}")
+    audit_path = dp.get("constraints_audit_path")
+    if audit_path:
+        lines.append(f"constraints_audit: {audit_path}")
     return "\n".join(lines)
 
 

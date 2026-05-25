@@ -248,6 +248,9 @@ def record_exec_evidence(
     session_id: Optional[str] = None,
     model: Optional[str] = None,
     worker: Optional[str] = None,
+    constraints: Optional[List[str]] = None,
+    codex_home: Optional[str] = None,
+    agents_md_sha256: Optional[str] = None,
 ) -> str:
     """Write one evidence record and validate the store for this run."""
     _reject_stub_or_manual(execution_output)
@@ -311,6 +314,11 @@ def record_exec_evidence(
     doc["session_id"] = session_id
     doc["model"] = model
     doc["worker"] = worker
+    doc["constraints"] = constraints or []
+    if codex_home:
+        doc["codex_home"] = codex_home
+    if agents_md_sha256:
+        doc["agents_md_sha256"] = agents_md_sha256
     for optional in ("token_count", "tokens"):
         if optional in provider_meta:
             doc[optional] = provider_meta[optional]

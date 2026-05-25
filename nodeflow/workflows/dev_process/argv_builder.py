@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
-from nodeflow.workflows.dev_process.exec_policy import default_argv_for_node, default_node_entries
+from nodeflow.workflows.dev_process.exec_policy import default_argv_for_worker, default_node_entries
 
 
 def _valid_argv(argv: Any) -> bool:
@@ -34,5 +34,5 @@ def resolve_node_exec(body: Dict[str, Any], node_name: str) -> Tuple[str, Option
     if not _valid_argv(argv):
         argv = snap.get("default_argv")
     if not _valid_argv(argv):
-        argv = default_argv_for_node(node_name)
+        argv = default_argv_for_worker(worker)
     return worker, model if isinstance(model, str) else None, list(argv)

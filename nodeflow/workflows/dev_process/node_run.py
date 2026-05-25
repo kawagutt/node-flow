@@ -6,7 +6,7 @@ A *Node* is a processing unit in the dev-process graph (e.g. ``write_spec``,
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
 
 NODE_TYPE_PREFIX = "dev_process"
@@ -22,6 +22,7 @@ class NodeRun:
     session_id: str
     evidence_path: str
     argv: List[str]
+    constraints: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

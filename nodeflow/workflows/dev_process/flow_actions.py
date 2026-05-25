@@ -33,6 +33,9 @@ from nodeflow.workflows.dev_process.constants import (
     STATE_INITIALIZED,
     WORKSPACE_STRATEGY_CURRENT_REPO,
 )
+from nodeflow.workflows.dev_process.constraints import (
+    generate_constraints_audit,
+)
 from nodeflow.workflows.dev_process.exec_policy import (
     apply_snapshot_to_body,
     build_exec_policy_snapshot,
@@ -97,6 +100,80 @@ from nodeflow.workflows.dev_process.state_machine import assert_action_allowed
 from nodeflow.workflows.dev_process.synthesis import assign_owners_to_findings, route_owner_to_state
 
 
+def _write_constraints_audit(body: Dict[str, Any]) -> str | None:
+    """Write constraints_audit.md under artifact_root/agent_context/ (audit only).
+
+    Shows global constraints separately from effective per-node constraints.
+    NOT used as Codex AGENTS.md — per-node CODEX_HOME/AGENTS.md is generated
+    on-demand by run_node_exec().
+    """
+    dp = body.get("dev_process")
+    if not isinstance(dp, dict):
+        return None
+    snapshot = dp.get("exec_policy_snapshot")
+    if not isinstance(snapshot, dict):
+        return None
+
+    content = generate_constraints_audit(snapshot)
+    if "(none)" in content and "## Effective constraints by node" not in content:
+        return None
+
+    run_context = body.get("run_context", {})
+    artifact_root = run_context.get("artifact_root")
+    if not artifact_root:
+        return None
+
+    ctx_dir = Path(artifact_root) / "agent_context"
+    ctx_dir.mkdir(parents=True, exist_ok=True)
+    audit_path = ctx_dir / "constraints_audit.md"
+    audit_path.write_text(content, encoding="utf-8")
+    dp["constraints_audit_path"] = str(audit_path)
+    return str(audit_path)
+
+
+_EXEC_MODE_CHOICES = {
+    "1": {
+        "label": "Full auto (--full-auto)",
+        "argv": ["codex", "exec", "--full-auto"],
+    },
+    "2": {
+        "label": "Suggest mode (default Codex approval)",
+        "argv": ["codex", "exec"],
+    },
+    "3": {
+        "label": "Custom (enter argv manually)",
+        "argv": None,
+    },
+}
+
+
+def _prompt_exec_mode() -> list[str]:
+    """Interactive prompt to select Codex execution mode."""
+    import json as _json
+
+    import click
+
+    click.echo("\n--- Codex execution mode ---")
+    for key, info in _EXEC_MODE_CHOICES.items():
+        click.echo(f"  {key}) {info['label']}")
+    choice = click.prompt(
+        "Select execution mode",
+        type=click.Choice(list(_EXEC_MODE_CHOICES.keys())),
+        default="1",
+    )
+    selected = _EXEC_MODE_CHOICES[choice]
+    if selected["argv"] is not None:
+        return selected["argv"]
+    raw = click.prompt("Enter exec_argv as JSON array", default='["codex", "exec", "--full-auto"]')
+    try:
+        argv = _json.loads(raw)
+        if isinstance(argv, list) and all(isinstance(x, str) for x in argv) and argv:
+            return argv
+    except (ValueError, TypeError):
+        pass
+    raise NodeExecutionFailure(f"invalid exec_argv: {raw!r}")
+
+
 def run_flow(
     *,
     action: str,
@@ -109,6 +186,7 @@ def run_flow(
     exec_argv: Optional[list[str]] = None,
     exec_model: Optional[str] = None,
     exec_policy_path: Optional[str] = None,
+    exec_policy_overrides: Optional[Dict[str, Any]] = None,
     force_review_blocking: bool = False,
     workspace_strategy: Optional[str] = None,
     exec_worker_kind: Optional[str] = None,
@@ -120,9 +198,9 @@ def run_flow(
 ) -> Dict[str, Any]:
     if action == ACTION_START and flow_checkpoint_path:
         raise NodeExecutionFailure("start does not accept flow_checkpoint_path")
-    if action != ACTION_START and exec_policy_path:
+    if action != ACTION_START and (exec_policy_path or exec_policy_overrides):
         raise NodeExecutionFailure(
-            "exec_policy_path is start-only; resume uses the frozen exec_policy_snapshot from the checkpoint"
+            "exec policy is start-only; resume uses the frozen exec_policy_snapshot from the checkpoint"
         )
 
     if action == ACTION_START:
@@ -130,9 +208,21 @@ def run_flow(
         provided = dict(spec_inputs_provided or {})
         if task_prompt.strip() and not provided.get("task_prompt"):
             provided["task_prompt"] = task_prompt.strip()
-        policy_overrides = None
+        if exec_policy_path and exec_policy_overrides:
+            raise NodeExecutionFailure(
+                "exec_policy_path and inline exec_policy_overrides are mutually exclusive"
+            )
+        policy_overrides = exec_policy_overrides
         if exec_policy_path:
             policy_overrides = load_exec_policy_file(exec_policy_path)
+
+        if argv is None and not policy_overrides and interactive:
+            from nodeflow.workflows.dev_process.exec_policy import WORKER_DEFAULT_ARGV
+
+            worker = exec_worker_kind or EXEC_WORKER_CODEX
+            if not WORKER_DEFAULT_ARGV.get(worker):
+                argv = _prompt_exec_mode()
+
         return _handle_start(
             repo_root=repo_root,
             task_prompt=task_prompt,
@@ -367,6 +457,7 @@ def _handle_start(
         exec_policy_overrides=exec_policy_overrides,
     )
     apply_snapshot_to_body(body, snapshot)
+    _write_constraints_audit(body)
     out = _finalize(body=body, run_id=rid, action=ACTION_START, state=STATE_INITIALIZED)
 
     if not run_spec_on_start:

@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.workflows.dev_process.constants import EXEC_TIMEOUT_SECONDS
 from nodeflow.workflows.dev_process.evidence import record_exec_evidence
-from nodeflow.workflows.dev_process.hermetic_argv import spec_argv
+from nodeflow.workflows.dev_process.exec_policy import default_argv_for_worker
 from nodeflow.workflows.dev_process.paths import assert_path_under_run_dir
 from nodeflow.workflows.dev_process.reuse import collect_repo_context
 from nodeflow.workflows.dev_process.spec_prompt import build_spec_prompt
@@ -74,7 +74,7 @@ def run_spec_stage(
         )
     else:
         worker: ExecWorker = resolve_exec_worker(exec_worker_kind)
-        argv = exec_argv if exec_argv is not None else spec_argv()
+        argv = exec_argv if exec_argv is not None else default_argv_for_worker(worker.kind)
         execution_output = run_exec(
             worker, prompt=prompt_text, cwd=cwd, argv=argv, timeout=EXEC_TIMEOUT_SECONDS
         )

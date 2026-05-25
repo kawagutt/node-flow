@@ -68,6 +68,8 @@ def default_prompt_fn(question: InputQuestion, default: Optional[str] = None) ->
     if question.kind == "path_list":
         raw = click.prompt(question.label, default=default or "", show_default=bool(default))
         return raw
+    if not question.required:
+        return click.prompt(question.label, default=default or "", show_default=bool(default))
     return click.prompt(question.label, default=default or None, show_default=bool(default))
 
 

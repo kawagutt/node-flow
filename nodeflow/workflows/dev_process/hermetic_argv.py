@@ -1,4 +1,10 @@
-"""Hermetic argv presets for dev_process tests (no real Codex binary)."""
+"""Hermetic argv presets for dev_process tests ONLY (no real Codex binary).
+
+These functions return Python one-liner commands that produce stub JSON output.
+They are used exclusively in tests via explicit --exec-argv or argv_override.
+Production code MUST NOT import from this module; use exec_policy.WORKER_DEFAULT_ARGV
+or resolve_node_exec() instead.
+"""
 
 from __future__ import annotations
 

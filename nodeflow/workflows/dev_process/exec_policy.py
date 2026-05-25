@@ -22,14 +22,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from nodeflow.core.base_node import NodeExecutionFailure
-from nodeflow.workflows.dev_process.hermetic_argv import (
-    implement_argv,
-    plan_argv,
-    plan_review_argv,
-    review_argv,
-    spec_argv,
-    spec_review_argv,
-)
+from nodeflow.workflows.dev_process.constraints import CONSTRAINT_DEFS
 
 POLICY_SCHEMA = "dev_process.exec_policy.v1"
 
@@ -49,22 +42,24 @@ NODE_NAMES = (
 
 SUPPORTED_WORKERS = frozenset({"codex"})
 
+WORKER_DEFAULT_ARGV: Dict[str, List[str]] = {}
 
-def default_argv_for_node(node_name: str) -> List[str]:
-    """Hermetic argv used when neither node entry nor default_argv supplies argv."""
-    if node_name == "write_spec":
-        return spec_argv()
-    if node_name == "review_spec":
-        return spec_review_argv()
-    if node_name == "write_plan":
-        return plan_argv()
-    if node_name == "review_plan":
-        return plan_review_argv()
-    if node_name in ("write_implementation", "write_tests"):
-        return implement_argv()
-    if node_name.startswith("review_"):
-        return review_argv()
-    return implement_argv()
+
+def default_argv_for_worker(worker_kind: str) -> List[str]:
+    """Return the configured default argv for a worker.
+
+    Production default is intentionally empty (WORKER_DEFAULT_ARGV = {}).
+    If no argv is configured, raises NodeExecutionFailure instead of
+    invoking Codex implicitly. Tests patch WORKER_DEFAULT_ARGV for
+    hermetic execution.
+    """
+    argv = WORKER_DEFAULT_ARGV.get(worker_kind)
+    if argv is None:
+        raise NodeExecutionFailure(
+            f"no exec_argv configured for worker {worker_kind!r}. "
+            f"Provide exec_argv via exec_policy.json or --exec-argv option."
+        )
+    return list(argv)
 
 
 def default_node_entries() -> Dict[str, Dict[str, Any]]:
@@ -109,6 +104,17 @@ def _validate_policy_overrides(overrides: Dict[str, Any]) -> None:
                     f"unsupported worker {worker!r} in exec_policy.nodes.{name}; "
                     f"supported: {sorted(SUPPORTED_WORKERS)}"
                 )
+            node_constraints = entry.get("constraints")
+            if node_constraints is not None:
+                if not isinstance(node_constraints, list):
+                    raise NodeExecutionFailure(
+                        f"exec_policy.nodes.{name}.constraints must be a list of strings"
+                    )
+                for i, c in enumerate(node_constraints):
+                    if not isinstance(c, str) or not c.strip():
+                        raise NodeExecutionFailure(
+                            f"exec_policy.nodes.{name}.constraints[{i}] must be a non-empty string"
+                        )
 
     default_argv = overrides.get("default_argv")
     if default_argv is not None:
@@ -122,6 +128,54 @@ def _validate_policy_overrides(overrides: Dict[str, Any]) -> None:
         raise NodeExecutionFailure(
             f"unsupported default_worker {default_worker!r}; supported: {sorted(SUPPORTED_WORKERS)}"
         )
+
+    constraints = overrides.get("constraints")
+    if constraints is not None:
+        if not isinstance(constraints, list):
+            raise NodeExecutionFailure("exec_policy.constraints must be a JSON array of strings")
+        for i, c in enumerate(constraints):
+            if not isinstance(c, str) or not c.strip():
+                raise NodeExecutionFailure(
+                    f"exec_policy.constraints[{i}] must be a non-empty string"
+                )
+
+    constraint_defs = overrides.get("constraint_defs")
+    if constraint_defs is not None:
+        if not isinstance(constraint_defs, dict):
+            raise NodeExecutionFailure("exec_policy.constraint_defs must be a JSON object")
+        for k, v in constraint_defs.items():
+            if not isinstance(v, str) or not v.strip():
+                raise NodeExecutionFailure(
+                    f"exec_policy.constraint_defs.{k} must be a non-empty string"
+                )
+
+    strict_constraints = overrides.get("strict_constraints")
+    if strict_constraints is not None and not isinstance(strict_constraints, bool):
+        raise NodeExecutionFailure("exec_policy.strict_constraints must be a boolean")
+
+    if strict_constraints:
+        known_ids = set(CONSTRAINT_DEFS.keys())
+        if constraint_defs:
+            known_ids.update(constraint_defs.keys())
+        if constraints:
+            for c in constraints:
+                if c not in known_ids:
+                    raise NodeExecutionFailure(
+                        f"unknown constraint {c!r} in exec_policy.constraints "
+                        f"(strict_constraints=true)"
+                    )
+        if nodes and isinstance(nodes, dict):
+            for name, entry in nodes.items():
+                if isinstance(entry, dict):
+                    nc = entry.get("constraints")
+                    if isinstance(nc, list):
+                        for c in nc:
+                            if isinstance(c, str) and c not in known_ids:
+                                raise NodeExecutionFailure(
+                                    f"unknown constraint {c!r} in "
+                                    f"exec_policy.nodes.{name}.constraints "
+                                    f"(strict_constraints=true)"
+                                )
 
 
 def load_exec_policy_file(path: str | Path) -> Dict[str, Any]:
@@ -174,7 +228,7 @@ def build_exec_policy_snapshot(
     Resolution order (last wins per field):
 
     1. built-in defaults (``default_node_entries``, ``exec_worker_kind``)
-    2. ``exec_policy_overrides`` (from ``--exec-policy`` file)
+    2. ``exec_policy_overrides`` (from ``--exec-policy`` file or inline)
     3. ``exec_argv`` / ``exec_model`` (CLI scalars)
 
     Notes on precedence:
@@ -184,6 +238,9 @@ def build_exec_policy_snapshot(
     - CLI ``--exec-argv`` does **not** overwrite per-node argv entries from
       ``exec_policy_path``.
     """
+    if exec_policy_overrides and isinstance(exec_policy_overrides, dict):
+        _validate_policy_overrides(exec_policy_overrides)
+
     nodes = default_node_entries()
     snapshot: Dict[str, Any] = {
         "schema": POLICY_SCHEMA,
@@ -205,6 +262,12 @@ def build_exec_policy_snapshot(
         ps = exec_policy_overrides.get("_policy_source")
         if isinstance(ps, dict):
             snapshot["policy_source"] = ps
+        if isinstance(exec_policy_overrides.get("constraints"), list):
+            snapshot["constraints"] = list(exec_policy_overrides["constraints"])
+        if isinstance(exec_policy_overrides.get("constraint_defs"), dict):
+            snapshot["constraint_defs"] = deepcopy(exec_policy_overrides["constraint_defs"])
+        if isinstance(exec_policy_overrides.get("strict_constraints"), bool):
+            snapshot["strict_constraints"] = exec_policy_overrides["strict_constraints"]
     if exec_model:
         snapshot["default_model"] = exec_model
     if exec_argv is not None:

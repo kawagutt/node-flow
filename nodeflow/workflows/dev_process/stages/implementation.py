@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 
 from nodeflow.workflows.dev_process.constants import EXEC_TIMEOUT_SECONDS
 from nodeflow.workflows.dev_process.evidence import record_exec_evidence
-from nodeflow.workflows.dev_process.hermetic_argv import implement_argv
+from nodeflow.workflows.dev_process.exec_policy import default_argv_for_worker
 from nodeflow.workflows.dev_process.reuse import collect_diff
 from nodeflow.workflows.dev_process.workers import ExecWorker, resolve_exec_worker, run_exec
 
@@ -54,7 +54,7 @@ def run_implementation_stage(
         )
     else:
         worker: ExecWorker = resolve_exec_worker(exec_worker_kind)
-        argv = exec_argv if exec_argv is not None else implement_argv()
+        argv = exec_argv if exec_argv is not None else default_argv_for_worker(worker.kind)
         execution_output = run_exec(
             worker, prompt=prompt, cwd=cwd, argv=argv, timeout=EXEC_TIMEOUT_SECONDS
         )

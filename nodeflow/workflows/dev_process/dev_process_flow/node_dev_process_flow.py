@@ -107,6 +107,7 @@ class DevProcessFlowNode(PythonActionNode):
             exec_worker_kind = _optional_config_scalar(inputs, params, "exec_worker_kind")
             merge_policy = _optional_config_scalar(inputs, params, "merge_policy")
 
+        _inline_policy = params.get("_exec_policy_overrides")
         try:
             result = run_flow(
                 action=action,
@@ -119,6 +120,7 @@ class DevProcessFlowNode(PythonActionNode):
                 exec_argv=exec_argv,
                 exec_model=exec_model,
                 exec_policy_path=exec_policy_path,
+                exec_policy_overrides=_inline_policy if isinstance(_inline_policy, dict) else None,
                 force_review_blocking=force_blocking,
                 workspace_strategy=workspace_strategy,
                 exec_worker_kind=exec_worker_kind,

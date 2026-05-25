@@ -60,6 +60,14 @@ class CodexExecNode(CliActionNode):
             return str((Path(workspace_dir) / cwd_s).resolve())
         return str(Path(cwd_s).resolve())
 
+    def _resolve_env(self, params: Dict[str, Any]) -> Optional[Dict[str, str]]:
+        extra = params.get("env")
+        if not isinstance(extra, dict) or not extra:
+            return None
+        merged = dict(os.environ)
+        merged.update({str(k): str(v) for k, v in extra.items()})
+        return merged
+
     def run(
         self,
         inputs: Dict[str, Any],
@@ -86,6 +94,7 @@ class CodexExecNode(CliActionNode):
         if task_type is not None:
             task_type = str(task_type)
         resolved_cwd = self._resolve_cwd(p)
+        resolved_env = self._resolve_env(p)
 
         prompt_raw = inputs.get("prompt")
         stdin: str | None = None
@@ -103,6 +112,7 @@ class CodexExecNode(CliActionNode):
                 timeout=float(timeout),
                 check=False,
                 cwd=resolved_cwd,
+                env=resolved_env,
                 input=stdin,
             )
         except subprocess.TimeoutExpired as exc:

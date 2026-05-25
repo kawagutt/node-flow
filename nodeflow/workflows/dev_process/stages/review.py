@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.workflows.dev_process.constants import EXEC_TIMEOUT_SECONDS
 from nodeflow.workflows.dev_process.evidence import record_exec_evidence
+from nodeflow.workflows.dev_process.exec_policy import default_argv_for_worker
 from nodeflow.workflows.dev_process.hermetic_argv import review_argv
 from nodeflow.workflows.dev_process.paths import assert_path_under_run_dir
 from nodeflow.workflows.dev_process.reuse import (
@@ -136,7 +137,7 @@ def run_review_stage(
             evidence_paths.append(ep)
     else:
         worker = resolve_exec_worker(exec_worker_kind)
-        argv = exec_argv if exec_argv is not None else review_argv(blocking=force_blocking)
+        argv = exec_argv if exec_argv is not None else default_argv_for_worker(worker.kind)
         for input_key in active_keys:
             er, prompt_text, cwd = _run_one_reviewer(
                 repo_root=repo_root,

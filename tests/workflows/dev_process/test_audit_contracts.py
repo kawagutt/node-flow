@@ -126,12 +126,14 @@ def test_validate_evidence_store_detects_nonzero_exit_code(tmp_path) -> None:
 
 
 def test_merge_revalidates_tampered_evidence(tmp_path) -> None:
+    from tests.workflows.dev_process.v2_flow_helpers import _hermetic_exec_policy
+
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repo_with_commit(repo)
     DevProcessFlowNode().execute(
         {"action": "start", "repo_root": str(repo), "task_prompt": "m"},
-        {},
+        {"_exec_policy_overrides": _hermetic_exec_policy()},
     )
     _, final = through_approve_final(repo)
     cp3 = final["flow_result"]["flow_checkpoint_path"]

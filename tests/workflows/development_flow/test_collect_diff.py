@@ -5,8 +5,6 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import pytest
-
 from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.nodes.git.collect_diff import CollectDiffNode
 from tests.workflows.development_flow.git_fixtures import git_repo_with_commit

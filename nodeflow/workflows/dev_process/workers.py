@@ -22,6 +22,7 @@ class ExecWorker(Protocol):
         cwd: str,
         argv: list[str],
         timeout: int = 120,
+        env: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """Return execution_output dict; raise NodeExecutionFailure when not ok."""
 
@@ -37,11 +38,12 @@ class CodexExecWorker:
         cwd: str,
         argv: list[str],
         timeout: int = 120,
+        env: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         out = execute_or_raise(
             CodexExecNode(),
             {"prompt": prompt},
-            {"argv": argv, "timeout": timeout, "cwd": cwd},
+            {"argv": argv, "timeout": timeout, "cwd": cwd, "env": env},
         )
         execution_output = out.get("execution_output") or {}
         if not isinstance(execution_output, dict):
@@ -67,5 +69,6 @@ def run_exec(
     cwd: str,
     argv: list[str],
     timeout: int = 120,
+    env: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
-    return worker.run(prompt=prompt, cwd=cwd, argv=argv, timeout=timeout)
+    return worker.run(prompt=prompt, cwd=cwd, argv=argv, timeout=timeout, env=env)

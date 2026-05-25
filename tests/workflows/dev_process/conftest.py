@@ -11,4 +11,3 @@ from nodeflow.builtins import register_builtin_nodes
 def _ensure_dev_process_registered() -> None:
     register_builtin_nodes()
     yield
-    # builtins re-register on import; no teardown needed

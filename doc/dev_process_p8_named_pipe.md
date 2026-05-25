@@ -59,8 +59,44 @@ nodeflow --pipe dev-process merge
 | `--workspace-strategy` | no | `current_repo` / `git_worktree` |
 | `--merge-policy` | no | `record_only` / `git_merge_branch` |
 | `--exec-worker-kind` | no | `codex` |
-| `--exec-argv` | no | JSON array of strings |
+| `--exec-argv` | see note | JSON array of strings |
+| `--exec-policy-path` | see note | Path to `exec_policy.json` |
 | `--run-id` | no | Explicit run id |
+
+> **Execution argv resolution**: When a node execution is attempted, argv is resolved in priority order:
+>
+> 1. `exec_policy.nodes.<node>.argv` (per-node, highest priority)
+> 2. `--exec-argv` / `exec_policy.default_argv` (snapshot-level default)
+> 3. `WORKER_DEFAULT_ARGV` (empty — no implicit Codex invocation)
+>
+> **Interactive mode** (default): If neither `--exec-argv` nor `--exec-policy-path` is provided, `start` prompts the user to select an execution mode (full-auto / suggest / custom argv).
+>
+> **Non-interactive mode** (`--non-interactive`): Requires `--exec-argv` or `--exec-policy-path`. Without them, the first node execution fails with a clear error. No implicit Codex argv is used.
+>
+> `--exec-argv` and `--exec-policy-path` **can be used together**: the policy defines per-node settings and constraints, while `--exec-argv` sets `snapshot.default_argv`. Per-node argv in the policy always takes precedence.
+>
+> **Note**: `--exec-policy-path` alone is sufficient only if the policy provides `default_argv` or per-node `argv` for the nodes that will execute. A policy with only `constraints` and no argv will cause the first node execution to fail.
+>
+> Examples:
+> ```bash
+> # Interactive: prompts for execution mode
+> nodeflow --pipe dev-process start
+>
+> # Explicit argv (interactive or non-interactive)
+> nodeflow --pipe dev-process start --exec-argv '["codex","exec","--full-auto"]'
+>
+> # Policy file with constraints and per-node config
+> nodeflow --pipe dev-process start --exec-policy-path ./exec_policy.json
+>
+> # Both: policy for structure, exec-argv as fallback default
+> nodeflow --pipe dev-process start \
+>   --exec-policy-path ./exec_policy.json \
+>   --exec-argv '["codex","exec","--full-auto"]'
+>
+> # Non-interactive (CI): explicit argv required
+> nodeflow --pipe dev-process start --non-interactive \
+>   --exec-argv '["codex","exec","--full-auto"]'
+> ```
 
 ### Resume commands
 
