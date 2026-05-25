@@ -12,10 +12,7 @@ STATE_AWAITING_SPEC_REVISION = "awaiting_spec_revision"
 STATE_AWAITING_SPEC_HUMAN_GATE = "awaiting_spec_human_gate"
 STATE_AWAITING_PLAN_REVISION = "awaiting_plan_revision"
 STATE_AWAITING_IMPLEMENTATION = "awaiting_implementation"
-STATE_AWAITING_IMPLEMENTATION_REWORK = "awaiting_implementation_rework"
-STATE_AWAITING_TEST_REWORK = "awaiting_test_rework"
 STATE_AWAITING_REWORK_DECISION = "awaiting_rework_decision"
-STATE_AWAITING_REVIEW = "awaiting_rework_decision"  # alias for finalize helpers
 STATE_AWAITING_FINAL = "awaiting_final_approval"  # review merge_ok; human approve_final pending
 STATE_AWAITING_MERGE = "awaiting_merge"  # after approve_final; merge pending
 

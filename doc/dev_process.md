@@ -6,10 +6,10 @@
 - **Architecture contract:** [dev_process_architecture.md](./dev_process_architecture.md)
 - **P9 core flow:** `start` → spec loop → human spec gate → plan loop → **`awaiting_implementation`** (stops; no auto-implementation).
 - **P10:** All LLM execs on the main path go through `run_node_exec()`. Checkpoint `node_runs[]` records every execution as a `NodeRun` (1 node exec = 1 logical session = 1 evidence). Stage runners accept `body` and delegate exec/evidence/recording to `node_runner.run_node_exec()`. Argv resolution: `run_node_exec` → `resolve_node_exec` → `exec_policy_snapshot.nodes[node_name]`.
-- **P10 terminology:** Node = processing unit (e.g. `write_spec`), NodeRun = one execution record. `exec_policy.nodes` (not `jobs`) configures per-node worker/model/argv. Registry type: `dev_process.<node_name>`.
+- **P10 terminology:** Node = processing unit (e.g. `write_spec`), NodeRun = one execution record. `exec_policy.nodes` (not `jobs`) configures per-node worker and argv (active); model is recorded as audit metadata only (actual model selection is determined by argv). Registry type: `dev_process.<node_name>`.
 - **P10 node names:** `write_spec`, `review_spec`, `write_plan`, `review_plan`, `write_implementation`, `write_tests`, `review_diff`, `review_tests`, `review_spec_conformance`, `review_wide`, `review_spec_revision`. Stage artifact directories (`spec_review/`, `plan_review/`, etc.) are unchanged.
 - **P10 semantics:**
-  - `model` in `NodeRun` and evidence JSON is **audit metadata only** — not injected into worker argv. Future phase (P10.5/P11) may add per-worker model injection.
+  - `model` in `NodeRun` and evidence JSON is **audit metadata only** — not injected into worker argv.
   - `session_id` is a **logical** id derived from `(run_id, node_name, index)`. Provider-level session isolation is worker-dependent and not guaranteed.
   - Evidence JSON includes `node_name`, `session_id`, `model`, `worker` for bidirectional traceability (`node_runs[] ↔ evidence`). `model` is always present (may be `null`). `provider_meta.session_id` is stored as `provider_session_id` so it never overwrites the logical `session_id`.
   - `exec_policy_path` input (`--exec-policy-path` / `--exec-policy` on CLI) on `start` loads an external JSON policy file (path is CLI cwd-relative) → merged into `exec_policy_snapshot`. Source path and sha256 are recorded in `policy_source`. On resume, only the frozen snapshot is used; passing `exec_policy_path` to a resume action raises an error. Unknown node names in the policy file are rejected at start.
@@ -18,7 +18,7 @@
   - CLI `--exec-argv` sets `snapshot.default_argv`.
   - Per-node `nodes.<name>.argv` always overrides `default_argv`.
   - CLI `--exec-argv` does **not** overwrite per-node argv entries from `exec_policy_path`.
-- **P11 preview (transitional):** `continue_implementation`, stale markers, owner helpers — not the P10 correctness contract yet.
+- **P11:** Full implementation chain (`write_implementation` → `write_tests` → `run_tests` → `review_changes` → synthesis). Owner routing: `spec` → spec cycle, `plan` → plan cycle, `implementation` → full chain, `test` → `write_tests` + `run_tests` + review only (skips `write_implementation`). Stale markers propagate on upstream revision. `human_final_gate` → `awaiting_merge` → `merge`. Rework from `awaiting_rework_decision` or `awaiting_final`. `node_runs[]` continuity preserved across rework cycles.
 - **CLI (P9 loops):** `request-spec-revision`, `revise-spec`, `revise-plan`, `approve-spec`.
 - **Exec:** CLI/input name **`exec_argv`** is retained; checkpoint SOT is **`dev_process.exec_policy_snapshot.default_argv`** (frozen at `start`).
 
@@ -69,7 +69,7 @@ start (+ spec + spec_review)
   -> awaiting_spec_revision | awaiting_spec_human_gate
   approve_spec (+ plan + plan_review)
   -> awaiting_plan_revision | awaiting_implementation   # P9 stop: no auto-implementation
-  continue_implementation (+ implementation / test_implementation / run_tests / review)   # P10/P11 preview
+  continue_implementation (+ implementation / test_implementation / run_tests / review)   # P11
   -> awaiting_rework_decision (blocking / test fail)
   -> awaiting_final_approval (review merge_ok + tests pass)
     approve_final -> awaiting_merge

@@ -1,15 +1,16 @@
-"""Review synthesis helpers: owner assignment and routing (P11)."""
+"""Review synthesis helpers: owner assignment and routing (P11).
+
+Owner routing determines which upstream node chain to re-run:
+
+    spec → write_spec → review_spec → human_spec_gate → write_plan → …
+    plan → write_plan → review_plan → implementation chain
+    implementation → write_implementation → write_tests → run_tests → review
+    test → write_tests → run_tests → review  (skips write_implementation)
+"""
 
 from __future__ import annotations
 
 from typing import Any, Dict, List
-
-from nodeflow.workflows.dev_process.constants import (
-    STATE_AWAITING_IMPLEMENTATION_REWORK,
-    STATE_AWAITING_PLAN_REVISION,
-    STATE_AWAITING_SPEC_REVISION,
-    STATE_AWAITING_TEST_REWORK,
-)
 
 
 def assign_owners_to_findings(findings: List[Any]) -> List[Dict[str, Any]]:
@@ -34,19 +35,10 @@ def assign_owners_to_findings(findings: List[Any]) -> List[Dict[str, Any]]:
 
 
 def route_owner_to_state(findings: List[Dict[str, Any]]) -> str:
+    """Return the highest-priority owner from blocking findings."""
     priority = ("spec", "plan", "test", "implementation")
     owners = {str(f.get("owner") or "implementation") for f in findings}
     for p in priority:
         if p in owners:
             return p
     return "implementation"
-
-
-def owner_to_checkpoint_state(owner: str) -> str:
-    mapping = {
-        "spec": STATE_AWAITING_SPEC_REVISION,
-        "plan": STATE_AWAITING_PLAN_REVISION,
-        "implementation": STATE_AWAITING_IMPLEMENTATION_REWORK,
-        "test": STATE_AWAITING_TEST_REWORK,
-    }
-    return mapping.get(owner, STATE_AWAITING_IMPLEMENTATION_REWORK)

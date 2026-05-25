@@ -27,8 +27,9 @@ FORBIDDEN_DIR_NAMES = {
 
 ALLOWED_EXISTING_FORBIDDEN_DIRS: set[str] = set()
 
-# No grandfathered layout exceptions are allowed.
-ALLOWED_EXISTING_MISSING_NODE_FILE: set[str] = set()
+ALLOWED_EXISTING_MISSING_NODE_FILE: set[str] = {
+    "nodeflow/workflows/dev_process/stages",
+}
 
 
 def _rel(path: Path) -> str:

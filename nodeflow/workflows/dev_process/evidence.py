@@ -307,13 +307,10 @@ def record_exec_evidence(
         "external_executor": execution_output.get("external_executor"),
         "provider_meta": provider_meta,
     }
-    if node_name is not None:
-        doc["node_name"] = node_name
-    if session_id is not None:
-        doc["session_id"] = session_id
+    doc["node_name"] = node_name
+    doc["session_id"] = session_id
     doc["model"] = model
-    if worker is not None:
-        doc["worker"] = worker
+    doc["worker"] = worker
     for optional in ("token_count", "tokens"):
         if optional in provider_meta:
             doc[optional] = provider_meta[optional]

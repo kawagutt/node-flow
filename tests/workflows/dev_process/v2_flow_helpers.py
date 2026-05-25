@@ -125,6 +125,23 @@ def through_approve_final(
     return review, final
 
 
+def rework_from_blocking(repo: Path, cp: str, *, force_blocking: bool = False) -> dict[str, Any]:
+    from nodeflow.workflows.dev_process.constants import ACTION_REWORK
+
+    params: dict[str, Any] = {}
+    if force_blocking:
+        params["force_review_blocking"] = True
+    return run_action(
+        repo,
+        {
+            "action": ACTION_REWORK,
+            "repo_root": str(repo),
+            "flow_checkpoint_path": cp,
+        },
+        params,
+    )
+
+
 def merge_ready_flow(repo: Path) -> dict[str, Any]:
     review, final = through_approve_final(repo)
     flow = review

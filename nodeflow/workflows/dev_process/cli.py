@@ -198,7 +198,8 @@ def main(ctx: click.Context, repo_root: str, as_json: bool, non_interactive: boo
     "--exec-policy",
     default=None,
     type=click.Path(exists=True, dir_okay=False),
-    help="Path to exec policy JSON (frozen into checkpoint at start; cwd-relative).",
+    help="Path to exec policy JSON (frozen into checkpoint at start; cwd-relative). "
+    "Per-node model is audit metadata only; actual model selection is determined by argv.",
 )
 @click.option("--run-id", default=None, help="Optional explicit run_id for a new run.")
 @click.pass_context

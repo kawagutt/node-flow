@@ -659,6 +659,7 @@ def _handle_continue_implementation(
     run_id: str,
     force_review_blocking: bool,
     rework_context: Optional[str] = None,
+    skip_implementation: bool = False,
 ) -> Dict[str, Any]:
     run_context = body["run_context"]
     strategy = _workspace_strategy(run_context)
@@ -675,30 +676,33 @@ def _handle_continue_implementation(
     plan_text = _read_plan_text(run_context["artifact_root"])
     task_prompt = str(body.get("task_prompt") or "")
 
-    timeline.append_event(
-        run_context["artifact_root"], run_id, "implementing", stage="implementation"
-    )
-    try:
-        impl = run_implementation_stage(
-            repo_root=repo,
-            artifact_root=run_context["artifact_root"],
-            run_id=run_id,
-            task_prompt=task_prompt,
-            base_revision=workspace_context.get("base_revision")
-            or run_context["source_base_revision"],
-            approved_spec=spec_text,
-            approved_plan=plan_text,
-            rework_context=rework_context,
-            body=body,
+    if not skip_implementation:
+        timeline.append_event(
+            run_context["artifact_root"], run_id, "implementing", stage="implementation"
         )
-    except NodeExecutionFailure as e:
-        _fail_checkpoint(
-            body=body, run_id=run_id, action=ACTION_CONTINUE_IMPLEMENTATION, reason=str(e)
-        )
-        raise
-    body["stages"]["implementation"] = impl
-    clear_stage_stale(body, "implementation")
-    mark_stale(body, upstream="implementation")
+        try:
+            impl = run_implementation_stage(
+                repo_root=repo,
+                artifact_root=run_context["artifact_root"],
+                run_id=run_id,
+                task_prompt=task_prompt,
+                base_revision=workspace_context.get("base_revision")
+                or run_context["source_base_revision"],
+                approved_spec=spec_text,
+                approved_plan=plan_text,
+                rework_context=rework_context,
+                body=body,
+            )
+        except NodeExecutionFailure as e:
+            _fail_checkpoint(
+                body=body, run_id=run_id, action=ACTION_CONTINUE_IMPLEMENTATION, reason=str(e)
+            )
+            raise
+        body["stages"]["implementation"] = impl
+        clear_stage_stale(body, "implementation")
+        mark_stale(body, upstream="implementation")
+
+    impl = body.get("stages", {}).get("implementation") or {} if skip_implementation else impl
 
     timeline.append_event(
         run_context["artifact_root"], run_id, "writing_tests", stage="test_implementation"
@@ -875,6 +879,7 @@ def _handle_rework(
         run_id=run_id,
         force_review_blocking=force_review_blocking,
         rework_context=rework_context,
+        skip_implementation=owner == "test",
     )
 
 
