@@ -1,4 +1,4 @@
-"""Flow checkpoint read/write for dev_process.flow.v1."""
+"""Flow checkpoint read/write for dev_process.flow.v2."""
 
 from __future__ import annotations
 

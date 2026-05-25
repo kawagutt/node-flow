@@ -34,7 +34,7 @@ def test_load_and_kick_dev_process_flat_string_inputs(tmp_path) -> None:
         },
     )
     fr = out["flow_output"]["flow_result"]
-    assert fr["state"] in ("initialized", "awaiting_spec_approval")
+    assert fr["state"] in ("initialized", "awaiting_spec_human_gate")
 
 
 def test_load_and_kick_dev_process_workspace_strategy_via_pipe(tmp_path) -> None:
@@ -58,7 +58,7 @@ def test_load_and_kick_dev_process_workspace_strategy_via_pipe(tmp_path) -> None
 
 
 def test_load_and_kick_dev_process_exec_argv_json_array(tmp_path) -> None:
-    from nodeflow.workflows.dev_process.hermetic_argv import spec_plan_argv
+    from nodeflow.workflows.dev_process.hermetic_argv import spec_argv
     from tests.workflows.dev_process.git_fixtures import git_repo_with_commit
 
     repo = tmp_path / "repo_argv"
@@ -72,11 +72,11 @@ def test_load_and_kick_dev_process_exec_argv_json_array(tmp_path) -> None:
             "action": "start",
             "repo_root": str(repo),
             "task_prompt": "argv array",
-            "exec_argv": spec_plan_argv(),
+            "exec_argv": spec_argv(),
         },
     )
     fr = out["flow_output"]["flow_result"]
-    assert fr["state"] == "awaiting_spec_approval"
+    assert fr["state"] == "awaiting_spec_human_gate"
 
 
 def test_load_and_kick_dev_process_start_initialized(tmp_path) -> None:
@@ -96,4 +96,4 @@ def test_load_and_kick_dev_process_start_initialized(tmp_path) -> None:
         },
     )
     fr = out["flow_output"]["flow_result"]
-    assert fr["state"] in ("initialized", "awaiting_spec_approval")
+    assert fr["state"] in ("initialized", "awaiting_spec_human_gate")

@@ -83,7 +83,7 @@ flow_started → checkpoint_written → stage_started/completed (spec_plan)
 
 **Symptom:** `start` used real Codex; `approve_spec` fell back to hermetic Python stubs (`implementation stub ok`), so review passed without real implementation.
 
-**Fix:** Persist `exec_argv` in checkpoint `dev_process.exec_argv` at `start`; restore on resume when CLI omits it. Mismatch on resume raises `exec_argv mismatch on resume`.
+**Fix:** Persist `exec_argv` in checkpoint `dev_process.exec_policy_snapshot.default_argv` at `start`; restore on resume when CLI omits it. Mismatch on resume raises `exec_argv mismatch on resume`.
 
 ### 3. Untracked files blocked review
 

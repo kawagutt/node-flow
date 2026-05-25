@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from nodeflow.core.base_node import NodeExecutionFailure
+from nodeflow.workflows.dev_process.constants import EVIDENCE_STAGE_KEYS
 
 _LOG = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ _REQUIRED_EVIDENCE_FIELDS = (
     "run_id",
 )
 
-_STAGES_REQUIRING_EVIDENCE = ("spec_plan", "implement", "review")
+_STAGES_REQUIRING_EVIDENCE = EVIDENCE_STAGE_KEYS
 
 
 def _sha256_text(text: str | None) -> str:

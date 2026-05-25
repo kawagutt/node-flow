@@ -94,7 +94,7 @@ def test_stub_marker_rejected(tmp_path) -> None:
         record_exec_evidence(
             artifact_root=str(tmp_path / "run"),
             run_id="r1",
-            stage="spec_plan",
+            stage="spec",
             invoker="codex_exec",
             execution_output={
                 "ok": True,

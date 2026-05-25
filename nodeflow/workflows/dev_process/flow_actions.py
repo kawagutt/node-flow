@@ -1,4 +1,4 @@
-"""dev-process flow orchestration (actions and run_flow)."""
+"""dev-process flow orchestration (v2 actions and run_flow)."""
 
 from __future__ import annotations
 
@@ -8,33 +8,49 @@ from typing import Any, Dict, Optional
 
 from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.workflows.dev_process import timeline
+from nodeflow.workflows.dev_process.argv_builder import resolve_job
 from nodeflow.workflows.dev_process.checkpoint import load_flow_checkpoint, write_flow_checkpoint
 from nodeflow.workflows.dev_process.constants import (
     ACTION_APPROVE_FINAL,
     ACTION_APPROVE_SPEC,
+    ACTION_CONTINUE_IMPLEMENTATION,
     ACTION_MERGE,
     ACTION_REJECT_FINAL,
     ACTION_REJECT_SPEC,
+    ACTION_REQUEST_SPEC_REVISION,
+    ACTION_REVISE_PLAN,
     ACTION_REVISE_SPEC,
     ACTION_REWORK,
     ACTION_START,
     EXEC_WORKER_CODEX,
     MERGE_POLICY_RECORD_ONLY,
-    STATE_AWAITING_REVIEW,
-    STATE_AWAITING_SPEC,
+    STATE_AWAITING_FINAL,
+    STATE_AWAITING_IMPLEMENTATION,
+    STATE_AWAITING_PLAN_REVISION,
+    STATE_AWAITING_REWORK_DECISION,
+    STATE_AWAITING_SPEC_HUMAN_GATE,
+    STATE_AWAITING_SPEC_REVISION,
     STATE_FAILED,
     STATE_INITIALIZED,
     WORKSPACE_STRATEGY_CURRENT_REPO,
 )
+from nodeflow.workflows.dev_process.exec_policy import (
+    apply_snapshot_to_body,
+    build_exec_policy_snapshot,
+)
 from nodeflow.workflows.dev_process.flow_context import (
     _assert_resume_identity,
     _clear_git_worktree_on_revise,
+    _combine_revision_context,
     _empty_stages,
     _exec_worker_kind,
     _fail_checkpoint,
     _finalize,
-    _read_approved_text,
+    _read_plan_text,
+    _read_spec_text,
     _resolve_exec_argv,
+    _revision_context_from_plan_review,
+    _revision_context_from_spec_review,
     _run_context_for_prepare_workspace,
     _stored_exec_argv,
     _stored_exec_model,
@@ -62,15 +78,35 @@ from nodeflow.workflows.dev_process.stage_inputs import (
     build_rework_context,
     collect_revision_inputs,
     collect_rework_inputs,
-    collect_spec_plan_inputs,
+    collect_spec_inputs,
     format_revision_context,
+    load_stored_spec_inputs,
 )
 from nodeflow.workflows.dev_process.stages import (
-    run_implement_stage,
+    run_implementation_stage,
+    run_plan_review_stage,
+    run_plan_stage,
     run_review_stage,
-    run_spec_plan_stage,
+    run_run_tests_stage,
+    run_spec_review_stage,
+    run_spec_stage,
+    run_test_implementation_stage,
 )
+from nodeflow.workflows.dev_process.stale import clear_stage_stale, mark_stale
 from nodeflow.workflows.dev_process.state_machine import assert_action_allowed
+from nodeflow.workflows.dev_process.synthesis import assign_owners_to_findings, route_owner_to_state
+
+
+def _job_argv(
+    body: Dict[str, Any],
+    job_key: str,
+    exec_argv: Optional[list[str]],
+) -> Optional[list[str]]:
+    dp = body.get("dev_process") if isinstance(body.get("dev_process"), dict) else {}
+    if isinstance(dp.get("exec_policy_snapshot"), dict):
+        _, _, argv = resolve_job(body, job_key)
+        return argv
+    return exec_argv
 
 
 def run_flow(
@@ -80,7 +116,7 @@ def run_flow(
     task_prompt: str = "",
     flow_checkpoint_path: Optional[str] = None,
     run_id: Optional[str] = None,
-    run_spec_plan_on_start: bool = True,
+    run_spec_on_start: bool = True,
     human_comment_text: str = "",
     exec_argv: Optional[list[str]] = None,
     exec_model: Optional[str] = None,
@@ -89,7 +125,7 @@ def run_flow(
     exec_worker_kind: Optional[str] = None,
     merge_policy: Optional[str] = None,
     interactive: bool = False,
-    spec_plan_provided: Optional[Dict[str, Any]] = None,
+    spec_inputs_provided: Optional[Dict[str, Any]] = None,
     revision_provided: Optional[Dict[str, Any]] = None,
     rework_provided: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
@@ -98,14 +134,14 @@ def run_flow(
 
     if action == ACTION_START:
         argv = _resolve_exec_argv(exec_argv)
-        provided = dict(spec_plan_provided or {})
+        provided = dict(spec_inputs_provided or {})
         if task_prompt.strip() and not provided.get("task_prompt"):
             provided["task_prompt"] = task_prompt.strip()
         return _handle_start(
             repo_root=repo_root,
             task_prompt=task_prompt,
             run_id=run_id,
-            run_spec_plan_on_start=run_spec_plan_on_start,
+            run_spec_on_start=run_spec_on_start,
             exec_argv=argv,
             exec_model=exec_model.strip()
             if isinstance(exec_model, str) and exec_model.strip()
@@ -114,12 +150,109 @@ def run_flow(
             exec_worker_kind=exec_worker_kind or EXEC_WORKER_CODEX,
             merge_policy=merge_policy or MERGE_POLICY_RECORD_ONLY,
             interactive=interactive,
-            spec_plan_provided=provided,
+            spec_inputs_provided=provided,
         )
 
     if not flow_checkpoint_path:
         raise NodeExecutionFailure(f"action {action!r} requires flow_checkpoint_path")
 
+    body = _load_and_validate_resume(
+        flow_checkpoint_path,
+        action=action,
+        repo_root=repo_root,
+        run_id=run_id,
+        workspace_strategy=workspace_strategy,
+        exec_worker_kind=exec_worker_kind,
+        merge_policy=merge_policy,
+        exec_argv=exec_argv,
+        exec_model=exec_model,
+    )
+    run_context = body["run_context"]
+    run_id = str(run_context.get("run_id") or "")
+    argv = _resolve_exec_argv(exec_argv, body=body)
+    state = str((body.get("flow_result") or {}).get("state") or "")
+    assert_action_allowed(state, action)
+    timeline.append_event(
+        run_context["artifact_root"], run_id, "action_received", action=action, state=state
+    )
+
+    if action == ACTION_APPROVE_SPEC:
+        return _handle_approve_spec(body, run_id=run_id, exec_argv=argv)
+    if action in (ACTION_REVISE_SPEC, ACTION_REQUEST_SPEC_REVISION):
+        rev_provided = dict(revision_provided or {})
+        if action == ACTION_REQUEST_SPEC_REVISION:
+            if human_comment_text.strip() and not rev_provided.get("revision_comment"):
+                rev_provided["revision_comment"] = human_comment_text.strip()
+        elif task_prompt.strip() and not rev_provided.get("revision_comment"):
+            rev_provided["revision_comment"] = task_prompt.strip()
+        return _handle_revise_spec(
+            body,
+            run_id=run_id,
+            exec_argv=argv,
+            interactive=interactive,
+            revision_provided=rev_provided,
+            use_human_comment=action == ACTION_REQUEST_SPEC_REVISION,
+        )
+    if action == ACTION_REVISE_PLAN:
+        rev_provided = dict(revision_provided or {})
+        if task_prompt.strip() and not rev_provided.get("revision_comment"):
+            rev_provided["revision_comment"] = task_prompt.strip()
+        return _handle_revise_plan(
+            body,
+            run_id=run_id,
+            exec_argv=argv,
+            interactive=interactive,
+            revision_provided=rev_provided,
+        )
+    if action == ACTION_CONTINUE_IMPLEMENTATION:
+        return _handle_continue_implementation(
+            body,
+            run_id=run_id,
+            exec_argv=argv,
+            force_review_blocking=force_review_blocking,
+        )
+    if action == ACTION_REWORK:
+        rw_provided = dict(rework_provided or {})
+        if human_comment_text.strip() and not rw_provided.get("rework_comment"):
+            rw_provided["rework_comment"] = human_comment_text.strip()
+        if not rw_provided.get("rework_comment") and not interactive:
+            rw_provided.setdefault("rework_comment", "rework requested")
+        return _handle_rework(
+            body,
+            run_id=run_id,
+            exec_argv=argv,
+            force_review_blocking=force_review_blocking,
+            interactive=interactive,
+            rework_provided=rw_provided,
+        )
+    if action == ACTION_MERGE:
+        return _handle_merge(body, run_id=run_id)
+    if action == ACTION_APPROVE_FINAL:
+        return _handle_approve_final(body, run_id=run_id)
+    if action in (ACTION_REJECT_SPEC, ACTION_REJECT_FINAL):
+        return _handle_reject(
+            body,
+            run_id=run_id,
+            action=action,
+            human_comment_text=human_comment_text,
+        )
+
+    raise NodeExecutionFailure(f"unsupported action {action!r}")
+
+
+def _load_and_validate_resume(
+    flow_checkpoint_path: str,
+    *,
+    action: str,
+    repo_root: str,
+    run_id: Optional[str],
+    workspace_strategy: Optional[str],
+    exec_worker_kind: Optional[str],
+    merge_policy: Optional[str],
+    exec_argv: Optional[list[str]],
+    exec_model: Optional[str],
+) -> Dict[str, Any]:
+    del action
     doc = load_flow_checkpoint(flow_checkpoint_path)
     body = dict(doc)
     run_context = dict(body.get("run_context") or {})
@@ -156,65 +289,16 @@ def run_flow(
             raise NodeExecutionFailure(
                 f"exec_model mismatch on resume: checkpoint {stored_model!r} != request {requested_model!r}"
             )
-    argv = _resolve_exec_argv(exec_argv, body=body)
     stored_run_id = str(run_context.get("run_id") or "")
     if run_id and run_id != stored_run_id:
         raise NodeExecutionFailure(
             f"run_id mismatch: input {run_id!r} != checkpoint {stored_run_id!r}"
         )
-    run_id = stored_run_id
-    incoming_identity: Dict[str, Any] = {"run_id": run_id}
+    incoming_identity: Dict[str, Any] = {"run_id": stored_run_id}
     if repo_root.strip():
         incoming_identity["repo_root"] = abs_path(resolve_git_toplevel(Path(repo_root)))
     _assert_resume_identity(run_context, incoming_identity)
-    state = str((body.get("flow_result") or {}).get("state") or "")
-    assert_action_allowed(state, action)
-    timeline.append_event(
-        run_context["artifact_root"], run_id, "action_received", action=action, state=state
-    )
-
-    if action == ACTION_APPROVE_SPEC:
-        return _handle_approve_spec(
-            body, run_id=run_id, exec_argv=argv, force_review_blocking=force_review_blocking
-        )
-    if action == ACTION_REVISE_SPEC:
-        rev_provided = dict(revision_provided or {})
-        if task_prompt.strip() and not rev_provided.get("revision_comment"):
-            rev_provided["revision_comment"] = task_prompt.strip()
-        return _handle_revise_spec(
-            body,
-            run_id=run_id,
-            exec_argv=argv,
-            interactive=interactive,
-            revision_provided=rev_provided,
-        )
-    if action == ACTION_REWORK:
-        rw_provided = dict(rework_provided or {})
-        if human_comment_text.strip() and not rw_provided.get("rework_comment"):
-            rw_provided["rework_comment"] = human_comment_text.strip()
-        if not rw_provided.get("rework_comment") and not interactive:
-            rw_provided.setdefault("rework_comment", "rework requested")
-        return _handle_rework(
-            body,
-            run_id=run_id,
-            exec_argv=argv,
-            force_review_blocking=force_review_blocking,
-            interactive=interactive,
-            rework_provided=rw_provided,
-        )
-    if action == ACTION_MERGE:
-        return _handle_merge(body, run_id=run_id)
-    if action == ACTION_APPROVE_FINAL:
-        return _handle_approve_final(body, run_id=run_id)
-    if action in (ACTION_REJECT_SPEC, ACTION_REJECT_FINAL):
-        return _handle_reject(
-            body,
-            run_id=run_id,
-            action=action,
-            human_comment_text=human_comment_text,
-        )
-
-    raise NodeExecutionFailure(f"unsupported action {action!r}")
+    return body
 
 
 def _handle_start(
@@ -222,14 +306,14 @@ def _handle_start(
     repo_root: str,
     task_prompt: str,
     run_id: Optional[str],
-    run_spec_plan_on_start: bool,
+    run_spec_on_start: bool,
     exec_argv: Optional[list[str]],
-    exec_model: Optional[str] = None,
+    exec_model: Optional[str],
     workspace_strategy: str,
     exec_worker_kind: str,
     merge_policy: str,
-    interactive: bool = False,
-    spec_plan_provided: Optional[Dict[str, Any]] = None,
+    interactive: bool,
+    spec_inputs_provided: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
     repo = resolve_git_toplevel(Path(repo_root))
     swc = check_source_workspace(repo)
@@ -258,6 +342,7 @@ def _handle_start(
         "planned_branch_name": planned,
     }
     body: Dict[str, Any] = {
+        "schema_version": "dev_process.flow.v2",
         "run_context": run_context,
         "flow_result": {
             "state": STATE_INITIALIZED,
@@ -272,45 +357,39 @@ def _handle_start(
             "merge_policy": policy,
             "workspace_attempt": 1,
             "human_gates": {"spec": "pending", "final": "not_reached"},
-            **({"exec_argv": exec_argv} if exec_argv else {}),
-            **({"exec_model": exec_model} if exec_model else {}),
         },
         "stages": _empty_stages(),
+        "stale": {},
         "task_prompt": task_prompt,
         "source_workspace_check": swc,
     }
     timeline.append_event(
         artifact_root, rid, "flow_started", state=STATE_INITIALIZED, action=ACTION_START
     )
+    snapshot = build_exec_policy_snapshot(
+        exec_worker_kind=exec_worker_kind,
+        exec_argv=exec_argv,
+        exec_model=exec_model,
+    )
+    apply_snapshot_to_body(body, snapshot)
     out = _finalize(body=body, run_id=rid, action=ACTION_START, state=STATE_INITIALIZED)
 
-    if not run_spec_plan_on_start:
+    if not run_spec_on_start:
         return out
 
     body = load_flow_checkpoint(out["flow_checkpoint_path"])
-    return _run_spec_plan_and_finalize(
+    return _run_spec_cycle(
         body,
         run_id=rid,
         task_prompt=task_prompt,
         exec_argv=exec_argv,
         action=ACTION_START,
         interactive=interactive,
-        spec_plan_provided=spec_plan_provided or {},
+        spec_inputs_provided=spec_inputs_provided or {},
     )
 
 
-def _attach_spec_plan_input_artifacts(
-    stage_result: Dict[str, Any],
-    *,
-    input_artifact: Path,
-    reference_materials_artifact: Optional[Path],
-) -> None:
-    stage_result["input_artifact"] = str(input_artifact)
-    if reference_materials_artifact is not None:
-        stage_result["reference_materials_artifact"] = str(reference_materials_artifact)
-
-
-def _run_spec_plan_and_finalize(
+def _run_spec_cycle(
     body: Dict[str, Any],
     *,
     run_id: str,
@@ -319,89 +398,180 @@ def _run_spec_plan_and_finalize(
     action: str,
     revision_context: Optional[str] = None,
     interactive: bool = False,
-    spec_plan_provided: Optional[Dict[str, Any]] = None,
+    spec_inputs_provided: Optional[Dict[str, Any]] = None,
+    use_human_comment: bool = False,
     revision_provided: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     run_context = body["run_context"]
-    if action == ACTION_REVISE_SPEC:
-        _clear_git_worktree_on_revise(body)
     repo = Path(run_context["repo_root"])
     worker_kind = _exec_worker_kind(body)
-
     notes = ""
-    sp_materials: list[dict[str, Any]] | None = None
-    sp_input_path: Path | None = None
-    sp_ref_path: Path | None = None
+    materials: list[dict[str, Any]] | None = None
+    previous_spec: str | None = None
 
-    if action == ACTION_REVISE_SPEC:
-        rev_inputs, rev_materials, rev_input_path, rev_ref_path = collect_revision_inputs(
-            artifact_root=run_context["artifact_root"],
-            repo_root=repo,
-            provided=revision_provided or {},
-            interactive=interactive,
-        )
-        revision_context = format_revision_context(
-            str(rev_inputs.get("revision_comment") or ""),
-            rev_materials,
-        )
-        body.setdefault("stages", {}).setdefault("revision", {})["input_artifact"] = str(
-            rev_input_path
-        )
-        if rev_ref_path is not None:
-            body["stages"]["revision"]["reference_materials_artifact"] = str(rev_ref_path)
+    if action in (ACTION_REVISE_SPEC, ACTION_REQUEST_SPEC_REVISION):
+        _clear_git_worktree_on_revise(body)
         resolved_task_prompt = str(body.get("task_prompt") or task_prompt or "")
+        if revision_context is None:
+            revision_context = _revision_context_from_spec_review(body)
+        notes, materials = load_stored_spec_inputs(run_context["artifact_root"], repo)
+        previous_spec = _read_spec_text(run_context["artifact_root"])
+        mark_stale(body, upstream="spec")
     else:
-        sp_inputs, sp_materials, sp_input_path, sp_ref_path = collect_spec_plan_inputs(
+        sp_inputs, materials, sp_input_path, sp_ref_path = collect_spec_inputs(
             artifact_root=run_context["artifact_root"],
             repo_root=repo,
-            provided=spec_plan_provided or {},
+            provided=spec_inputs_provided or {},
             interactive=interactive,
         )
-        resolved_task_prompt = str(sp_inputs.get("task_prompt") or "")
+        resolved_task_prompt = str(sp_inputs.get("task_prompt") or task_prompt or "")
         body["task_prompt"] = resolved_task_prompt
         notes = str(sp_inputs.get("notes") or "")
+        if sp_input_path is not None:
+            body.setdefault("stages", {}).setdefault("spec", {})["input_artifact"] = str(
+                sp_input_path
+            )
 
-    timeline.append_event(run_context["artifact_root"], run_id, "stage_started", stage="spec_plan")
+    timeline.append_event(run_context["artifact_root"], run_id, "writing_spec", stage="spec")
     try:
-        sp = run_spec_plan_stage(
+        sp = run_spec_stage(
             repo_root=repo,
             artifact_root=run_context["artifact_root"],
             run_id=run_id,
             task_prompt=resolved_task_prompt,
             base_revision=run_context["source_base_revision"],
-            exec_argv=exec_argv,
+            exec_argv=_job_argv(body, "write_spec", exec_argv),
             revision_context=revision_context,
             notes=notes or None,
-            reference_materials=sp_materials,
+            reference_materials=materials,
+            previous_spec=previous_spec,
             exec_worker_kind=worker_kind,
         )
-        if sp_input_path is not None:
-            _attach_spec_plan_input_artifacts(
-                sp,
-                input_artifact=sp_input_path,
-                reference_materials_artifact=sp_ref_path,
-            )
     except NodeExecutionFailure as e:
         _fail_checkpoint(body=body, run_id=run_id, action=action, reason=str(e))
         raise
-    body["stages"]["spec_plan"] = sp
-    body["stages"]["implement"] = {"status": "pending"}
-    body["stages"]["review"] = {"status": "pending"}
+    body["stages"]["spec"] = sp
+    clear_stage_stale(body, "spec")
+
+    spec_text = _read_spec_text(run_context["artifact_root"])
     timeline.append_event(
-        run_context["artifact_root"],
-        run_id,
-        "stage_completed",
-        stage="spec_plan",
-        ok=True,
+        run_context["artifact_root"], run_id, "reviewing_spec", stage="spec_review"
     )
+    try:
+        sr = run_spec_review_stage(
+            repo_root=repo,
+            artifact_root=run_context["artifact_root"],
+            run_id=run_id,
+            task_prompt=resolved_task_prompt,
+            spec_text=spec_text,
+            exec_argv=_job_argv(body, "spec_review", exec_argv),
+            exec_worker_kind=worker_kind,
+        )
+    except NodeExecutionFailure as e:
+        _fail_checkpoint(body=body, run_id=run_id, action=action, reason=str(e))
+        raise
+    body["stages"]["spec_review"] = sr
+    clear_stage_stale(body, "spec_review")
+
     gates = body.setdefault("dev_process", {}).setdefault("human_gates", {})
     gates["spec"] = "pending"
     gates["final"] = "not_reached"
+
+    if sr.get("decision") == "fail":
+        return _finalize(
+            body=body,
+            run_id=run_id,
+            action=action,
+            state=STATE_AWAITING_SPEC_REVISION,
+            merge_ready=False,
+        )
     return _finalize(
         body=body,
         run_id=run_id,
         action=action,
-        state=STATE_AWAITING_SPEC,
+        state=STATE_AWAITING_SPEC_HUMAN_GATE,
+        merge_ready=False,
+    )
+
+
+def _run_plan_cycle(
+    body: Dict[str, Any],
+    *,
+    run_id: str,
+    exec_argv: Optional[list[str]],
+    action: str,
+    revision_context: Optional[str] = None,
+    interactive: bool = False,
+    revision_provided: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    run_context = body["run_context"]
+    repo = Path(run_context["repo_root"])
+    worker_kind = _exec_worker_kind(body)
+    task_prompt = str(body.get("task_prompt") or "")
+    spec_text = _read_spec_text(run_context["artifact_root"])
+
+    previous_plan: str | None = None
+    if action == ACTION_REVISE_PLAN:
+        if revision_context is None:
+            revision_context = _revision_context_from_plan_review(body)
+        previous_plan = _read_plan_text(run_context["artifact_root"])
+
+    timeline.append_event(run_context["artifact_root"], run_id, "writing_plan", stage="plan")
+    try:
+        pl = run_plan_stage(
+            repo_root=repo,
+            artifact_root=run_context["artifact_root"],
+            run_id=run_id,
+            task_prompt=task_prompt,
+            approved_spec=spec_text,
+            exec_argv=_job_argv(body, "write_plan", exec_argv),
+            revision_context=revision_context,
+            previous_plan=previous_plan,
+            exec_worker_kind=worker_kind,
+        )
+    except NodeExecutionFailure as e:
+        _fail_checkpoint(body=body, run_id=run_id, action=action, reason=str(e))
+        raise
+    body["stages"]["plan"] = pl
+    clear_stage_stale(body, "plan")
+    mark_stale(body, upstream="plan")
+
+    plan_text = _read_plan_text(run_context["artifact_root"])
+    timeline.append_event(
+        run_context["artifact_root"], run_id, "reviewing_plan", stage="plan_review"
+    )
+    try:
+        pr = run_plan_review_stage(
+            repo_root=repo,
+            artifact_root=run_context["artifact_root"],
+            run_id=run_id,
+            task_prompt=task_prompt,
+            spec_text=spec_text,
+            plan_text=plan_text,
+            exec_argv=_job_argv(body, "plan_review", exec_argv),
+            exec_worker_kind=worker_kind,
+        )
+    except NodeExecutionFailure as e:
+        _fail_checkpoint(body=body, run_id=run_id, action=action, reason=str(e))
+        raise
+    body["stages"]["plan_review"] = pr
+    clear_stage_stale(body, "plan_review")
+
+    if pr.get("decision") == "fail":
+        return _finalize(
+            body=body,
+            run_id=run_id,
+            action=action,
+            state=STATE_AWAITING_PLAN_REVISION,
+            merge_ready=False,
+        )
+    gates = body.setdefault("dev_process", {}).setdefault("human_gates", {})
+    gates["spec"] = "approved"
+    return _finalize(
+        body=body,
+        run_id=run_id,
+        action=action,
+        state=STATE_AWAITING_IMPLEMENTATION,
         merge_ready=False,
     )
 
@@ -411,8 +581,98 @@ def _handle_approve_spec(
     *,
     run_id: str,
     exec_argv: Optional[list[str]],
+) -> Dict[str, Any]:
+    gates = body.setdefault("dev_process", {}).setdefault("human_gates", {})
+    gates["spec"] = "approved"
+    return _run_plan_cycle(body, run_id=run_id, exec_argv=exec_argv, action=ACTION_APPROVE_SPEC)
+
+
+def _handle_revise_spec(
+    body: Dict[str, Any],
+    *,
+    run_id: str,
+    exec_argv: Optional[list[str]],
+    interactive: bool,
+    revision_provided: Dict[str, Any],
+    use_human_comment: bool,
+) -> Dict[str, Any]:
+    run_context = body["run_context"]
+    repo = Path(run_context["repo_root"])
+    findings = _revision_context_from_spec_review(body)
+    comment = str(revision_provided.get("revision_comment") or "")
+    materials: list[dict[str, Any]] | None = None
+    if use_human_comment or comment.strip() or revision_provided.get("reference_paths") or interactive:
+        rev_inputs, materials, rev_input_path, rev_ref_path = collect_revision_inputs(
+            artifact_root=run_context["artifact_root"],
+            repo_root=repo,
+            provided=revision_provided,
+            interactive=interactive,
+            require_comment=use_human_comment,
+        )
+        comment = str(rev_inputs.get("revision_comment") or comment)
+        body.setdefault("stages", {}).setdefault("revision", {})["input_artifact"] = str(
+            rev_input_path
+        )
+        if rev_ref_path is not None:
+            body["stages"]["revision"]["reference_materials_artifact"] = str(rev_ref_path)
+    human_context = format_revision_context(comment, materials or [])
+    revision_context = _combine_revision_context(findings, human_context)
+    return _run_spec_cycle(
+        body,
+        run_id=run_id,
+        task_prompt=str(body.get("task_prompt") or ""),
+        exec_argv=exec_argv,
+        action=ACTION_REVISE_SPEC if not use_human_comment else ACTION_REQUEST_SPEC_REVISION,
+        revision_context=revision_context,
+        interactive=interactive,
+        use_human_comment=use_human_comment,
+    )
+
+
+def _handle_revise_plan(
+    body: Dict[str, Any],
+    *,
+    run_id: str,
+    exec_argv: Optional[list[str]],
+    interactive: bool,
+    revision_provided: Dict[str, Any],
+) -> Dict[str, Any]:
+    run_context = body["run_context"]
+    repo = Path(run_context["repo_root"])
+    findings = _revision_context_from_plan_review(body)
+    comment = str(revision_provided.get("revision_comment") or "")
+    materials: list[dict[str, Any]] | None = None
+    if comment.strip() or revision_provided.get("reference_paths") or interactive:
+        rev_inputs, materials, rev_input_path, rev_ref_path = collect_revision_inputs(
+            artifact_root=run_context["artifact_root"],
+            repo_root=repo,
+            provided=revision_provided,
+            interactive=interactive,
+            require_comment=False,
+        )
+        comment = str(rev_inputs.get("revision_comment") or comment)
+        body.setdefault("stages", {}).setdefault("revision", {})["input_artifact"] = str(
+            rev_input_path
+        )
+        if rev_ref_path is not None:
+            body["stages"]["revision"]["reference_materials_artifact"] = str(rev_ref_path)
+    human_context = format_revision_context(comment, materials or [])
+    revision_context = _combine_revision_context(findings, human_context)
+    return _run_plan_cycle(
+        body,
+        run_id=run_id,
+        exec_argv=exec_argv,
+        action=ACTION_REVISE_PLAN,
+        revision_context=revision_context,
+    )
+
+
+def _handle_continue_implementation(
+    body: Dict[str, Any],
+    *,
+    run_id: str,
+    exec_argv: Optional[list[str]],
     force_review_blocking: bool,
-    action: str = ACTION_APPROVE_SPEC,
     rework_context: Optional[str] = None,
 ) -> Dict[str, Any]:
     run_context = body["run_context"]
@@ -426,15 +686,17 @@ def _handle_approve_spec(
     )
     body["workspace_context"] = workspace_context
     repo = _workspace_repo_root(body)
-    gates = body.setdefault("dev_process", {}).setdefault("human_gates", {})
-    gates["spec"] = "approved"
-    gates["final"] = "not_reached"
-    spec_text, plan_text = _read_approved_text(run_context["artifact_root"])
+    spec_text = _read_spec_text(run_context["artifact_root"])
+    plan_text = _read_plan_text(run_context["artifact_root"])
     task_prompt = str(body.get("task_prompt") or "")
 
-    timeline.append_event(run_context["artifact_root"], run_id, "stage_started", stage="implement")
+    impl_argv = _job_argv(body, "write_implementation", exec_argv)
+    tests_argv = _job_argv(body, "write_tests", exec_argv)
+    timeline.append_event(
+        run_context["artifact_root"], run_id, "implementing", stage="implementation"
+    )
     try:
-        impl = run_implement_stage(
+        impl = run_implementation_stage(
             repo_root=repo,
             artifact_root=run_context["artifact_root"],
             run_id=run_id,
@@ -443,25 +705,69 @@ def _handle_approve_spec(
             or run_context["source_base_revision"],
             approved_spec=spec_text,
             approved_plan=plan_text,
-            exec_argv=exec_argv,
-            exec_worker_kind=_exec_worker_kind(body),
+            exec_argv=impl_argv,
             rework_context=rework_context,
+            exec_worker_kind=_exec_worker_kind(body),
         )
     except NodeExecutionFailure as e:
-        _fail_checkpoint(body=body, run_id=run_id, action=action, reason=str(e))
+        _fail_checkpoint(
+            body=body, run_id=run_id, action=ACTION_CONTINUE_IMPLEMENTATION, reason=str(e)
+        )
         raise
-    body["stages"]["implement"] = impl
-    timeline.append_event(
-        run_context["artifact_root"],
-        run_id,
-        "stage_completed",
-        stage="implement",
-        ok=impl.get("status") == "completed",
-    )
+    body["stages"]["implementation"] = impl
+    clear_stage_stale(body, "implementation")
+    mark_stale(body, upstream="implementation")
 
-    timeline.append_event(run_context["artifact_root"], run_id, "stage_started", stage="review")
+    timeline.append_event(
+        run_context["artifact_root"], run_id, "writing_tests", stage="test_implementation"
+    )
     try:
-        preset = str((body.get("dev_process") or {}).get("review_depth_preset") or "standard")
+        test_impl = run_test_implementation_stage(
+            repo_root=repo,
+            artifact_root=run_context["artifact_root"],
+            run_id=run_id,
+            approved_spec=spec_text,
+            approved_plan=plan_text,
+            exec_argv=tests_argv,
+            exec_worker_kind=_exec_worker_kind(body),
+        )
+    except NodeExecutionFailure as e:
+        _fail_checkpoint(
+            body=body, run_id=run_id, action=ACTION_CONTINUE_IMPLEMENTATION, reason=str(e)
+        )
+        raise
+    body["stages"]["test_implementation"] = test_impl
+    clear_stage_stale(body, "test_implementation")
+    mark_stale(body, upstream="test_implementation")
+
+    timeline.append_event(run_context["artifact_root"], run_id, "running_tests", stage="run_tests")
+    try:
+        run_tests_st = run_run_tests_stage(
+            repo_root=repo,
+            artifact_root=run_context["artifact_root"],
+            run_id=run_id,
+            diff_result=impl.get("diff_result") or {},
+            execution_output=impl.get("execution_output") or {},
+        )
+    except NodeExecutionFailure as e:
+        _fail_checkpoint(
+            body=body, run_id=run_id, action=ACTION_CONTINUE_IMPLEMENTATION, reason=str(e)
+        )
+        raise
+    body["stages"]["run_tests"] = run_tests_st
+    clear_stage_stale(body, "run_tests")
+    run_tests_ok = run_tests_st.get("status") == "completed"
+    impl_bundle = {
+        "status": run_tests_st.get("status", "completed"),
+        "test_result": run_tests_st.get("test_result"),
+        "diff_result": impl.get("diff_result"),
+        "evidence_paths": list(impl.get("evidence_paths") or [])
+        + list(test_impl.get("evidence_paths") or []),
+    }
+
+    timeline.append_event(run_context["artifact_root"], run_id, "reviewing_changes", stage="review")
+    preset = str((body.get("dev_process") or {}).get("review_depth_preset") or "standard")
+    try:
         rev = run_review_stage(
             repo_root=repo,
             artifact_root=run_context["artifact_root"],
@@ -470,57 +776,72 @@ def _handle_approve_spec(
             or run_context["source_base_revision"],
             approved_spec=spec_text,
             approved_plan=plan_text,
-            diff_result=impl.get("diff_result") or {},
-            test_result=impl.get("test_result") or {},
+            diff_result=impl_bundle.get("diff_result") or {},
+            test_result=impl_bundle.get("test_result") or {},
             exec_argv=exec_argv,
             force_blocking=force_review_blocking,
             review_depth_preset=preset,
             exec_worker_kind=_exec_worker_kind(body),
         )
     except NodeExecutionFailure as e:
-        _fail_checkpoint(body=body, run_id=run_id, action=action, reason=str(e))
+        _fail_checkpoint(
+            body=body, run_id=run_id, action=ACTION_CONTINUE_IMPLEMENTATION, reason=str(e)
+        )
         raise
+
+    review_result = rev.get("review_result") or {}
+    blocking = list(review_result.get("blocking_findings") or [])
+    blocking = assign_owners_to_findings(blocking)
+    if isinstance(review_result, dict):
+        review_result = dict(review_result)
+        review_result["blocking_findings"] = blocking
+        rev["review_result"] = review_result
+
     branch_name, branch_head = record_reviewed_branch_snapshot(body)
     rev["reviewed_branch_name"] = branch_name
     rev["reviewed_branch_head"] = branch_head
     body["stages"]["review"] = rev
-    timeline.append_event(
-        run_context["artifact_root"],
-        run_id,
-        "stage_completed",
-        stage="review",
-        ok=True,
-    )
-    merge_ready = bool(rev.get("merge_ready"))
+    clear_stage_stale(body, "review")
+
+    merge_ready = bool(rev.get("merge_ready")) and run_tests_ok
+    gates = body.setdefault("dev_process", {}).setdefault("human_gates", {})
+
+    if blocking:
+        body["rework_owner"] = route_owner_to_state(blocking)
+        gates["final"] = "not_reached"
+        return _finalize(
+            body=body,
+            run_id=run_id,
+            action=ACTION_CONTINUE_IMPLEMENTATION,
+            state=STATE_AWAITING_REWORK_DECISION,
+            merge_ready=False,
+        )
+    if not run_tests_ok:
+        body["rework_owner"] = "test"
+        gates["final"] = "not_reached"
+        return _finalize(
+            body=body,
+            run_id=run_id,
+            action=ACTION_CONTINUE_IMPLEMENTATION,
+            state=STATE_AWAITING_REWORK_DECISION,
+            merge_ready=False,
+        )
     if merge_ready:
         gates["final"] = "pending"
-    else:
-        gates["final"] = "not_reached"
+        return _finalize(
+            body=body,
+            run_id=run_id,
+            action=ACTION_CONTINUE_IMPLEMENTATION,
+            state=STATE_AWAITING_FINAL,
+            merge_ready=True,
+        )
+    gates["final"] = "not_reached"
     return _finalize(
         body=body,
         run_id=run_id,
-        action=action,
-        state=STATE_AWAITING_REVIEW,
-        merge_ready=merge_ready,
-    )
-
-
-def _handle_revise_spec(
-    body: Dict[str, Any],
-    *,
-    run_id: str,
-    exec_argv: Optional[list[str]],
-    interactive: bool = False,
-    revision_provided: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    return _run_spec_plan_and_finalize(
-        body,
-        run_id=run_id,
-        task_prompt=str(body.get("task_prompt") or ""),
-        exec_argv=exec_argv,
-        action=ACTION_REVISE_SPEC,
-        interactive=interactive,
-        revision_provided=revision_provided or {},
+        action=ACTION_CONTINUE_IMPLEMENTATION,
+        state=STATE_AWAITING_REWORK_DECISION,
+        merge_ready=False,
     )
 
 
@@ -530,39 +851,53 @@ def _handle_rework(
     run_id: str,
     exec_argv: Optional[list[str]],
     force_review_blocking: bool,
-    interactive: bool = False,
-    rework_provided: Optional[Dict[str, Any]] = None,
+    interactive: bool,
+    rework_provided: Dict[str, Any],
 ) -> Dict[str, Any]:
     workspace_context = body.get("workspace_context")
     if not isinstance(workspace_context, dict):
         raise NodeExecutionFailure(
-            "rework_implementation requires workspace_context from prior approve_spec"
+            "rework_implementation requires workspace_context from prior continue_implementation"
         )
     run_context = body["run_context"]
     review_st = body.get("stages", {}).get("review")
     rw_inputs, rw_input_path = collect_rework_inputs(
         artifact_root=run_context["artifact_root"],
-        provided=rework_provided or {},
+        provided=rework_provided,
         interactive=interactive,
     )
     rework_context = build_rework_context(
         str(rw_inputs.get("rework_comment") or ""),
         review_st if isinstance(review_st, dict) else None,
     )
-    body_for_approve = dict(body)
-    if isinstance(review_st, dict):
-        review_st_copy = dict(review_st)
-        review_st_copy["stale"] = True
-        body_for_approve.setdefault("stages", {})["review"] = review_st_copy
-    body_for_approve.setdefault("stages", {}).setdefault("rework", {})["input_artifact"] = str(
-        rw_input_path
-    )
-    return _handle_approve_spec(
-        body_for_approve,
+    body.setdefault("stages", {}).setdefault("rework", {})["input_artifact"] = str(rw_input_path)
+
+    owner = str(body.get("rework_owner") or "implementation")
+    if owner == "spec":
+        mark_stale(body, upstream="spec")
+        return _handle_revise_spec(
+            body,
+            run_id=run_id,
+            exec_argv=exec_argv,
+            interactive=interactive,
+            revision_provided={"revision_comment": rework_context},
+            use_human_comment=True,
+        )
+    if owner == "plan":
+        mark_stale(body, upstream="plan")
+        return _handle_revise_plan(
+            body,
+            run_id=run_id,
+            exec_argv=exec_argv,
+            interactive=interactive,
+            revision_provided={"revision_comment": rework_context},
+        )
+
+    return _handle_continue_implementation(
+        body,
         run_id=run_id,
         exec_argv=exec_argv,
         force_review_blocking=force_review_blocking,
-        action=ACTION_REWORK,
         rework_context=rework_context,
     )
 

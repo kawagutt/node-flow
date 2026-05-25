@@ -81,8 +81,8 @@ class DevProcessFlowNode(PythonActionNode):
         run_id = _port_scalar(inputs, "run_id")
         run_id_s = run_id if isinstance(run_id, str) and run_id.strip() else None
 
-        run_spec_plan_on_start = parse_bool_param(
-            params.get("run_spec_plan_on_start", True), default=True
+        run_spec_on_start = parse_bool_param(
+            params.get("run_spec_on_start", True), default=True
         )
 
         exec_argv = _argv_list_param(
@@ -115,7 +115,7 @@ class DevProcessFlowNode(PythonActionNode):
                 task_prompt=task_prompt,
                 flow_checkpoint_path=flow_cp_s,
                 run_id=run_id_s,
-                run_spec_plan_on_start=run_spec_plan_on_start,
+                run_spec_on_start=run_spec_on_start,
                 human_comment_text=str(_port_scalar(inputs, "human_comment_text") or ""),
                 exec_argv=exec_argv,
                 exec_model=exec_model,

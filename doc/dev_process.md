@@ -1,5 +1,14 @@
 # Dev Process Flow
 
+## v2 (2026-05-24): spec/plan split
+
+- **Schema:** `dev_process.flow.v2` — P8 checkpoints are not resumable.
+- **Architecture contract:** [dev_process_architecture.md](./dev_process_architecture.md)
+- **P9 core flow:** `start` → spec loop → human spec gate → plan loop → **`awaiting_implementation`** (stops; no auto-implementation).
+- **P10/P11 preview (transitional):** `continue_implementation`, `exec_policy_snapshot` argv routing, stale markers, owner helpers — not the P9 correctness contract yet; `jobs[]` / JobRunner are **P10** (not populated on the main path today).
+- **CLI (P9 loops):** `request-spec-revision`, `revise-spec`, `revise-plan`, `approve-spec`.
+- **Exec:** CLI/input name **`exec_argv`** is retained; checkpoint SOT is **`dev_process.exec_policy_snapshot.default_argv`** (frozen at `start`). `jobs[]` is **P10** and is not populated on the main path.
+
 ## Breaking changes (v1 refactor)
 
 - **`codex_argv` removed** — use **`exec_argv`** only.
@@ -40,18 +49,25 @@ Outbound registry keys are **`dev_process.*` only**.
 - No Hermes profile names (`dp-strong`, etc.)
 - No skill Markdown pipeline
 
-## State machine (current)
+## State machine (v2)
 
 ```text
-start (+ spec_plan) -> awaiting_spec_approval
-  approve_spec -> implement + review -> awaiting_review_decision
-    approve_final (merge_ready) -> awaiting_merge
+start (+ spec + spec_review)
+  -> awaiting_spec_revision | awaiting_spec_human_gate
+  approve_spec (+ plan + plan_review)
+  -> awaiting_plan_revision | awaiting_implementation   # P9 stop: no auto-implementation
+  continue_implementation (+ implementation / test_implementation / run_tests / review)   # P10/P11 preview
+  -> awaiting_rework_decision (blocking / test fail)
+  -> awaiting_final_approval (review merge_ok + tests pass)
+    approve_final -> awaiting_merge
       merge -> merged
-    rework_implementation -> (re-run implement + review)
+    rework / revise_spec / revise_plan -> (re-run affected stages)
     reject_spec / reject_final -> failed (terminal)
 ```
 
-`allowed_actions` on `awaiting_review_decision` omits `approve_final` when `merge_ready` is false.
+`allowed_actions` on `awaiting_rework_decision` and `awaiting_final_approval` omit `approve_final` when `merge_ready` is false.
+
+P9 boundary: **`approve_spec` does not run implementation or review.** Use **`continue_implementation`** (CLI: `continue-implementation`) to enter the implementation cycle.
 
 ### human_gates (checkpoint)
 
@@ -66,9 +82,10 @@ On resume, when `repo_root` is supplied it is resolved to the git toplevel and c
 `run_id` in the request must match the checkpoint when provided.  
 `artifact_root`, `workspace_root`, `workspace_strategy`, `planned_branch_name`, and `source_base_revision` are taken **only** from the checkpoint.
 
-## implement stage
+## implementation stages
 
-Codex runs first; **`collect_diff` runs after Codex** so review receives post-implementation changes.
+`continue_implementation` runs **implementation** (Codex), **test_implementation**, **run_tests**, then **review**.  
+Codex runs first in implementation; **`collect_diff` runs after Codex** so review receives post-implementation changes.
 
 ## P2 — review presets
 
@@ -109,15 +126,21 @@ Review prompt registry: five `dev_process.review_prompt.*` leaf types (wrappers 
 
 Rework with the same argv is allowed when timestamps (and usually prompt) differ.
 
-## spec_plan output contract
+## Stage output contracts
 
-Codex stdout must be a JSON object with non-empty string fields `spec` and `plan`. Silent fallback to raw stdout is **not** used.
+**spec** (`write_spec`): Codex stdout must be a JSON object with a non-empty string field `spec`. Written to `spec/spec.md`.
+
+**plan** (`write_plan`): Codex stdout must be a JSON object with a non-empty string field `plan`. Written to `plan/plan.md`.
+
+**spec_review** / **plan_review**: Codex stdout must be a JSON object with boolean `ok`, arrays `blocking_findings` and `non_blocking_findings`. Prompts include this contract explicitly. Aggregated to `{stage}/aggregate.json`.
+
+Silent fallback to raw stdout is **not** used.
 
 ## Input ports and resume contract
 
 | Input | Required | Notes |
 |-------|----------|-------|
-| `action` | yes | `start`, `approve_spec`, `revise_spec`, `rework_implementation`, `approve_final`, `merge`, `reject_spec`, `reject_final` |
+| `action` | yes | `start`, `approve_spec`, `revise_spec`, `continue_implementation`, `rework`, `approve_final`, `merge`, `reject_spec`, `reject_final` |
 | `repo_root` | on `start` / resume check | Absolute path stored in checkpoint |
 | `task_prompt` | on `start` | |
 | `flow_checkpoint_path` | on resume | Under `artifact_root/checkpoints/` |

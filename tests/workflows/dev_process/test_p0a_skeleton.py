@@ -15,7 +15,7 @@ from nodeflow.workflows.dev_process.dev_process_flow.node_dev_process_flow impor
 from tests.workflows.dev_process.git_fixtures import git_repo_with_commit
 
 
-def test_start_initialized_without_spec_plan(tmp_path: Path) -> None:
+def test_start_initialized_without_spec(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repo_with_commit(repo)
@@ -26,7 +26,7 @@ def test_start_initialized_without_spec_plan(tmp_path: Path) -> None:
             "repo_root": str(repo),
             "task_prompt": "demo task",
         },
-        {"run_spec_plan_on_start": False},
+        {"run_spec_on_start": False},
     )
     flow = out["flow_output"]
     fr = flow["flow_result"]
@@ -60,7 +60,7 @@ def test_start_rejects_flow_checkpoint_path(tmp_path: Path) -> None:
                 "task_prompt": "x",
                 "flow_checkpoint_path": "/tmp/fake.json",
             },
-            {"run_spec_plan_on_start": False},
+            {"run_spec_on_start": False},
         )
 
 
@@ -71,7 +71,7 @@ def test_checkpoint_self_reference_under_artifact_root(tmp_path: Path) -> None:
     node = DevProcessFlowNode()
     out = node.execute(
         {"action": "start", "repo_root": str(repo), "task_prompt": "t"},
-        {"run_spec_plan_on_start": False},
+        {"run_spec_on_start": False},
     )
     cp = Path(out["flow_output"]["flow_result"]["flow_checkpoint_path"])
     artifact_root = cp.parent.parent

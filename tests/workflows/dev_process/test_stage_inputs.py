@@ -9,10 +9,10 @@ import pytest
 
 from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.workflows.dev_process.stage_inputs import (
-    SPEC_PLAN_QUESTIONS,
+    SPEC_INPUT_QUESTIONS,
     InputQuestion,
     collect_revision_inputs,
-    collect_spec_plan_inputs,
+    collect_spec_inputs,
     collect_stage_inputs,
     write_stage_input_artifact,
 )
@@ -20,8 +20,8 @@ from nodeflow.workflows.dev_process.stage_inputs import (
 
 def test_collect_stage_inputs_prefers_provided() -> None:
     out = collect_stage_inputs(
-        stage="spec_plan",
-        questions=SPEC_PLAN_QUESTIONS,
+        stage="spec",
+        questions=SPEC_INPUT_QUESTIONS,
         provided={"task_prompt": "from cli"},
         interactive=False,
     )
@@ -29,15 +29,15 @@ def test_collect_stage_inputs_prefers_provided() -> None:
 
 
 def test_collect_stage_inputs_reuses_input_json(tmp_path: Path) -> None:
-    art = tmp_path / "spec_plan"
+    art = tmp_path / "spec"
     write_stage_input_artifact(
         artifact_dir=art,
-        stage="spec_plan",
+        stage="spec",
         inputs={"task_prompt": "from artifact", "reference_paths": [], "notes": ""},
     )
     out = collect_stage_inputs(
-        stage="spec_plan",
-        questions=SPEC_PLAN_QUESTIONS,
+        stage="spec",
+        questions=SPEC_INPUT_QUESTIONS,
         provided={},
         interactive=False,
         input_artifact_path=art / "input.json",
@@ -48,8 +48,8 @@ def test_collect_stage_inputs_reuses_input_json(tmp_path: Path) -> None:
 def test_non_interactive_missing_required_fails() -> None:
     with pytest.raises(NodeExecutionFailure, match="requires 'task_prompt'"):
         collect_stage_inputs(
-            stage="spec_plan",
-            questions=SPEC_PLAN_QUESTIONS,
+            stage="spec",
+            questions=SPEC_INPUT_QUESTIONS,
             provided={},
             interactive=False,
         )
@@ -62,8 +62,8 @@ def test_interactive_prompt_fn() -> None:
         return default or ""
 
     out = collect_stage_inputs(
-        stage="spec_plan",
-        questions=SPEC_PLAN_QUESTIONS,
+        stage="spec",
+        questions=SPEC_INPUT_QUESTIONS,
         provided={},
         interactive=True,
         prompt_fn=fake_prompt,
@@ -71,14 +71,14 @@ def test_interactive_prompt_fn() -> None:
     assert out["task_prompt"] == "typed task"
 
 
-def test_collect_spec_plan_writes_artifacts(tmp_path: Path) -> None:
+def test_collect_spec_writes_artifacts(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     ref = repo / "docs.md"
     ref.parent.mkdir(parents=True, exist_ok=True)
     ref.write_text("# Reference\n", encoding="utf-8")
     artifact_root = str(tmp_path / "run")
-    inputs, materials, input_path, ref_path = collect_spec_plan_inputs(
+    inputs, materials, input_path, ref_path = collect_spec_inputs(
         artifact_root=artifact_root,
         repo_root=repo,
         provided={

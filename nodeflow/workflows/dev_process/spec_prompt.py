@@ -1,4 +1,4 @@
-"""Single source for dev-process spec_plan Codex prompts."""
+"""Prompt builder for spec.write stage."""
 
 from __future__ import annotations
 
@@ -8,21 +8,24 @@ from typing import Any
 REPO_CONTEXT_JSON_MAX_CHARS = 12_000
 
 
-def build_spec_plan_prompt(
+def build_spec_prompt(
     *,
     task_prompt: str,
     repo_context: dict[str, Any],
     notes: str | None = None,
     revision_context: str | None = None,
     reference_materials: list[dict[str, Any]] | None = None,
+    previous_spec: str | None = None,
 ) -> str:
     prompt_text = (
-        "Draft a spec and plan for the following task. "
-        'Respond with a single JSON object: {"spec": "...", "plan": "..."}.\n\n'
+        "Draft a specification for the following task. "
+        'Respond with a single JSON object: {"spec": "..."}.\n\n'
         f"Task:\n{task_prompt}\n\n"
         f"Repository context:\n"
         f"{json.dumps(repo_context, ensure_ascii=False)[:REPO_CONTEXT_JSON_MAX_CHARS]}"
     )
+    if previous_spec and previous_spec.strip():
+        prompt_text += f"\n\n## Previous spec (revise in place)\n{previous_spec.strip()}"
     if notes and notes.strip():
         prompt_text += f"\n\nAdditional constraints or notes:\n{notes.strip()}"
     if reference_materials:

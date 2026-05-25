@@ -246,7 +246,8 @@ def write_development_summary(
         **run_context,
         "source_repo_root": run_context["repo_root"],
     }
-    impl_st = (body.get("stages") or {}).get("implement") or {}
+    impl_st = (body.get("stages") or {}).get("implementation") or {}
+    run_tests_st = (body.get("stages") or {}).get("run_tests") or {}
     rev_st = (body.get("stages") or {}).get("review") or {}
     node = WriteDevelopmentSummaryNode()
     out = execute_or_raise(
@@ -256,7 +257,9 @@ def write_development_summary(
             "task_prompt": str(body.get("task_prompt") or ""),
             "run_context": df_run_context,
             "workspace_context": wc,
-            "implement_stage_result": impl_st.get("stage_result") or {},
+            "implement_stage_result": impl_st.get("stage_result")
+            or run_tests_st.get("stage_result")
+            or {},
             "review_stage_result": rev_st.get("stage_result") or rev_st,
             "next_action": None,
             "merge_ready": merge_ready,

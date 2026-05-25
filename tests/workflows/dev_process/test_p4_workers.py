@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from nodeflow.core.base_node import NodeExecutionFailure
-from nodeflow.workflows.dev_process.hermetic_argv import spec_plan_argv
+from nodeflow.workflows.dev_process.hermetic_argv import spec_argv
 from nodeflow.workflows.dev_process.workers import (
     EXEC_WORKER_CODEX,
     CodexExecWorker,
@@ -32,7 +32,7 @@ def test_codex_worker_hermetic_run(tmp_path) -> None:
         worker,
         prompt="ignored",
         cwd=str(tmp_path),
-        argv=spec_plan_argv(),
+        argv=spec_argv(),
         timeout=30,
     )
     assert out.get("ok") is True

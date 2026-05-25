@@ -50,5 +50,5 @@ def expected_review_evidence_count(preset: str) -> int:
 
 
 def expected_exec_evidence_count_for_full_flow(preset: str) -> int:
-    """spec_plan + implement + review reviewers for one complete implement/review cycle."""
-    return 2 + expected_review_evidence_count(preset)
+    """spec + plan + reviews + implementation + test_implementation + code reviewers."""
+    return 6 + expected_review_evidence_count(preset)

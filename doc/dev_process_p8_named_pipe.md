@@ -61,7 +61,7 @@ nodeflow -w $NF examples/pipes/dev_process/dev_process.json -i action=start ...
 
 | Flag | Required | Notes |
 |------|----------|-------|
-| `--task-prompt` | no | Initial **provided** input for spec_plan stage (not a dev-process business arg) |
+| `--task-prompt` | no | Initial **provided** input for **spec** stage (not a dev-process business arg) |
 | `--workspace-strategy` | no | `current_repo` / `git_worktree` |
 | `--merge-policy` | no | `record_only` / `git_merge_branch` |
 | `--exec-worker-kind` | no | `codex` |
@@ -70,7 +70,9 @@ nodeflow -w $NF examples/pipes/dev_process/dev_process.json -i action=start ...
 
 ### Resume commands
 
-`approve-spec`, `revise-spec`, `rework`, `approve-final`, `merge`, `status` — action + global flags only.
+`approve-spec`, `continue-implementation`, `request-spec-revision`, `revise-spec`, `revise-plan`, `rework`, `approve-final`, `merge`, `status` — action + global flags only.
+
+Resume commands that accept an optional **`--comment`** (for `--non-interactive` or to skip prompts): `request-spec-revision`, `revise-spec`, `revise-plan`.
 
 ## Interactive mode
 
@@ -85,8 +87,10 @@ CI should always pass `--non-interactive`.
 
 | Stage | Missing required input | Behavior |
 |-------|------------------------|----------|
-| **spec_plan** | `task_prompt` | **Fail** — supply `--task-prompt` on `start` or pre-write `spec_plan/input.json` |
-| **revise_spec** | `revision_comment` | **Fail** — pre-write `revision/input.json`, or pass legacy PipeSpec/node `task_prompt` (mapped to revision comment) |
+| **spec** | `task_prompt` | **Fail** — supply `--task-prompt` on `start` or pre-write `spec/input.json` |
+| **revise_spec** | *(none — uses spec_review findings)* | **Allowed** — optional `--comment` adds human context |
+| **request_spec_revision** | `revision_comment` | **Fail** — use `--comment`, pre-write `revision/input.json`, or legacy PipeSpec `task_prompt` |
+| **revise_plan** | *(none — uses plan_review findings)* | **Allowed** — optional `--comment` adds human context |
 | **rework** | explicit `rework_comment` | **Allowed fallback** — uses `"rework requested"`; prior **review findings** from artifacts are always included in `rework_context` |
 
 Rework is the exception: review output is the primary human input. An explicit rework comment is still collected interactively or via `rework/input.json`; when neither is present in non-interactive mode (e.g. programmatic `rework_implementation` via PipeSpec/node), the fallback comment keeps backward compatibility with P7.
@@ -95,13 +99,13 @@ Rework is the exception: review output is the primary human input. An explicit r
 
 ## `--task-prompt` semantics
 
-`--task-prompt` on `start` is **not** a dev-process orchestration argument. It is an optional initial value passed to the **spec_plan** stage as `provided` input. If omitted, spec_plan prompts interactively (when interactive mode is on).
+`--task-prompt` on `start` is **not** a dev-process orchestration argument. It is an optional initial value passed to the **spec** stage as `provided` input. If omitted, spec prompts interactively (when interactive mode is on).
 
-`checkpoint.task_prompt` remains for run identity / implement reuse. **`spec_plan/input.json`** is the canonical spec_plan stage input.
+`checkpoint.task_prompt` remains for run identity / implementation reuse. **`spec/input.json`** is the canonical spec stage input.
 
 ## Stage inputs
 
-### spec_plan (`start` / after `revise-spec`)
+### spec (`start` / after `revise-spec`)
 
 | Field | Required |
 |-------|----------|
@@ -109,12 +113,32 @@ Rework is the exception: review output is the primary human input. An explicit r
 | Reference material paths | no |
 | Additional constraints or notes | no |
 
-### revise-spec
+### revise-spec / request-spec-revision
+
+| Action | Primary input | Optional |
+|--------|---------------|----------|
+| **revise_spec** (from `awaiting_spec_revision`) | spec_review findings | human `--comment`, additional reference paths |
+| **request_spec_revision** (from human gate) | human revision comment | spec_review findings (if any) |
+
+Both reuse `spec/input.json`, `spec/reference_materials.json`, and the previous `spec/spec.md` in the write prompt.
 
 | Field | Required |
 |-------|----------|
-| Revision comment | yes |
+| Revision comment (`request_spec_revision` only) | yes |
+| Revision comment (`revise_spec`) | no |
 | Additional reference paths | no |
+
+### revise-plan
+
+| Action | Primary input | Optional |
+|--------|---------------|----------|
+| **revise_plan** (from `awaiting_plan_revision`) | plan_review findings | human `--comment` |
+
+Reuses the previous `plan/plan.md` in the write prompt. No human gate on plan.
+
+| Field | Required |
+|-------|----------|
+| Revision comment | no |
 
 ### rework
 
@@ -127,8 +151,8 @@ Collection order: `provided` → existing `{stage}/input.json` → interactive p
 ## Input artifacts
 
 ```text
-.nodeflow/runs/<run>/spec_plan/input.json
-.nodeflow/runs/<run>/spec_plan/reference_materials.json
+.nodeflow/runs/<run>/spec/input.json
+.nodeflow/runs/<run>/spec/reference_materials.json
 .nodeflow/runs/<run>/revision/input.json
 .nodeflow/runs/<run>/rework/input.json
 ```
@@ -138,7 +162,7 @@ Collection order: `provided` → existing `{stage}/input.json` → interactive p
 ```json
 {
   "schema_version": "dev_process.stage_input.v1",
-  "stage": "spec_plan",
+  "stage": "spec",
   "collected_at": "2026-05-24T12:00:00+00:00",
   "inputs": {
     "task_prompt": "...",

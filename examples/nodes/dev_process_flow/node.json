@@ -17,7 +17,7 @@
   ],
   "output_ports": ["flow_output"],
   "default_config": {
-    "run_spec_plan_on_start": true,
+    "run_spec_on_start": true,
     "force_review_blocking": false,
     "merge_policy": "record_only"
   }

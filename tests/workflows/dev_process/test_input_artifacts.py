@@ -14,7 +14,7 @@ from nodeflow.workflows.dev_process.discovery import resolve_checkpoint_path
 from tests.workflows.dev_process.git_fixtures import git_repo_with_commit
 
 
-def test_start_writes_spec_plan_input_artifact(tmp_path: Path) -> None:
+def test_start_writes_spec_input_artifact(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repo_with_commit(repo)
@@ -33,22 +33,21 @@ def test_start_writes_spec_plan_input_artifact(tmp_path: Path) -> None:
         ],
     )
     assert result.exit_code == 0, result.output
-    assert (
-        STATE_AWAITING_SPEC.replace("_", " ") in result.output
-        or "awaiting_spec_approval" in result.output
-    )
+    assert STATE_AWAITING_SPEC in result.output
 
     runs = list((repo / ".nodeflow/runs").iterdir())
     assert len(runs) == 1
-    input_path = runs[0] / "spec_plan" / "input.json"
+    input_path = runs[0] / "spec" / "input.json"
     assert input_path.is_file()
     doc = json.loads(input_path.read_text(encoding="utf-8"))
     assert doc["inputs"]["task_prompt"] == "artifact test"
+    assert (runs[0] / "spec" / "spec.md").is_file()
 
     cp_path = resolve_checkpoint_path(repo, checkpoint=None, run_id=None)
     checkpoint = load_flow_checkpoint(cp_path)
-    sp = checkpoint.get("stages", {}).get("spec_plan", {})
-    assert sp.get("input_artifact") == str(input_path.resolve())
+    sp = checkpoint.get("stages", {}).get("spec", {})
+    assert sp.get("status") == "completed"
+    assert sp.get("spec_artifact")
 
 
 def test_start_interactive_collects_task_prompt(tmp_path: Path, monkeypatch) -> None:
@@ -81,7 +80,7 @@ def test_start_interactive_collects_task_prompt(tmp_path: Path, monkeypatch) -> 
     assert result.exit_code == 0, result.output
     assert prompts == ["task_prompt"]
     runs = list((repo / ".nodeflow/runs").iterdir())
-    input_path = runs[0] / "spec_plan" / "input.json"
+    input_path = runs[0] / "spec" / "input.json"
     doc = json.loads(input_path.read_text(encoding="utf-8"))
     assert doc["inputs"]["task_prompt"] == "interactive task"
 

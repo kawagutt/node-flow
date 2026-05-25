@@ -11,8 +11,9 @@ from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.workflows.dev_process.constants import (
     MERGE_POLICY_GIT_MERGE_BRANCH,
     MERGE_POLICY_RECORD_ONLY,
-    STATE_AWAITING_REVIEW,
-    STATE_AWAITING_SPEC,
+    STATE_AWAITING_FINAL,
+    STATE_AWAITING_IMPLEMENTATION,
+    STATE_AWAITING_SPEC_HUMAN_GATE,
 )
 from nodeflow.workflows.dev_process.dev_process_flow.node_dev_process_flow import (
     DevProcessFlowNode,
@@ -25,6 +26,11 @@ from nodeflow.workflows.dev_process.paths import (
 from nodeflow.workflows.dev_process.reuse import remove_git_worktree
 from nodeflow.workflows.development_flow.prepare_workspace import PrepareWorkspaceNode
 from tests.workflows.dev_process.git_fixtures import git_repo_with_commit
+from tests.workflows.dev_process.v2_flow_helpers import (
+    approve_and_continue,
+    approve_spec_to_implementation,
+    full_through_review,
+)
 
 
 def test_planned_branch_name_sanitizes_special_chars() -> None:
@@ -57,16 +63,16 @@ def test_start_freezes_run_context_workspace_root_on_worktree(tmp_path: Path) ->
     source_root = str(repo.resolve())
     assert start["run_context"]["workspace_root"] == source_root
     cp = start["flow_result"]["flow_checkpoint_path"]
-    approved = DevProcessFlowNode().execute(
-        {
-            "action": "approve_spec",
-            "repo_root": str(repo),
-            "flow_checkpoint_path": cp,
-        },
-        {},
-    )["flow_output"]
-    assert approved["run_context"]["workspace_root"] == source_root
-    assert approved["workspace_context"]["workspace_root"] != source_root
+    after_approve = approve_spec_to_implementation(repo, cp)
+    assert after_approve["run_context"]["workspace_root"] == source_root
+    assert "workspace_context" not in after_approve
+    from tests.workflows.dev_process.v2_flow_helpers import continue_from_implementation
+
+    continued = continue_from_implementation(
+        repo, after_approve["flow_result"]["flow_checkpoint_path"]
+    )
+    assert continued["run_context"]["workspace_root"] == source_root
+    assert continued["workspace_context"]["workspace_root"] != source_root
 
 
 def _start(tmp_path: Path) -> dict:
@@ -88,14 +94,7 @@ def _start(tmp_path: Path) -> dict:
 def test_git_worktree_rework_reuses_workspace(tmp_path: Path) -> None:
     ctx = _start(tmp_path)
     cp = ctx["flow"]["flow_result"]["flow_checkpoint_path"]
-    first = DevProcessFlowNode().execute(
-        {
-            "action": "approve_spec",
-            "repo_root": str(ctx["repo"]),
-            "flow_checkpoint_path": cp,
-        },
-        {},
-    )["flow_output"]
+    first = approve_and_continue(ctx["repo"], cp)
     wt1 = first["workspace_context"]["workspace_root"]
     cp2 = first["flow_result"]["flow_checkpoint_path"]
     rework = DevProcessFlowNode().execute(
@@ -106,7 +105,7 @@ def test_git_worktree_rework_reuses_workspace(tmp_path: Path) -> None:
         },
         {},
     )["flow_output"]
-    assert rework["flow_result"]["state"] == STATE_AWAITING_REVIEW
+    assert rework["flow_result"]["state"] == STATE_AWAITING_FINAL
     assert rework["workspace_context"]["workspace_root"] == wt1
     assert (
         rework["workspace_context"]["current_branch"]
@@ -117,14 +116,7 @@ def test_git_worktree_rework_reuses_workspace(tmp_path: Path) -> None:
 def test_revise_spec_then_approve_uses_new_worktree_attempt(tmp_path: Path) -> None:
     ctx = _start(tmp_path)
     cp = ctx["flow"]["flow_result"]["flow_checkpoint_path"]
-    first = DevProcessFlowNode().execute(
-        {
-            "action": "approve_spec",
-            "repo_root": str(ctx["repo"]),
-            "flow_checkpoint_path": cp,
-        },
-        {},
-    )["flow_output"]
+    first = approve_and_continue(ctx["repo"], cp)
     wt1 = Path(first["workspace_context"]["workspace_root"])
     cp2 = first["flow_result"]["flow_checkpoint_path"]
     revised = DevProcessFlowNode().execute(
@@ -136,24 +128,22 @@ def test_revise_spec_then_approve_uses_new_worktree_attempt(tmp_path: Path) -> N
         },
         {},
     )["flow_output"]
-    assert revised["flow_result"]["state"] == STATE_AWAITING_SPEC
+    assert revised["flow_result"]["state"] == STATE_AWAITING_SPEC_HUMAN_GATE
     assert not wt1.exists()
     cp3 = revised["flow_result"]["flow_checkpoint_path"]
-    second = DevProcessFlowNode().execute(
-        {
-            "action": "approve_spec",
-            "repo_root": str(ctx["repo"]),
-            "flow_checkpoint_path": cp3,
-        },
-        {},
-    )["flow_output"]
+    after_approve = approve_spec_to_implementation(ctx["repo"], cp3)
+    from tests.workflows.dev_process.v2_flow_helpers import continue_from_implementation
+
+    second = continue_from_implementation(
+        ctx["repo"], after_approve["flow_result"]["flow_checkpoint_path"]
+    )
     wt2 = Path(second["workspace_context"]["workspace_root"])
     assert wt2.is_dir()
     assert wt2 != wt1
-    assert wt2.name == "002"
     run_id = second["run_context"]["run_id"]
+    attempt = int(second["workspace_context"].get("attempt") or wt2.name)
     assert second["workspace_context"]["current_branch"] == planned_branch_name_for_attempt(
-        run_id, 2
+        run_id, attempt
     )
     assert (
         second["workspace_context"]["current_branch"]
@@ -218,14 +208,7 @@ def test_input_port_workspace_strategy(tmp_path: Path) -> None:
 def test_rework_blocking_review_resets_human_gates_final(tmp_path: Path) -> None:
     ctx = _start(tmp_path)
     cp = ctx["flow"]["flow_result"]["flow_checkpoint_path"]
-    first = DevProcessFlowNode().execute(
-        {
-            "action": "approve_spec",
-            "repo_root": str(ctx["repo"]),
-            "flow_checkpoint_path": cp,
-        },
-        {},
-    )["flow_output"]
+    first = approve_and_continue(ctx["repo"], cp)
     assert first["flow_result"]["merge_ready"] is True
     assert first["run_context"]["artifact_root"]
     cp2 = first["flow_result"]["flow_checkpoint_path"]
@@ -247,16 +230,8 @@ def test_rework_blocking_review_resets_human_gates_final(tmp_path: Path) -> None
 
 def test_revise_spec_resets_human_gates_final(tmp_path: Path) -> None:
     ctx = _start(tmp_path)
-    cp = ctx["flow"]["flow_result"]["flow_checkpoint_path"]
-    approved = DevProcessFlowNode().execute(
-        {
-            "action": "approve_spec",
-            "repo_root": str(ctx["repo"]),
-            "flow_checkpoint_path": cp,
-        },
-        {},
-    )["flow_output"]
-    cp2 = approved["flow_result"]["flow_checkpoint_path"]
+    review = full_through_review(ctx["repo"])
+    cp2 = review["flow_result"]["flow_checkpoint_path"]
     revised = DevProcessFlowNode().execute(
         {
             "action": "revise_spec",
@@ -410,8 +385,7 @@ def test_resume_workspace_strategy_params_fallback_matches_checkpoint(tmp_path: 
         },
         {"workspace_strategy": "git_worktree"},
     )["flow_output"]
-    assert approved["flow_result"]["state"] == STATE_AWAITING_REVIEW
-    assert approved["workspace_context"]["strategy"] == "git_worktree"
+    assert approved["flow_result"]["state"] == STATE_AWAITING_IMPLEMENTATION
 
 
 def test_resume_workspace_strategy_params_mismatch_fails(tmp_path: Path) -> None:
@@ -440,7 +414,7 @@ def test_resume_workspace_strategy_params_mismatch_fails(tmp_path: Path) -> None
 
 
 def test_exec_argv_via_params_hermetic(tmp_path: Path) -> None:
-    from nodeflow.workflows.dev_process.hermetic_argv import spec_plan_argv
+    from nodeflow.workflows.dev_process.hermetic_argv import spec_argv
 
     repo = tmp_path / "repo_exec_argv"
     repo.mkdir()
@@ -451,22 +425,22 @@ def test_exec_argv_via_params_hermetic(tmp_path: Path) -> None:
             "repo_root": str(repo),
             "task_prompt": "argv params",
         },
-        {"exec_argv": spec_plan_argv()},
+        {"exec_argv": spec_argv()},
     )["flow_output"]
-    assert out["flow_result"]["state"] == STATE_AWAITING_SPEC
+    assert out["flow_result"]["state"] == STATE_AWAITING_SPEC_HUMAN_GATE
     artifact_root = Path(out["run_context"]["artifact_root"])
-    assert (artifact_root / "spec_plan" / "spec.md").is_file()
+    assert (artifact_root / "spec" / "spec.md").is_file()
 
 
 def test_exec_argv_persisted_in_checkpoint(tmp_path: Path) -> None:
     from nodeflow.workflows.dev_process.checkpoint import load_flow_checkpoint
     from nodeflow.workflows.dev_process.flow_runner import _resolve_exec_argv, _stored_exec_argv
-    from nodeflow.workflows.dev_process.hermetic_argv import spec_plan_argv
+    from nodeflow.workflows.dev_process.hermetic_argv import spec_argv
 
     repo = tmp_path / "repo_exec_argv_resume"
     repo.mkdir()
     git_repo_with_commit(repo)
-    argv = spec_plan_argv()
+    argv = spec_argv()
     start = DevProcessFlowNode().execute(
         {
             "action": "start",
@@ -479,7 +453,7 @@ def test_exec_argv_persisted_in_checkpoint(tmp_path: Path) -> None:
     )["flow_output"]
     cp = start["flow_result"]["flow_checkpoint_path"]
     body = load_flow_checkpoint(cp)
-    assert body["dev_process"]["exec_argv"] == argv
+    assert body["dev_process"]["exec_policy_snapshot"]["default_argv"] == argv
     assert _stored_exec_argv(body) == argv
     assert _resolve_exec_argv(None, body=body) == argv
 
@@ -495,19 +469,19 @@ def test_exec_model_from_params_on_start(tmp_path: Path) -> None:
         {"exec_model": "from-params-only"},
     )["flow_output"]
     body = load_flow_checkpoint(out["flow_result"]["flow_checkpoint_path"])
-    assert body["dev_process"]["exec_model"] == "from-params-only"
+    assert body["dev_process"]["exec_policy_snapshot"]["default_model"] == "from-params-only"
 
 
 def test_exec_model_mismatch_on_resume(tmp_path: Path) -> None:
     import pytest
 
     from nodeflow.core.base_node import NodeExecutionFailure
-    from nodeflow.workflows.dev_process.hermetic_argv import spec_plan_argv
+    from nodeflow.workflows.dev_process.hermetic_argv import spec_argv
 
     repo = tmp_path / "repo_exec_model_resume"
     repo.mkdir()
     git_repo_with_commit(repo)
-    argv = spec_plan_argv()
+    argv = spec_argv()
     start = DevProcessFlowNode().execute(
         {
             "action": "start",

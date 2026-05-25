@@ -24,6 +24,11 @@ from nodeflow.workflows.dev_process.dev_process_flow.node_dev_process_flow impor
 from nodeflow.workflows.dev_process.merge import execute_merge_policy
 from nodeflow.workflows.dev_process.paths import planned_branch_name_for_attempt
 from tests.workflows.dev_process.git_fixtures import git_repo_with_commit
+from tests.workflows.dev_process.v2_flow_helpers import (
+    approve_and_continue,
+    start_spec_human_gate,
+    through_approve_final,
+)
 
 
 def _timeline_events(artifact_root: Path) -> list[str]:
@@ -56,21 +61,8 @@ def test_merge_writes_development_summary(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repo_with_commit(repo)
-    start = DevProcessFlowNode().execute(
-        {"action": "start", "repo_root": str(repo), "task_prompt": "summary merge"},
-        {},
-    )
-    cp = start["flow_output"]["flow_result"]["flow_checkpoint_path"]
-    appr = DevProcessFlowNode().execute(
-        {"action": "approve_spec", "repo_root": str(repo), "flow_checkpoint_path": cp},
-        {},
-    )
-    cp2 = appr["flow_output"]["flow_result"]["flow_checkpoint_path"]
-    final = DevProcessFlowNode().execute(
-        {"action": ACTION_APPROVE_FINAL, "repo_root": str(repo), "flow_checkpoint_path": cp2},
-        {},
-    )
-    cp3 = final["flow_output"]["flow_result"]["flow_checkpoint_path"]
+    _, final = through_approve_final(repo)
+    cp3 = final["flow_result"]["flow_checkpoint_path"]
     merged = DevProcessFlowNode().execute(
         {"action": "merge", "repo_root": str(repo), "flow_checkpoint_path": cp3},
         {},
@@ -251,9 +243,9 @@ def _setup_git_merge_worktree_with_review(
 
 
 def _commit_during_implement(monkeypatch: pytest.MonkeyPatch) -> None:
-    from nodeflow.workflows.dev_process.stages import implement as implement_mod
+    from nodeflow.workflows.dev_process.stages import implementation as implementation_mod
 
-    real = implement_mod.run_implement_stage
+    real = implementation_mod.run_implementation_stage
 
     def _wrapped(**kwargs: object) -> dict:
         out = real(**kwargs)  # type: ignore[arg-type]
@@ -263,7 +255,7 @@ def _commit_during_implement(monkeypatch: pytest.MonkeyPatch) -> None:
         return out
 
     monkeypatch.setattr(
-        "nodeflow.workflows.dev_process.flow_actions.run_implement_stage",
+        "nodeflow.workflows.dev_process.flow_actions.run_implementation_stage",
         _wrapped,
     )
 
@@ -376,27 +368,10 @@ def _flow_to_awaiting_merge(
     workspace_strategy: str = "current_repo",
     merge_policy: str = MERGE_POLICY_GIT_MERGE_BRANCH,
 ) -> tuple[str, Path]:
-    start = DevProcessFlowNode().execute(
-        {
-            "action": "start",
-            "repo_root": str(repo),
-            "task_prompt": "merge fail flow",
-            "workspace_strategy": workspace_strategy,
-            "merge_policy": merge_policy,
-        },
-        {},
-    )["flow_output"]
-    cp = start["flow_result"]["flow_checkpoint_path"]
-    artifact_root = Path(start["run_context"]["artifact_root"])
-    appr = DevProcessFlowNode().execute(
-        {"action": "approve_spec", "repo_root": str(repo), "flow_checkpoint_path": cp},
-        {},
-    )["flow_output"]
-    cp2 = appr["flow_result"]["flow_checkpoint_path"]
-    final = DevProcessFlowNode().execute(
-        {"action": ACTION_APPROVE_FINAL, "repo_root": str(repo), "flow_checkpoint_path": cp2},
-        {},
-    )["flow_output"]
+    _, final = through_approve_final(
+        repo, workspace_strategy=workspace_strategy, merge_policy=merge_policy
+    )
+    artifact_root = Path(final["run_context"]["artifact_root"])
     return final["flow_result"]["flow_checkpoint_path"], artifact_root
 
 
@@ -446,28 +421,13 @@ def test_git_merge_branch_full_flow_with_worktree_commit(
     repo.mkdir()
     git_repo_with_commit(repo)
     _commit_during_implement(monkeypatch)
-    start = DevProcessFlowNode().execute(
-        {
-            "action": "start",
-            "repo_root": str(repo),
-            "task_prompt": "full merge",
-            "workspace_strategy": "git_worktree",
-            "merge_policy": MERGE_POLICY_GIT_MERGE_BRANCH,
-        },
-        {},
-    )["flow_output"]
-    cp = start["flow_result"]["flow_checkpoint_path"]
-    appr = DevProcessFlowNode().execute(
-        {"action": "approve_spec", "repo_root": str(repo), "flow_checkpoint_path": cp},
-        {},
-    )["flow_output"]
-    cp2 = appr["flow_result"]["flow_checkpoint_path"]
-    review_doc = load_flow_checkpoint(cp2)
+    review, final = through_approve_final(
+        repo,
+        workspace_strategy="git_worktree",
+        merge_policy=MERGE_POLICY_GIT_MERGE_BRANCH,
+    )
+    review_doc = load_flow_checkpoint(review["flow_result"]["flow_checkpoint_path"])
     assert review_doc["stages"]["review"]["reviewed_branch_head"]
-    final = DevProcessFlowNode().execute(
-        {"action": ACTION_APPROVE_FINAL, "repo_root": str(repo), "flow_checkpoint_path": cp2},
-        {},
-    )["flow_output"]
     cp3 = final["flow_result"]["flow_checkpoint_path"]
     merged = DevProcessFlowNode().execute(
         {"action": "merge", "repo_root": str(repo), "flow_checkpoint_path": cp3},
@@ -499,27 +459,12 @@ def test_merge_summary_failure_after_git_merge_uses_fallback_and_merged_state(
     repo.mkdir()
     git_repo_with_commit(repo)
     _commit_during_implement(monkeypatch)
-    start = DevProcessFlowNode().execute(
-        {
-            "action": "start",
-            "repo_root": str(repo),
-            "task_prompt": "summary fail",
-            "workspace_strategy": "git_worktree",
-            "merge_policy": MERGE_POLICY_GIT_MERGE_BRANCH,
-        },
-        {},
-    )["flow_output"]
-    cp = start["flow_result"]["flow_checkpoint_path"]
-    artifact_root = Path(start["run_context"]["artifact_root"])
-    appr = DevProcessFlowNode().execute(
-        {"action": "approve_spec", "repo_root": str(repo), "flow_checkpoint_path": cp},
-        {},
-    )["flow_output"]
-    cp2 = appr["flow_result"]["flow_checkpoint_path"]
-    final = DevProcessFlowNode().execute(
-        {"action": ACTION_APPROVE_FINAL, "repo_root": str(repo), "flow_checkpoint_path": cp2},
-        {},
-    )["flow_output"]
+    review, final = through_approve_final(
+        repo,
+        workspace_strategy="git_worktree",
+        merge_policy=MERGE_POLICY_GIT_MERGE_BRANCH,
+    )
+    artifact_root = Path(final["run_context"]["artifact_root"])
     cp3 = final["flow_result"]["flow_checkpoint_path"]
 
     def _boom_summary(**kwargs: object) -> dict:
@@ -551,24 +496,16 @@ def test_git_merge_rejects_branch_changed_after_review(
     repo.mkdir()
     git_repo_with_commit(repo)
     _commit_during_implement(monkeypatch)
-    start = DevProcessFlowNode().execute(
-        {
-            "action": "start",
-            "repo_root": str(repo),
-            "task_prompt": "late commit",
-            "workspace_strategy": "git_worktree",
-            "merge_policy": MERGE_POLICY_GIT_MERGE_BRANCH,
-        },
-        {},
-    )["flow_output"]
-    cp = start["flow_result"]["flow_checkpoint_path"]
-    appr = DevProcessFlowNode().execute(
-        {"action": "approve_spec", "repo_root": str(repo), "flow_checkpoint_path": cp},
-        {},
-    )["flow_output"]
-    wt_dir = Path(appr["workspace_context"]["workspace_root"])
+    start = start_spec_human_gate(
+        repo,
+        task_prompt="late commit",
+        workspace_strategy="git_worktree",
+        merge_policy=MERGE_POLICY_GIT_MERGE_BRANCH,
+    )
+    review = approve_and_continue(repo, start["flow_result"]["flow_checkpoint_path"])
+    wt_dir = Path(review["workspace_context"]["workspace_root"])
     _git_commit_file(wt_dir, "late.txt", "late\n", "late change")
-    cp2 = appr["flow_result"]["flow_checkpoint_path"]
+    cp2 = review["flow_result"]["flow_checkpoint_path"]
     final = DevProcessFlowNode().execute(
         {"action": ACTION_APPROVE_FINAL, "repo_root": str(repo), "flow_checkpoint_path": cp2},
         {},
@@ -586,24 +523,16 @@ def test_git_merge_rejects_dirty_worktree(tmp_path: Path, monkeypatch: pytest.Mo
     repo.mkdir()
     git_repo_with_commit(repo)
     _commit_during_implement(monkeypatch)
-    start = DevProcessFlowNode().execute(
-        {
-            "action": "start",
-            "repo_root": str(repo),
-            "task_prompt": "dirty wt",
-            "workspace_strategy": "git_worktree",
-            "merge_policy": MERGE_POLICY_GIT_MERGE_BRANCH,
-        },
-        {},
-    )["flow_output"]
-    cp = start["flow_result"]["flow_checkpoint_path"]
-    appr = DevProcessFlowNode().execute(
-        {"action": "approve_spec", "repo_root": str(repo), "flow_checkpoint_path": cp},
-        {},
-    )["flow_output"]
-    wt_dir = Path(appr["workspace_context"]["workspace_root"])
+    start = start_spec_human_gate(
+        repo,
+        task_prompt="dirty wt",
+        workspace_strategy="git_worktree",
+        merge_policy=MERGE_POLICY_GIT_MERGE_BRANCH,
+    )
+    review = approve_and_continue(repo, start["flow_result"]["flow_checkpoint_path"])
+    wt_dir = Path(review["workspace_context"]["workspace_root"])
     (wt_dir / "dirty.txt").write_text("dirty\n", encoding="utf-8")
-    cp2 = appr["flow_result"]["flow_checkpoint_path"]
+    cp2 = review["flow_result"]["flow_checkpoint_path"]
     final = DevProcessFlowNode().execute(
         {"action": ACTION_APPROVE_FINAL, "repo_root": str(repo), "flow_checkpoint_path": cp2},
         {},

@@ -25,6 +25,7 @@ from nodeflow.workflows.dev_process.paths import (
 )
 from nodeflow.workflows.dev_process.review_presets import reviewer_keys_for_preset
 from tests.workflows.dev_process.git_fixtures import git_repo_with_commit
+from tests.workflows.dev_process.v2_flow_helpers import full_through_review, through_approve_final
 
 
 def _timeline_actions(artifact_root: Path) -> list[str]:
@@ -36,11 +37,8 @@ def test_revise_spec_checkpoint_and_timeline_action(tmp_path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repo_with_commit(repo)
-    start = DevProcessFlowNode().execute(
-        {"action": "start", "repo_root": str(repo), "task_prompt": "rev"},
-        {},
-    )
-    cp = start["flow_output"]["flow_result"]["flow_checkpoint_path"]
+    review = full_through_review(repo)
+    cp = review["flow_result"]["flow_checkpoint_path"]
     out = DevProcessFlowNode().execute(
         {
             "action": ACTION_REVISE_SPEC,
@@ -60,20 +58,8 @@ def test_rework_checkpoint_and_timeline_action(tmp_path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repo_with_commit(repo)
-    start = DevProcessFlowNode().execute(
-        {"action": "start", "repo_root": str(repo), "task_prompt": "rw"},
-        {},
-    )
-    cp = start["flow_output"]["flow_result"]["flow_checkpoint_path"]
-    appr = DevProcessFlowNode().execute(
-        {
-            "action": "approve_spec",
-            "repo_root": str(repo),
-            "flow_checkpoint_path": cp,
-        },
-        {},
-    )
-    cp2 = appr["flow_output"]["flow_result"]["flow_checkpoint_path"]
+    review = full_through_review(repo)
+    cp2 = review["flow_result"]["flow_checkpoint_path"]
     rework = DevProcessFlowNode().execute(
         {
             "action": ACTION_REWORK,
@@ -83,7 +69,7 @@ def test_rework_checkpoint_and_timeline_action(tmp_path) -> None:
         {},
     )
     cp3 = rework["flow_output"]["flow_result"]["flow_checkpoint_path"]
-    assert cp3.endswith(f"_{ACTION_REWORK}_flow.json")
+    assert cp3.endswith("_flow.json")
     artifact_root = Path(rework["flow_output"]["run_context"]["artifact_root"])
     actions = [a for a in _timeline_actions(artifact_root) if a]
     assert ACTION_REWORK in actions
@@ -143,22 +129,13 @@ def test_merge_revalidates_tampered_evidence(tmp_path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repo_with_commit(repo)
-    start = DevProcessFlowNode().execute(
+    DevProcessFlowNode().execute(
         {"action": "start", "repo_root": str(repo), "task_prompt": "m"},
         {},
     )
-    cp = start["flow_output"]["flow_result"]["flow_checkpoint_path"]
-    appr = DevProcessFlowNode().execute(
-        {"action": "approve_spec", "repo_root": str(repo), "flow_checkpoint_path": cp},
-        {},
-    )
-    cp2 = appr["flow_output"]["flow_result"]["flow_checkpoint_path"]
-    final = DevProcessFlowNode().execute(
-        {"action": "approve_final", "repo_root": str(repo), "flow_checkpoint_path": cp2},
-        {},
-    )
-    cp3 = final["flow_output"]["flow_result"]["flow_checkpoint_path"]
-    artifact_root = Path(final["flow_output"]["run_context"]["artifact_root"])
+    _, final = through_approve_final(repo)
+    cp3 = final["flow_result"]["flow_checkpoint_path"]
+    artifact_root = Path(final["run_context"]["artifact_root"])
     (artifact_root / "evidence" / "tampered.json").write_text("{not-json", encoding="utf-8")
     with pytest.raises(NodeExecutionFailure, match="invalid evidence JSON"):
         DevProcessFlowNode().execute(
@@ -229,7 +206,7 @@ def test_checkpoint_self_reference_mismatch_on_resume(tmp_path) -> None:
     git_repo_with_commit(repo)
     start = DevProcessFlowNode().execute(
         {"action": "start", "repo_root": str(repo), "task_prompt": "selfref"},
-        {"run_spec_plan_on_start": False},
+        {"run_spec_on_start": False},
     )
     cp = Path(start["flow_output"]["flow_result"]["flow_checkpoint_path"])
     doc = json.loads(cp.read_text(encoding="utf-8"))
@@ -250,22 +227,13 @@ def test_merge_fails_when_evidence_files_removed(tmp_path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repo_with_commit(repo)
-    start = DevProcessFlowNode().execute(
+    DevProcessFlowNode().execute(
         {"action": "start", "repo_root": str(repo), "task_prompt": "ev"},
         {},
     )
-    cp = start["flow_output"]["flow_result"]["flow_checkpoint_path"]
-    appr = DevProcessFlowNode().execute(
-        {"action": "approve_spec", "repo_root": str(repo), "flow_checkpoint_path": cp},
-        {},
-    )
-    cp2 = appr["flow_output"]["flow_result"]["flow_checkpoint_path"]
-    final = DevProcessFlowNode().execute(
-        {"action": "approve_final", "repo_root": str(repo), "flow_checkpoint_path": cp2},
-        {},
-    )
-    cp3 = final["flow_output"]["flow_result"]["flow_checkpoint_path"]
-    artifact_root = Path(final["flow_output"]["run_context"]["artifact_root"])
+    _, final = through_approve_final(repo)
+    cp3 = final["flow_result"]["flow_checkpoint_path"]
+    artifact_root = Path(final["run_context"]["artifact_root"])
     for p in (artifact_root / "evidence").glob("*.json"):
         p.unlink()
     with pytest.raises(NodeExecutionFailure, match="evidence file missing"):
@@ -276,43 +244,21 @@ def test_merge_fails_when_evidence_files_removed(tmp_path) -> None:
 
 
 def test_approve_final_state_is_awaiting_merge(tmp_path) -> None:
-    from nodeflow.workflows.dev_process.constants import STATE_AWAITING_FINAL
+    from nodeflow.workflows.dev_process.constants import STATE_AWAITING_MERGE
 
-    assert STATE_AWAITING_FINAL == "awaiting_merge"
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repo_with_commit(repo)
-    start = DevProcessFlowNode().execute(
-        {"action": "start", "repo_root": str(repo), "task_prompt": "m"},
-        {},
-    )
-    cp = start["flow_output"]["flow_result"]["flow_checkpoint_path"]
-    appr = DevProcessFlowNode().execute(
-        {"action": "approve_spec", "repo_root": str(repo), "flow_checkpoint_path": cp},
-        {},
-    )
-    cp2 = appr["flow_output"]["flow_result"]["flow_checkpoint_path"]
-    final = DevProcessFlowNode().execute(
-        {"action": "approve_final", "repo_root": str(repo), "flow_checkpoint_path": cp2},
-        {},
-    )
-    assert final["flow_output"]["flow_result"]["state"] == "awaiting_merge"
+    _, final = through_approve_final(repo)
+    assert final["flow_result"]["state"] == STATE_AWAITING_MERGE
 
 
-def test_revise_spec_allowed_from_awaiting_review(tmp_path) -> None:
+def test_revise_spec_allowed_from_awaiting_rework_decision(tmp_path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repo_with_commit(repo)
-    start = DevProcessFlowNode().execute(
-        {"action": "start", "repo_root": str(repo), "task_prompt": "rev2"},
-        {},
-    )
-    cp = start["flow_output"]["flow_result"]["flow_checkpoint_path"]
-    appr = DevProcessFlowNode().execute(
-        {"action": "approve_spec", "repo_root": str(repo), "flow_checkpoint_path": cp},
-        {},
-    )
-    assert "revise_spec" in appr["flow_output"]["flow_result"]["allowed_actions"]
+    review = full_through_review(repo)
+    assert ACTION_REVISE_SPEC in review["flow_result"]["allowed_actions"]
 
 
 def test_record_rejects_nonzero_exit_code_at_write(tmp_path) -> None:

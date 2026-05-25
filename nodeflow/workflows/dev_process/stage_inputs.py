@@ -243,7 +243,7 @@ def write_reference_materials_artifact(
 
 # --- Stage-specific question sets ---
 
-SPEC_PLAN_QUESTIONS = [
+SPEC_INPUT_QUESTIONS = [
     InputQuestion("task_prompt", "Task prompt", required=True, kind="text"),
     InputQuestion(
         "reference_paths",
@@ -287,24 +287,24 @@ def stage_input_dir(artifact_root: str, stage: str) -> Path:
     return Path(artifact_root) / stage
 
 
-def collect_spec_plan_inputs(
+def collect_spec_inputs(
     *,
     artifact_root: str,
     repo_root: Path,
     provided: Dict[str, Any],
     interactive: bool,
 ) -> tuple[Dict[str, Any], List[Dict[str, Any]], Path, Optional[Path]]:
-    art_dir = stage_input_dir(artifact_root, "spec_plan")
+    art_dir = stage_input_dir(artifact_root, "spec")
     inputs = collect_stage_inputs(
-        stage="spec_plan",
-        questions=SPEC_PLAN_QUESTIONS,
+        stage="spec",
+        questions=SPEC_INPUT_QUESTIONS,
         provided=provided,
         interactive=interactive,
         input_artifact_path=art_dir / "input.json",
     )
     input_path = write_stage_input_artifact(
         artifact_dir=art_dir,
-        stage="spec_plan",
+        stage="spec",
         inputs=inputs,
     )
     ref_paths = inputs.get("reference_paths") or []
@@ -321,11 +321,18 @@ def collect_revision_inputs(
     repo_root: Path,
     provided: Dict[str, Any],
     interactive: bool,
+    require_comment: bool = True,
 ) -> tuple[Dict[str, Any], List[Dict[str, Any]], Path, Optional[Path]]:
     art_dir = stage_input_dir(artifact_root, "revision")
+    questions = list(REVISION_QUESTIONS)
+    if not require_comment:
+        questions = [
+            InputQuestion("revision_comment", "Revision comment", required=False, kind="text"),
+            *questions[1:],
+        ]
     inputs = collect_stage_inputs(
         stage="revision",
-        questions=REVISION_QUESTIONS,
+        questions=questions,
         provided=provided,
         interactive=interactive,
         input_artifact_path=art_dir / "input.json",
@@ -341,6 +348,36 @@ def collect_revision_inputs(
     if materials:
         ref_artifact = write_reference_materials_artifact(art_dir, materials)
     return inputs, materials, input_path, ref_artifact
+
+
+def read_reference_materials_artifact(artifact_dir: Path) -> List[Dict[str, Any]]:
+    path = artifact_dir / "reference_materials.json"
+    if not path.is_file():
+        return []
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        raise NodeExecutionFailure(f"invalid reference materials artifact {path}: {e}") from e
+    materials = doc.get("materials")
+    if not isinstance(materials, list):
+        return []
+    return [m for m in materials if isinstance(m, dict)]
+
+
+def load_stored_spec_inputs(
+    artifact_root: str,
+    repo_root: Path,
+) -> tuple[str, List[Dict[str, Any]]]:
+    """Reuse notes and reference materials from the initial spec stage."""
+    art_dir = stage_input_dir(artifact_root, "spec")
+    inputs = _load_existing_input_json(art_dir / "input.json")
+    notes = str(inputs.get("notes") or "")
+    materials = read_reference_materials_artifact(art_dir)
+    if not materials:
+        ref_paths = inputs.get("reference_paths") or []
+        if isinstance(ref_paths, list):
+            materials, _ = load_reference_materials(repo_root, [str(p) for p in ref_paths])
+    return notes, materials
 
 
 def collect_rework_inputs(

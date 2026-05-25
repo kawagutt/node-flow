@@ -13,7 +13,7 @@ from nodeflow.workflows.dev_process.checkpoint import load_flow_checkpoint
 from nodeflow.workflows.dev_process.cli import main
 from nodeflow.workflows.dev_process.constants import STATE_AWAITING_SPEC, STATE_MERGED
 from nodeflow.workflows.dev_process.discovery import find_latest_checkpoint, resolve_checkpoint_path
-from nodeflow.workflows.dev_process.hermetic_argv import spec_plan_argv
+from nodeflow.workflows.dev_process.hermetic_argv import spec_argv
 from tests.workflows.dev_process.git_fixtures import git_repo_with_commit
 
 
@@ -23,7 +23,7 @@ def cli_runner() -> CliRunner:
 
 
 def _hermetic_start_argv_json() -> str:
-    return json.dumps(spec_plan_argv())
+    return json.dumps(spec_argv())
 
 
 def test_discovery_latest_checkpoint(tmp_path: Path) -> None:
@@ -117,7 +117,11 @@ def test_wrapper_hermetic_full_path_to_merged(tmp_path: Path, cli_runner: CliRun
 
     appr = cli_runner.invoke(main, common + ["approve-spec"])
     assert appr.exit_code == 0, appr.output
-    assert "awaiting_review_decision" in appr.output
+    assert "awaiting_implementation" in appr.output
+
+    cont = cli_runner.invoke(main, common + ["continue-implementation"])
+    assert cont.exit_code == 0, cont.output
+    assert "awaiting_final_approval" in cont.output
 
     final = cli_runner.invoke(main, common + ["approve-final"])
     assert final.exit_code == 0, final.output
@@ -260,7 +264,7 @@ def test_exec_argv_json_array_on_start(tmp_path: Path, cli_runner: CliRunner) ->
     assert result.exit_code == 0, result.output
     cp = resolve_checkpoint_path(repo, checkpoint=None, run_id=None)
     doc = load_flow_checkpoint(cp)
-    assert doc["dev_process"]["exec_argv"] == spec_plan_argv()
+    assert doc["dev_process"]["exec_policy_snapshot"]["default_argv"] == spec_argv()
 
 
 def test_no_checkpoint_status_fails(tmp_path: Path, cli_runner: CliRunner) -> None:

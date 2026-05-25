@@ -11,7 +11,7 @@ import pytest
 from click.testing import CliRunner
 
 from nodeflow.cli import main, pipeline_main
-from nodeflow.workflows.dev_process.hermetic_argv import spec_plan_argv
+from nodeflow.workflows.dev_process.hermetic_argv import spec_argv
 from tests.workflows.dev_process.git_fixtures import git_repo_with_commit
 
 
@@ -21,7 +21,7 @@ def cli_runner() -> CliRunner:
 
 
 def _hermetic_start_argv_json() -> str:
-    return json.dumps(spec_plan_argv())
+    return json.dumps(spec_argv())
 
 
 def _invoke_main(argv: list[str]) -> tuple[int, str]:
@@ -51,7 +51,7 @@ def test_main_dispatches_named_pipe_start(tmp_path: Path) -> None:
         ]
     )
     assert code == 0, output
-    assert "awaiting_spec_approval" in output
+    assert "awaiting_spec_human_gate" in output
 
 
 def test_main_named_pipe_status(tmp_path: Path) -> None:
@@ -75,7 +75,7 @@ def test_main_named_pipe_status(tmp_path: Path) -> None:
     assert code == 0
     code, output = _invoke_main(["--pipe", "dev-process", "--repo-root", str(repo), "status"])
     assert code == 0, output
-    assert "awaiting_spec_approval" in output
+    assert "awaiting_spec_human_gate" in output
 
 
 def test_main_unknown_pipe_fails() -> None:
@@ -132,6 +132,7 @@ def test_named_pipe_full_hermetic_path(tmp_path: Path) -> None:
     ]
     assert _invoke_main(start_argv)[0] == 0
     assert _invoke_main(argv_base + ["approve-spec"])[0] == 0
+    assert _invoke_main(argv_base + ["continue-implementation"])[0] == 0
     assert _invoke_main(argv_base + ["approve-final"])[0] == 0
     code, output = _invoke_main(argv_base + ["merge"])
     assert code == 0, output

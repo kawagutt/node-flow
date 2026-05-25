@@ -9,8 +9,9 @@ from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.workflows.dev_process import timeline
 from nodeflow.workflows.dev_process.checkpoint import write_flow_checkpoint
 from nodeflow.workflows.dev_process.constants import (
-    STATE_AWAITING_REVIEW,
+    STATE_AWAITING_REWORK_DECISION,
     STATE_FAILED,
+    V2_CHECKPOINT_STAGES,
     WORKSPACE_STRATEGY_CURRENT_REPO,
     WORKSPACE_STRATEGY_GIT_WORKTREE,
 )
@@ -55,26 +56,34 @@ def _run_context_for_prepare_workspace(body: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _clear_git_worktree_on_revise(body: Dict[str, Any]) -> None:
+    """Drop an existing implementation worktree; bump attempt only when one was active."""
+    wc = body.get("workspace_context")
+    if not isinstance(wc, dict) or not wc:
+        return
     run_context = body["run_context"]
     if _workspace_strategy(run_context) != WORKSPACE_STRATEGY_GIT_WORKTREE:
         body.pop("workspace_context", None)
         return
-    wc = body.get("workspace_context")
-    if isinstance(wc, dict):
-        root = wc.get("workspace_root")
-        if isinstance(root, str) and root.strip():
-            remove_git_worktree(
-                source_repo_root=run_context["repo_root"],
-                artifact_root=run_context["artifact_root"],
-                workspace_root=root,
-            )
+    root = wc.get("workspace_root")
+    if isinstance(root, str) and root.strip():
+        remove_git_worktree(
+            source_repo_root=run_context["repo_root"],
+            artifact_root=run_context["artifact_root"],
+            workspace_root=root,
+        )
     body.pop("workspace_context", None)
     _increment_workspace_attempt(body)
 
 
+def _policy_snapshot(dp: Dict[str, Any]) -> Dict[str, Any]:
+    snap = dp.get("exec_policy_snapshot")
+    return snap if isinstance(snap, dict) else {}
+
+
 def _stored_exec_model(body: Dict[str, Any]) -> Optional[str]:
     dp = body.get("dev_process") if isinstance(body.get("dev_process"), dict) else {}
-    raw = dp.get("exec_model")
+    snap = _policy_snapshot(dp)
+    raw = snap.get("default_model") or dp.get("exec_model")
     if isinstance(raw, str) and raw.strip():
         return raw.strip()
     return None
@@ -82,7 +91,8 @@ def _stored_exec_model(body: Dict[str, Any]) -> Optional[str]:
 
 def _stored_exec_argv(body: Dict[str, Any]) -> Optional[list[str]]:
     dp = body.get("dev_process") if isinstance(body.get("dev_process"), dict) else {}
-    raw = dp.get("exec_argv")
+    snap = _policy_snapshot(dp)
+    raw = snap.get("default_argv") if snap else dp.get("exec_argv")
     if raw is None:
         return None
     if not isinstance(raw, list) or not all(isinstance(x, str) for x in raw):
@@ -124,17 +134,54 @@ def _workspace_repo_root(body: Dict[str, Any]) -> Path:
 
 
 def _empty_stages() -> Dict[str, Any]:
-    return {
-        "spec_plan": {"status": "pending"},
-        "implement": {"status": "pending"},
-        "review": {"status": "pending"},
-    }
+    return {name: {"status": "pending"} for name in V2_CHECKPOINT_STAGES}
+
+
+def _read_spec_text(artifact_root: str) -> str:
+    return (Path(artifact_root) / "spec" / "spec.md").read_text(encoding="utf-8")
+
+
+def _read_plan_text(artifact_root: str) -> str:
+    return (Path(artifact_root) / "plan" / "plan.md").read_text(encoding="utf-8")
 
 
 def _read_approved_text(artifact_root: str) -> Tuple[str, str]:
-    spec_p = Path(artifact_root) / "spec_plan" / "spec.md"
-    plan_p = Path(artifact_root) / "spec_plan" / "plan.md"
-    return spec_p.read_text(encoding="utf-8"), plan_p.read_text(encoding="utf-8")
+    return _read_spec_text(artifact_root), _read_plan_text(artifact_root)
+
+
+def _combine_revision_context(findings_context: str, human_context: str) -> str:
+    parts: list[str] = []
+    if findings_context.strip():
+        parts.append(findings_context.strip())
+    if human_context.strip():
+        parts.append(human_context.strip())
+    return "\n\n".join(parts)
+
+
+def _revision_context_from_spec_review(body: Dict[str, Any]) -> str:
+    sr = (body.get("stages") or {}).get("spec_review") or {}
+    agg = sr.get("aggregate") if isinstance(sr, dict) else {}
+    if not isinstance(agg, dict):
+        return ""
+    findings = agg.get("blocking_findings") or []
+    lines = ["## Spec review findings"]
+    for f in findings:
+        if isinstance(f, dict):
+            lines.append(f"- {f.get('summary', f)}")
+    return "\n".join(lines)
+
+
+def _revision_context_from_plan_review(body: Dict[str, Any]) -> str:
+    pr = (body.get("stages") or {}).get("plan_review") or {}
+    agg = pr.get("aggregate") if isinstance(pr, dict) else {}
+    if not isinstance(agg, dict):
+        return ""
+    findings = agg.get("blocking_findings") or []
+    lines = ["## Plan review findings"]
+    for f in findings:
+        if isinstance(f, dict):
+            lines.append(f"- {f.get('summary', f)}")
+    return "\n".join(lines)
 
 
 def _fail_checkpoint(
@@ -210,10 +257,12 @@ def _finalize(
     fr = body.setdefault("flow_result", {})
     fr["state"] = state
     fr["ok"] = True
-    spec_rev = _review_spec_revision_needed(body) if state == STATE_AWAITING_REVIEW else False
+    spec_rev = (
+        _review_spec_revision_needed(body) if state == STATE_AWAITING_REWORK_DECISION else False
+    )
     actions = allowed_actions_for_state(
         state,
-        merge_ready=merge_ready if state == STATE_AWAITING_REVIEW else None,
+        merge_ready=merge_ready if state == STATE_AWAITING_REWORK_DECISION else None,
         spec_revision_needed=spec_rev,
     )
     fr["allowed_actions"] = actions

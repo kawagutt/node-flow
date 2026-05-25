@@ -31,7 +31,7 @@ def test_unknown_preset_raises() -> None:
 
 def test_expected_evidence_counts_from_preset() -> None:
     assert expected_review_evidence_count("standard") == 3
-    assert expected_exec_evidence_count_for_full_flow("standard") == 5
+    assert expected_exec_evidence_count_for_full_flow("standard") == 9
 
 
 def test_preset_limits_cover_all_reviewers() -> None:

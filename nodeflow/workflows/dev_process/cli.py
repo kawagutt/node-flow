@@ -15,7 +15,10 @@ from nodeflow.workflows.dev_process.checkpoint import load_flow_checkpoint
 from nodeflow.workflows.dev_process.constants import (
     ACTION_APPROVE_FINAL,
     ACTION_APPROVE_SPEC,
+    ACTION_CONTINUE_IMPLEMENTATION,
     ACTION_MERGE,
+    ACTION_REQUEST_SPEC_REVISION,
+    ACTION_REVISE_PLAN,
     ACTION_REVISE_SPEC,
     ACTION_REWORK,
     ACTION_START,
@@ -114,8 +117,12 @@ def _run_resume_action(
     as_json: bool,
     interactive: bool,
     human_comment_text: str = "",
+    revision_comment: str = "",
     **run_flow_kwargs: Any,
 ) -> None:
+    revision_provided: Dict[str, Any] | None = None
+    if revision_comment.strip():
+        revision_provided = {"revision_comment": revision_comment.strip()}
     try:
         cp_path = resolve_checkpoint_path(repo_root, checkpoint=checkpoint, run_id=run_id)
         doc = load_flow_checkpoint(cp_path)
@@ -125,7 +132,9 @@ def _run_resume_action(
             repo_root=str(repo_root),
             flow_checkpoint_path=cp_path,
             run_id=run_id,
+            task_prompt=revision_comment.strip(),
             human_comment_text=human_comment_text,
+            revision_provided=revision_provided,
             interactive=interactive,
             **run_flow_kwargs,
         )
@@ -164,7 +173,7 @@ def main(ctx: click.Context, repo_root: str, as_json: bool, non_interactive: boo
 @click.option(
     "--task-prompt",
     default="",
-    help="Optional initial provided input for spec_plan stage (not a dev-process business arg).",
+    help="Optional initial provided input for spec stage (not a dev-process business arg).",
 )
 @click.option(
     "--workspace-strategy",
@@ -195,12 +204,12 @@ def cmd_start(
     exec_argv: Optional[str],
     run_id: Optional[str],
 ) -> None:
-    """Start a new dev-process run (spec_plan on start)."""
+    """Start a new dev-process run (write_spec + review_spec on start)."""
     repo_root: Path = ctx.obj["repo_root"]
     argv = _parse_exec_argv(exec_argv)
-    spec_plan_provided: Dict[str, Any] = {}
+    spec_inputs_provided: Dict[str, Any] = {}
     if task_prompt.strip():
-        spec_plan_provided["task_prompt"] = task_prompt.strip()
+        spec_inputs_provided["task_prompt"] = task_prompt.strip()
     try:
         out = run_flow(
             action=ACTION_START,
@@ -212,7 +221,7 @@ def cmd_start(
             exec_worker_kind=exec_worker_kind,
             exec_argv=argv,
             interactive=ctx.obj["interactive"],
-            spec_plan_provided=spec_plan_provided,
+            spec_inputs_provided=spec_inputs_provided,
         )
     except NodeExecutionFailure as e:
         raise click.ClickException(str(e)) from e
@@ -259,10 +268,30 @@ def cmd_status(ctx: click.Context, checkpoint: Optional[str], run_id: Optional[s
 @click.option("--run-id", default=None)
 @click.pass_context
 def cmd_approve_spec(ctx: click.Context, checkpoint: Optional[str], run_id: Optional[str]) -> None:
-    """Run implement + review after human spec approval."""
+    """Approve spec and run plan cycle (stops at awaiting_implementation)."""
     _run_resume_action(
         repo_root=ctx.obj["repo_root"],
         action=ACTION_APPROVE_SPEC,
+        checkpoint=checkpoint,
+        run_id=run_id,
+        as_json=ctx.obj["as_json"],
+        interactive=ctx.obj["interactive"],
+    )
+
+
+@main.command("continue-implementation")
+@click.option("--checkpoint", default=None)
+@click.option("--run-id", default=None)
+@click.pass_context
+def cmd_continue_implementation(
+    ctx: click.Context,
+    checkpoint: Optional[str],
+    run_id: Optional[str],
+) -> None:
+    """Run implementation + review after plan is approved."""
+    _run_resume_action(
+        repo_root=ctx.obj["repo_root"],
+        action=ACTION_CONTINUE_IMPLEMENTATION,
         checkpoint=checkpoint,
         run_id=run_id,
         as_json=ctx.obj["as_json"],
@@ -286,16 +315,77 @@ def cmd_rework(ctx: click.Context, checkpoint: Optional[str], run_id: Optional[s
     )
 
 
+@main.command("request-spec-revision")
+@click.option("--checkpoint", default=None)
+@click.option("--run-id", default=None)
+@click.option(
+    "--comment",
+    default="",
+    help="Human revision request (required in --non-interactive unless revision/input.json exists).",
+)
+@click.pass_context
+def cmd_request_spec_revision(
+    ctx: click.Context,
+    checkpoint: Optional[str],
+    run_id: Optional[str],
+    comment: str,
+) -> None:
+    """Request spec revision from the spec human gate."""
+    _run_resume_action(
+        repo_root=ctx.obj["repo_root"],
+        action=ACTION_REQUEST_SPEC_REVISION,
+        checkpoint=checkpoint,
+        run_id=run_id,
+        as_json=ctx.obj["as_json"],
+        interactive=ctx.obj["interactive"],
+        human_comment_text=comment,
+        revision_comment=comment,
+    )
+
+
+@main.command("revise-plan")
+@click.option("--checkpoint", default=None)
+@click.option("--run-id", default=None)
+@click.option(
+    "--comment",
+    default="",
+    help="Plan revision comment (required in --non-interactive unless revision/input.json exists/join exists).",
+)
+@click.pass_context
+def cmd_revise_plan(
+    ctx: click.Context,
+    checkpoint: Optional[str],
+    run_id: Optional[str],
+    comment: str,
+) -> None:
+    """Revise plan after plan review failure."""
+    _run_resume_action(
+        repo_root=ctx.obj["repo_root"],
+        action=ACTION_REVISE_PLAN,
+        checkpoint=checkpoint,
+        run_id=run_id,
+        as_json=ctx.obj["as_json"],
+        interactive=ctx.obj["interactive"],
+        revision_comment=comment,
+    )
+
+
 @main.command("revise-spec")
 @click.option("--checkpoint", default=None)
 @click.option("--run-id", default=None)
+@click.option(
+    "--comment",
+    default="",
+    help="Spec revision comment (required in --non-interactive unless revision/input.json exists).",
+)
 @click.pass_context
 def cmd_revise_spec(
     ctx: click.Context,
     checkpoint: Optional[str],
     run_id: Optional[str],
+    comment: str,
 ) -> None:
-    """Revise spec/plan (new attempt when using git_worktree)."""
+    """Revise spec after spec review failure."""
     _run_resume_action(
         repo_root=ctx.obj["repo_root"],
         action=ACTION_REVISE_SPEC,
@@ -303,6 +393,7 @@ def cmd_revise_spec(
         run_id=run_id,
         as_json=ctx.obj["as_json"],
         interactive=ctx.obj["interactive"],
+        revision_comment=comment,
     )
 
 

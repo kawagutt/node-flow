@@ -1,0 +1,13 @@
+{
+  "schema": "dev_process.exec_policy.v1",
+  "default_worker": "codex",
+  "jobs": {
+    "write_spec": { "worker": "codex" },
+    "spec_review": { "worker": "codex" },
+    "write_plan": { "worker": "codex" },
+    "plan_review": { "worker": "codex" },
+    "write_implementation": { "worker": "codex" },
+    "write_tests": { "worker": "codex" },
+    "run_tests": { "worker": "codex" }
+  }
+}

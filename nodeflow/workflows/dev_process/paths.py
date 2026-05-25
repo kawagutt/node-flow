@@ -80,7 +80,21 @@ def allocate_run_dir(
     run_dir_name = f"{idx:03d}_{yyyymmdd}_{slug}_{short_hash}"
     artifact_root = runs_base / run_dir_name
     artifact_root.mkdir(parents=True, exist_ok=True)
-    for sub in ("spec_plan", "implement", "review", "summary", "checkpoints", "evidence"):
+    for sub in (
+        "spec",
+        "spec_review",
+        "plan",
+        "plan_review",
+        "implementation",
+        "test_implementation",
+        "run_tests",
+        "revision",
+        "rework",
+        "summary",
+        "checkpoints",
+        "evidence",
+        "worktrees",
+    ):
         (artifact_root / sub).mkdir(parents=True, exist_ok=True)
     return abs_path(artifact_root), run_dir_name
 
