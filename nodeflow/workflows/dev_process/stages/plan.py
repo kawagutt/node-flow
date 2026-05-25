@@ -1,4 +1,4 @@
-"""plan.write stage."""
+"""write_plan node."""
 
 from __future__ import annotations
 
@@ -39,6 +39,7 @@ def run_plan_stage(
     revision_context: str | None = None,
     previous_plan: str | None = None,
     exec_worker_kind: Optional[str] = None,
+    body: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     prompt_text = build_plan_prompt(
         task_prompt=task_prompt,
@@ -46,26 +47,37 @@ def run_plan_stage(
         revision_context=revision_context,
         previous_plan=previous_plan,
     )
-    worker = resolve_exec_worker(exec_worker_kind)
-    argv = exec_argv if exec_argv is not None else plan_argv()
     cwd = str(repo_root)
-    execution_output = run_exec(
-        worker,
-        prompt=prompt_text,
-        cwd=cwd,
-        argv=argv,
-        timeout=EXEC_TIMEOUT_SECONDS,
-    )
-    evidence_path = record_exec_evidence(
-        artifact_root=artifact_root,
-        run_id=run_id,
-        stage="plan",
-        invoker=worker.invoker,
-        execution_output=execution_output,
-        argv=argv,
-        prompt=prompt_text,
-        cwd=cwd,
-    )
+
+    if body is not None:
+        from nodeflow.workflows.dev_process.node_runner import run_node_exec
+
+        execution_output, evidence_path, _rec = run_node_exec(
+            body,
+            node_name="write_plan",
+            stage="plan",
+            prompt=prompt_text,
+            cwd=cwd,
+            run_id=run_id,
+            artifact_root=artifact_root,
+        )
+    else:
+        worker = resolve_exec_worker(exec_worker_kind)
+        argv = exec_argv if exec_argv is not None else plan_argv()
+        execution_output = run_exec(
+            worker, prompt=prompt_text, cwd=cwd, argv=argv, timeout=EXEC_TIMEOUT_SECONDS
+        )
+        evidence_path = record_exec_evidence(
+            artifact_root=artifact_root,
+            run_id=run_id,
+            stage="plan",
+            invoker=worker.invoker,
+            execution_output=execution_output,
+            argv=argv,
+            prompt=prompt_text,
+            cwd=cwd,
+        )
+
     plan_text = _parse_plan_stdout(str(execution_output.get("stdout") or ""))
     plan_dir = Path(artifact_root) / "plan"
     plan_dir.mkdir(parents=True, exist_ok=True)

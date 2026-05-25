@@ -35,7 +35,9 @@ def _merge_gate_ok(body: Dict[str, Any]) -> None:
         if st.get("status") != "completed":
             raise NodeExecutionFailure(f"stages.{name}.status must be completed")
     if "spec_plan" in stages or "implement" in stages:
-        raise NodeExecutionFailure("v2 checkpoint must not contain legacy stages spec_plan or implement")
+        raise NodeExecutionFailure(
+            "v2 checkpoint must not contain legacy stages spec_plan or implement"
+        )
     agg = (stages.get("review") or {}).get("aggregate") or {}
     if agg.get("blocking_count", 1) != 0:
         raise NodeExecutionFailure("review has blocking findings")
@@ -43,7 +45,9 @@ def _merge_gate_ok(body: Dict[str, Any]) -> None:
     if review_st.get("stale"):
         raise NodeExecutionFailure("stages.review is stale; rework or re-run review before merge")
     if any_stale_remaining(body):
-        raise NodeExecutionFailure("checkpoint has stale stages; re-run affected stages before merge")
+        raise NodeExecutionFailure(
+            "checkpoint has stale stages; re-run affected stages before merge"
+        )
 
 
 def _write_fallback_development_summary(

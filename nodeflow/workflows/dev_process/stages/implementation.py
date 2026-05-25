@@ -24,6 +24,7 @@ def run_implementation_stage(
     exec_argv: list[str] | None = None,
     rework_context: str | None = None,
     exec_worker_kind: Optional[str] = None,
+    body: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     prompt = (
         "Implement the approved plan in the repository working tree.\n\n"
@@ -36,22 +37,37 @@ def run_implementation_stage(
         '(for example: git add -A && git commit -m "<short message>"). '
         "Leave the worktree clean except for ignored paths.\n"
     )
-    worker: ExecWorker = resolve_exec_worker(exec_worker_kind)
-    argv = exec_argv if exec_argv is not None else implement_argv()
     cwd = str(repo_root)
-    execution_output = run_exec(
-        worker, prompt=prompt, cwd=cwd, argv=argv, timeout=EXEC_TIMEOUT_SECONDS
-    )
-    evidence_path = record_exec_evidence(
-        artifact_root=artifact_root,
-        run_id=run_id,
-        stage="implementation",
-        invoker=worker.invoker,
-        execution_output=execution_output,
-        argv=argv,
-        prompt=prompt,
-        cwd=cwd,
-    )
+
+    if body is not None:
+        from nodeflow.workflows.dev_process.node_runner import run_node_exec
+
+        execution_output, evidence_path, _rec = run_node_exec(
+            body,
+            node_name="write_implementation",
+            stage="implementation",
+            prompt=prompt,
+            cwd=cwd,
+            run_id=run_id,
+            artifact_root=artifact_root,
+        )
+    else:
+        worker: ExecWorker = resolve_exec_worker(exec_worker_kind)
+        argv = exec_argv if exec_argv is not None else implement_argv()
+        execution_output = run_exec(
+            worker, prompt=prompt, cwd=cwd, argv=argv, timeout=EXEC_TIMEOUT_SECONDS
+        )
+        evidence_path = record_exec_evidence(
+            artifact_root=artifact_root,
+            run_id=run_id,
+            stage="implementation",
+            invoker=worker.invoker,
+            execution_output=execution_output,
+            argv=argv,
+            prompt=prompt,
+            cwd=cwd,
+        )
+
     diff_result = collect_diff(repo_root=repo_root, base_revision=base_revision)
     summary_path = Path(artifact_root) / "implementation" / "summary.txt"
     summary_path.parent.mkdir(parents=True, exist_ok=True)

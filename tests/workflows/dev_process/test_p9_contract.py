@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from nodeflow.workflows.dev_process.argv_builder import resolve_job
+from nodeflow.workflows.dev_process.argv_builder import resolve_node_exec
 from nodeflow.workflows.dev_process.checkpoint import load_flow_checkpoint
 from nodeflow.workflows.dev_process.constants import (
     ACTION_REQUEST_SPEC_REVISION,
@@ -106,7 +106,9 @@ def test_preview_continue_implementation_populates_impl_stages(tmp_path: Path) -
     repo.mkdir()
     git_repo_with_commit(repo)
     start = start_spec_human_gate(repo)
-    after_approve = approve_spec_to_implementation(repo, start["flow_result"]["flow_checkpoint_path"])
+    after_approve = approve_spec_to_implementation(
+        repo, start["flow_result"]["flow_checkpoint_path"]
+    )
     review = continue_from_implementation(
         repo, after_approve["flow_result"]["flow_checkpoint_path"]
     )
@@ -175,12 +177,12 @@ def test_exec_argv_default_applies_to_all_jobs(tmp_path: Path) -> None:
     cp = load_flow_checkpoint(out["flow_result"]["flow_checkpoint_path"])
     snap = cp["dev_process"]["exec_policy_snapshot"]
     assert snap["default_argv"] == marker
-    for entry in snap["jobs"].values():
+    for entry in snap["nodes"].values():
         assert "argv" not in entry
-    _, _, write_spec_argv = resolve_job(cp, "write_spec")
-    _, _, spec_review_argv = resolve_job(cp, "spec_review")
+    _, _, write_spec_argv = resolve_node_exec(cp, "write_spec")
+    _, _, review_spec_argv = resolve_node_exec(cp, "review_spec")
     assert write_spec_argv == marker
-    assert spec_review_argv == marker
+    assert review_spec_argv == marker
 
 
 def test_without_exec_argv_jobs_use_hermetic_fallback(tmp_path: Path) -> None:
@@ -189,7 +191,7 @@ def test_without_exec_argv_jobs_use_hermetic_fallback(tmp_path: Path) -> None:
     git_repo_with_commit(repo)
     flow = start_spec_human_gate(repo)
     cp = load_flow_checkpoint(flow["flow_result"]["flow_checkpoint_path"])
-    _, _, argv = resolve_job(cp, "write_spec")
+    _, _, argv = resolve_node_exec(cp, "write_spec")
     assert argv == spec_argv()
 
 
@@ -466,7 +468,9 @@ def test_revise_plan_without_comment_succeeds(
     repo.mkdir()
     git_repo_with_commit(repo)
     start = start_spec_human_gate(repo)
-    after_approve = approve_spec_to_implementation(repo, start["flow_result"]["flow_checkpoint_path"])
+    after_approve = approve_spec_to_implementation(
+        repo, start["flow_result"]["flow_checkpoint_path"]
+    )
     assert after_approve["flow_result"]["state"] == STATE_AWAITING_PLAN_REVISION
     root = _artifact_root(repo)
     before_plan = (root / "plan" / "plan.md").read_text(encoding="utf-8")

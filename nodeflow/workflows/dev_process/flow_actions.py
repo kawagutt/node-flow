@@ -8,7 +8,6 @@ from typing import Any, Dict, Optional
 
 from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.workflows.dev_process import timeline
-from nodeflow.workflows.dev_process.argv_builder import resolve_job
 from nodeflow.workflows.dev_process.checkpoint import load_flow_checkpoint, write_flow_checkpoint
 from nodeflow.workflows.dev_process.constants import (
     ACTION_APPROVE_FINAL,
@@ -37,6 +36,7 @@ from nodeflow.workflows.dev_process.constants import (
 from nodeflow.workflows.dev_process.exec_policy import (
     apply_snapshot_to_body,
     build_exec_policy_snapshot,
+    load_exec_policy_file,
 )
 from nodeflow.workflows.dev_process.flow_context import (
     _assert_resume_identity,
@@ -97,18 +97,6 @@ from nodeflow.workflows.dev_process.state_machine import assert_action_allowed
 from nodeflow.workflows.dev_process.synthesis import assign_owners_to_findings, route_owner_to_state
 
 
-def _job_argv(
-    body: Dict[str, Any],
-    job_key: str,
-    exec_argv: Optional[list[str]],
-) -> Optional[list[str]]:
-    dp = body.get("dev_process") if isinstance(body.get("dev_process"), dict) else {}
-    if isinstance(dp.get("exec_policy_snapshot"), dict):
-        _, _, argv = resolve_job(body, job_key)
-        return argv
-    return exec_argv
-
-
 def run_flow(
     *,
     action: str,
@@ -120,6 +108,7 @@ def run_flow(
     human_comment_text: str = "",
     exec_argv: Optional[list[str]] = None,
     exec_model: Optional[str] = None,
+    exec_policy_path: Optional[str] = None,
     force_review_blocking: bool = False,
     workspace_strategy: Optional[str] = None,
     exec_worker_kind: Optional[str] = None,
@@ -131,12 +120,19 @@ def run_flow(
 ) -> Dict[str, Any]:
     if action == ACTION_START and flow_checkpoint_path:
         raise NodeExecutionFailure("start does not accept flow_checkpoint_path")
+    if action != ACTION_START and exec_policy_path:
+        raise NodeExecutionFailure(
+            "exec_policy_path is start-only; resume uses the frozen exec_policy_snapshot from the checkpoint"
+        )
 
     if action == ACTION_START:
         argv = _resolve_exec_argv(exec_argv)
         provided = dict(spec_inputs_provided or {})
         if task_prompt.strip() and not provided.get("task_prompt"):
             provided["task_prompt"] = task_prompt.strip()
+        policy_overrides = None
+        if exec_policy_path:
+            policy_overrides = load_exec_policy_file(exec_policy_path)
         return _handle_start(
             repo_root=repo_root,
             task_prompt=task_prompt,
@@ -146,6 +142,7 @@ def run_flow(
             exec_model=exec_model.strip()
             if isinstance(exec_model, str) and exec_model.strip()
             else None,
+            exec_policy_overrides=policy_overrides,
             workspace_strategy=workspace_strategy or WORKSPACE_STRATEGY_CURRENT_REPO,
             exec_worker_kind=exec_worker_kind or EXEC_WORKER_CODEX,
             merge_policy=merge_policy or MERGE_POLICY_RECORD_ONLY,
@@ -169,7 +166,6 @@ def run_flow(
     )
     run_context = body["run_context"]
     run_id = str(run_context.get("run_id") or "")
-    argv = _resolve_exec_argv(exec_argv, body=body)
     state = str((body.get("flow_result") or {}).get("state") or "")
     assert_action_allowed(state, action)
     timeline.append_event(
@@ -177,7 +173,7 @@ def run_flow(
     )
 
     if action == ACTION_APPROVE_SPEC:
-        return _handle_approve_spec(body, run_id=run_id, exec_argv=argv)
+        return _handle_approve_spec(body, run_id=run_id)
     if action in (ACTION_REVISE_SPEC, ACTION_REQUEST_SPEC_REVISION):
         rev_provided = dict(revision_provided or {})
         if action == ACTION_REQUEST_SPEC_REVISION:
@@ -188,7 +184,6 @@ def run_flow(
         return _handle_revise_spec(
             body,
             run_id=run_id,
-            exec_argv=argv,
             interactive=interactive,
             revision_provided=rev_provided,
             use_human_comment=action == ACTION_REQUEST_SPEC_REVISION,
@@ -200,7 +195,6 @@ def run_flow(
         return _handle_revise_plan(
             body,
             run_id=run_id,
-            exec_argv=argv,
             interactive=interactive,
             revision_provided=rev_provided,
         )
@@ -208,7 +202,6 @@ def run_flow(
         return _handle_continue_implementation(
             body,
             run_id=run_id,
-            exec_argv=argv,
             force_review_blocking=force_review_blocking,
         )
     if action == ACTION_REWORK:
@@ -220,7 +213,6 @@ def run_flow(
         return _handle_rework(
             body,
             run_id=run_id,
-            exec_argv=argv,
             force_review_blocking=force_review_blocking,
             interactive=interactive,
             rework_provided=rw_provided,
@@ -309,6 +301,7 @@ def _handle_start(
     run_spec_on_start: bool,
     exec_argv: Optional[list[str]],
     exec_model: Optional[str],
+    exec_policy_overrides: Optional[Dict[str, Any]] = None,
     workspace_strategy: str,
     exec_worker_kind: str,
     merge_policy: str,
@@ -359,6 +352,7 @@ def _handle_start(
             "human_gates": {"spec": "pending", "final": "not_reached"},
         },
         "stages": _empty_stages(),
+        "node_runs": [],
         "stale": {},
         "task_prompt": task_prompt,
         "source_workspace_check": swc,
@@ -370,6 +364,7 @@ def _handle_start(
         exec_worker_kind=exec_worker_kind,
         exec_argv=exec_argv,
         exec_model=exec_model,
+        exec_policy_overrides=exec_policy_overrides,
     )
     apply_snapshot_to_body(body, snapshot)
     out = _finalize(body=body, run_id=rid, action=ACTION_START, state=STATE_INITIALIZED)
@@ -382,7 +377,6 @@ def _handle_start(
         body,
         run_id=rid,
         task_prompt=task_prompt,
-        exec_argv=exec_argv,
         action=ACTION_START,
         interactive=interactive,
         spec_inputs_provided=spec_inputs_provided or {},
@@ -394,7 +388,6 @@ def _run_spec_cycle(
     *,
     run_id: str,
     task_prompt: str,
-    exec_argv: Optional[list[str]],
     action: str,
     revision_context: Optional[str] = None,
     interactive: bool = False,
@@ -404,7 +397,6 @@ def _run_spec_cycle(
 ) -> Dict[str, Any]:
     run_context = body["run_context"]
     repo = Path(run_context["repo_root"])
-    worker_kind = _exec_worker_kind(body)
     notes = ""
     materials: list[dict[str, Any]] | None = None
     previous_spec: str | None = None
@@ -440,12 +432,11 @@ def _run_spec_cycle(
             run_id=run_id,
             task_prompt=resolved_task_prompt,
             base_revision=run_context["source_base_revision"],
-            exec_argv=_job_argv(body, "write_spec", exec_argv),
             revision_context=revision_context,
             notes=notes or None,
             reference_materials=materials,
             previous_spec=previous_spec,
-            exec_worker_kind=worker_kind,
+            body=body,
         )
     except NodeExecutionFailure as e:
         _fail_checkpoint(body=body, run_id=run_id, action=action, reason=str(e))
@@ -464,8 +455,7 @@ def _run_spec_cycle(
             run_id=run_id,
             task_prompt=resolved_task_prompt,
             spec_text=spec_text,
-            exec_argv=_job_argv(body, "spec_review", exec_argv),
-            exec_worker_kind=worker_kind,
+            body=body,
         )
     except NodeExecutionFailure as e:
         _fail_checkpoint(body=body, run_id=run_id, action=action, reason=str(e))
@@ -498,7 +488,6 @@ def _run_plan_cycle(
     body: Dict[str, Any],
     *,
     run_id: str,
-    exec_argv: Optional[list[str]],
     action: str,
     revision_context: Optional[str] = None,
     interactive: bool = False,
@@ -506,7 +495,6 @@ def _run_plan_cycle(
 ) -> Dict[str, Any]:
     run_context = body["run_context"]
     repo = Path(run_context["repo_root"])
-    worker_kind = _exec_worker_kind(body)
     task_prompt = str(body.get("task_prompt") or "")
     spec_text = _read_spec_text(run_context["artifact_root"])
 
@@ -524,10 +512,9 @@ def _run_plan_cycle(
             run_id=run_id,
             task_prompt=task_prompt,
             approved_spec=spec_text,
-            exec_argv=_job_argv(body, "write_plan", exec_argv),
             revision_context=revision_context,
             previous_plan=previous_plan,
-            exec_worker_kind=worker_kind,
+            body=body,
         )
     except NodeExecutionFailure as e:
         _fail_checkpoint(body=body, run_id=run_id, action=action, reason=str(e))
@@ -548,8 +535,7 @@ def _run_plan_cycle(
             task_prompt=task_prompt,
             spec_text=spec_text,
             plan_text=plan_text,
-            exec_argv=_job_argv(body, "plan_review", exec_argv),
-            exec_worker_kind=worker_kind,
+            body=body,
         )
     except NodeExecutionFailure as e:
         _fail_checkpoint(body=body, run_id=run_id, action=action, reason=str(e))
@@ -580,18 +566,16 @@ def _handle_approve_spec(
     body: Dict[str, Any],
     *,
     run_id: str,
-    exec_argv: Optional[list[str]],
 ) -> Dict[str, Any]:
     gates = body.setdefault("dev_process", {}).setdefault("human_gates", {})
     gates["spec"] = "approved"
-    return _run_plan_cycle(body, run_id=run_id, exec_argv=exec_argv, action=ACTION_APPROVE_SPEC)
+    return _run_plan_cycle(body, run_id=run_id, action=ACTION_APPROVE_SPEC)
 
 
 def _handle_revise_spec(
     body: Dict[str, Any],
     *,
     run_id: str,
-    exec_argv: Optional[list[str]],
     interactive: bool,
     revision_provided: Dict[str, Any],
     use_human_comment: bool,
@@ -601,7 +585,12 @@ def _handle_revise_spec(
     findings = _revision_context_from_spec_review(body)
     comment = str(revision_provided.get("revision_comment") or "")
     materials: list[dict[str, Any]] | None = None
-    if use_human_comment or comment.strip() or revision_provided.get("reference_paths") or interactive:
+    if (
+        use_human_comment
+        or comment.strip()
+        or revision_provided.get("reference_paths")
+        or interactive
+    ):
         rev_inputs, materials, rev_input_path, rev_ref_path = collect_revision_inputs(
             artifact_root=run_context["artifact_root"],
             repo_root=repo,
@@ -621,7 +610,6 @@ def _handle_revise_spec(
         body,
         run_id=run_id,
         task_prompt=str(body.get("task_prompt") or ""),
-        exec_argv=exec_argv,
         action=ACTION_REVISE_SPEC if not use_human_comment else ACTION_REQUEST_SPEC_REVISION,
         revision_context=revision_context,
         interactive=interactive,
@@ -633,7 +621,6 @@ def _handle_revise_plan(
     body: Dict[str, Any],
     *,
     run_id: str,
-    exec_argv: Optional[list[str]],
     interactive: bool,
     revision_provided: Dict[str, Any],
 ) -> Dict[str, Any]:
@@ -661,7 +648,6 @@ def _handle_revise_plan(
     return _run_plan_cycle(
         body,
         run_id=run_id,
-        exec_argv=exec_argv,
         action=ACTION_REVISE_PLAN,
         revision_context=revision_context,
     )
@@ -671,7 +657,6 @@ def _handle_continue_implementation(
     body: Dict[str, Any],
     *,
     run_id: str,
-    exec_argv: Optional[list[str]],
     force_review_blocking: bool,
     rework_context: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -690,8 +675,6 @@ def _handle_continue_implementation(
     plan_text = _read_plan_text(run_context["artifact_root"])
     task_prompt = str(body.get("task_prompt") or "")
 
-    impl_argv = _job_argv(body, "write_implementation", exec_argv)
-    tests_argv = _job_argv(body, "write_tests", exec_argv)
     timeline.append_event(
         run_context["artifact_root"], run_id, "implementing", stage="implementation"
     )
@@ -705,9 +688,8 @@ def _handle_continue_implementation(
             or run_context["source_base_revision"],
             approved_spec=spec_text,
             approved_plan=plan_text,
-            exec_argv=impl_argv,
             rework_context=rework_context,
-            exec_worker_kind=_exec_worker_kind(body),
+            body=body,
         )
     except NodeExecutionFailure as e:
         _fail_checkpoint(
@@ -728,8 +710,7 @@ def _handle_continue_implementation(
             run_id=run_id,
             approved_spec=spec_text,
             approved_plan=plan_text,
-            exec_argv=tests_argv,
-            exec_worker_kind=_exec_worker_kind(body),
+            body=body,
         )
     except NodeExecutionFailure as e:
         _fail_checkpoint(
@@ -778,10 +759,9 @@ def _handle_continue_implementation(
             approved_plan=plan_text,
             diff_result=impl_bundle.get("diff_result") or {},
             test_result=impl_bundle.get("test_result") or {},
-            exec_argv=exec_argv,
             force_blocking=force_review_blocking,
             review_depth_preset=preset,
-            exec_worker_kind=_exec_worker_kind(body),
+            body=body,
         )
     except NodeExecutionFailure as e:
         _fail_checkpoint(
@@ -849,7 +829,6 @@ def _handle_rework(
     body: Dict[str, Any],
     *,
     run_id: str,
-    exec_argv: Optional[list[str]],
     force_review_blocking: bool,
     interactive: bool,
     rework_provided: Dict[str, Any],
@@ -878,7 +857,6 @@ def _handle_rework(
         return _handle_revise_spec(
             body,
             run_id=run_id,
-            exec_argv=exec_argv,
             interactive=interactive,
             revision_provided={"revision_comment": rework_context},
             use_human_comment=True,
@@ -888,7 +866,6 @@ def _handle_rework(
         return _handle_revise_plan(
             body,
             run_id=run_id,
-            exec_argv=exec_argv,
             interactive=interactive,
             revision_provided={"revision_comment": rework_context},
         )
@@ -896,7 +873,6 @@ def _handle_rework(
     return _handle_continue_implementation(
         body,
         run_id=run_id,
-        exec_argv=exec_argv,
         force_review_blocking=force_review_blocking,
         rework_context=rework_context,
     )

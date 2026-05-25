@@ -312,7 +312,7 @@ def build_review_prompt(
         "review_diff": BuildDiffReviewPromptNode,
         "review_wide": BuildWideScanReviewPromptNode,
         "review_tests": BuildTestReviewPromptNode,
-        "review_spec": BuildSpecReviewPromptNode,
+        "review_spec_conformance": BuildSpecReviewPromptNode,
         "review_spec_revision": BuildSpecRevisionReviewPromptNode,
     }
     cls = _PROMPT_NODES.get(reviewer_key)

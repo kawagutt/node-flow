@@ -22,13 +22,13 @@ _LIMITS: Dict[str, Dict[str, Dict[str, int]]] = {
     PRESET_STANDARD: {
         "review_diff": {"max_diff_chars": 8000},
         "review_tests": {"max_diff_chars": 4000},
-        "review_spec": {"max_diff_chars": 0},
+        "review_spec_conformance": {"max_diff_chars": 0},
     },
     PRESET_DEEP: {
         "review_diff": {"max_diff_chars": 12000},
         "review_wide": {"max_diff_chars": 12000},
         "review_tests": {"max_diff_chars": 6000},
-        "review_spec": {"max_diff_chars": 0},
+        "review_spec_conformance": {"max_diff_chars": 0},
         "review_spec_revision": {"max_diff_chars": 0},
     },
 }

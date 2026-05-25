@@ -38,7 +38,7 @@ DevProcessReviewTestsPromptNode = _make_prompt_node(
     "review_tests", "dev_process_review_prompt_tests"
 )
 DevProcessReviewSpecConformancePromptNode = _make_prompt_node(
-    "review_spec", "dev_process_review_prompt_spec_conformance"
+    "review_spec_conformance", "dev_process_review_prompt_spec_conformance"
 )
 DevProcessReviewSpecRevisionPromptNode = _make_prompt_node(
     "review_spec_revision", "dev_process_review_prompt_spec_revision"

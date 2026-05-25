@@ -193,6 +193,13 @@ def main(ctx: click.Context, repo_root: str, as_json: bool, non_interactive: boo
     default=None,
     help='JSON array, e.g. \'["codex","exec","--sandbox","workspace-write"]\'',
 )
+@click.option(
+    "--exec-policy-path",
+    "--exec-policy",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False),
+    help="Path to exec policy JSON (frozen into checkpoint at start; cwd-relative).",
+)
 @click.option("--run-id", default=None, help="Optional explicit run_id for a new run.")
 @click.pass_context
 def cmd_start(
@@ -202,6 +209,7 @@ def cmd_start(
     merge_policy: str,
     exec_worker_kind: str,
     exec_argv: Optional[str],
+    exec_policy_path: Optional[str],
     run_id: Optional[str],
 ) -> None:
     """Start a new dev-process run (write_spec + review_spec on start)."""
@@ -220,6 +228,7 @@ def cmd_start(
             merge_policy=merge_policy,
             exec_worker_kind=exec_worker_kind,
             exec_argv=argv,
+            exec_policy_path=exec_policy_path,
             interactive=ctx.obj["interactive"],
             spec_inputs_provided=spec_inputs_provided,
         )

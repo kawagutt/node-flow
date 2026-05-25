@@ -1,4 +1,4 @@
-"""spec.write stage."""
+"""write_spec node."""
 
 from __future__ import annotations
 
@@ -42,6 +42,7 @@ def run_spec_stage(
     reference_materials: list[dict[str, Any]] | None = None,
     previous_spec: str | None = None,
     exec_worker_kind: Optional[str] = None,
+    body: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     repo_context = collect_repo_context(
         repo_root=repo_root,
@@ -57,26 +58,37 @@ def run_spec_stage(
         reference_materials=reference_materials,
         previous_spec=previous_spec,
     )
-    worker: ExecWorker = resolve_exec_worker(exec_worker_kind)
-    argv = exec_argv if exec_argv is not None else spec_argv()
     cwd = str(repo_root)
-    execution_output = run_exec(
-        worker,
-        prompt=prompt_text,
-        cwd=cwd,
-        argv=argv,
-        timeout=EXEC_TIMEOUT_SECONDS,
-    )
-    evidence_path = record_exec_evidence(
-        artifact_root=artifact_root,
-        run_id=run_id,
-        stage="spec",
-        invoker=worker.invoker,
-        execution_output=execution_output,
-        argv=argv,
-        prompt=prompt_text,
-        cwd=cwd,
-    )
+
+    if body is not None:
+        from nodeflow.workflows.dev_process.node_runner import run_node_exec
+
+        execution_output, evidence_path, _rec = run_node_exec(
+            body,
+            node_name="write_spec",
+            stage="spec",
+            prompt=prompt_text,
+            cwd=cwd,
+            run_id=run_id,
+            artifact_root=artifact_root,
+        )
+    else:
+        worker: ExecWorker = resolve_exec_worker(exec_worker_kind)
+        argv = exec_argv if exec_argv is not None else spec_argv()
+        execution_output = run_exec(
+            worker, prompt=prompt_text, cwd=cwd, argv=argv, timeout=EXEC_TIMEOUT_SECONDS
+        )
+        evidence_path = record_exec_evidence(
+            artifact_root=artifact_root,
+            run_id=run_id,
+            stage="spec",
+            invoker=worker.invoker,
+            execution_output=execution_output,
+            argv=argv,
+            prompt=prompt_text,
+            cwd=cwd,
+        )
+
     spec_text = _parse_spec_stdout(str(execution_output.get("stdout") or ""))
     spec_dir = Path(artifact_root) / "spec"
     spec_dir.mkdir(parents=True, exist_ok=True)

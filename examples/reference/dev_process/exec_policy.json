@@ -1,13 +1,17 @@
 {
   "schema": "dev_process.exec_policy.v1",
   "default_worker": "codex",
-  "jobs": {
+  "nodes": {
     "write_spec": { "worker": "codex" },
-    "spec_review": { "worker": "codex" },
+    "review_spec": { "worker": "codex" },
     "write_plan": { "worker": "codex" },
-    "plan_review": { "worker": "codex" },
+    "review_plan": { "worker": "codex" },
     "write_implementation": { "worker": "codex" },
     "write_tests": { "worker": "codex" },
-    "run_tests": { "worker": "codex" }
+    "review_diff": { "worker": "codex" },
+    "review_tests": { "worker": "codex" },
+    "review_spec_conformance": { "worker": "codex" },
+    "review_wide": { "worker": "codex" },
+    "review_spec_revision": { "worker": "codex" }
   }
 }

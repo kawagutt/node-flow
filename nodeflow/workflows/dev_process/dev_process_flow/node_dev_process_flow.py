@@ -81,15 +81,14 @@ class DevProcessFlowNode(PythonActionNode):
         run_id = _port_scalar(inputs, "run_id")
         run_id_s = run_id if isinstance(run_id, str) and run_id.strip() else None
 
-        run_spec_on_start = parse_bool_param(
-            params.get("run_spec_on_start", True), default=True
-        )
+        run_spec_on_start = parse_bool_param(params.get("run_spec_on_start", True), default=True)
 
         exec_argv = _argv_list_param(
             _port_scalar(inputs, "exec_argv") or params.get("exec_argv"),
             label="exec_argv",
         )
         exec_model = _optional_config_scalar(inputs, params, "exec_model")
+        exec_policy_path = _optional_config_scalar(inputs, params, "exec_policy_path")
 
         force_blocking = parse_bool_param(params.get("force_review_blocking", False))
 
@@ -119,6 +118,7 @@ class DevProcessFlowNode(PythonActionNode):
                 human_comment_text=str(_port_scalar(inputs, "human_comment_text") or ""),
                 exec_argv=exec_argv,
                 exec_model=exec_model,
+                exec_policy_path=exec_policy_path,
                 force_review_blocking=force_blocking,
                 workspace_strategy=workspace_strategy,
                 exec_worker_kind=exec_worker_kind,

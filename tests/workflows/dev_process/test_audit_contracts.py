@@ -189,13 +189,13 @@ def test_reviewer_order_is_deterministic() -> None:
     assert reviewer_keys_for_preset("standard") == (
         "review_diff",
         "review_tests",
-        "review_spec",
+        "review_spec_conformance",
     )
     assert reviewer_keys_for_preset("deep") == (
         "review_diff",
         "review_wide",
         "review_tests",
-        "review_spec",
+        "review_spec_conformance",
         "review_spec_revision",
     )
 

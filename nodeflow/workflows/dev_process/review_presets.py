@@ -15,13 +15,13 @@ _REVIEWER_KEYS_LIGHT: Tuple[str, ...] = ("review_diff", "review_tests")
 _REVIEWER_KEYS_STANDARD: Tuple[str, ...] = (
     "review_diff",
     "review_tests",
-    "review_spec",
+    "review_spec_conformance",
 )
 _REVIEWER_KEYS_DEEP: Tuple[str, ...] = (
     "review_diff",
     "review_wide",
     "review_tests",
-    "review_spec",
+    "review_spec_conformance",
     "review_spec_revision",
 )
 

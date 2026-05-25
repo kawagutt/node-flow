@@ -52,12 +52,17 @@ write_implementation → write_tests → run_tests → review_changes → synthe
 
 ## 5. Node categories
 
-1. **write** — stage job keys: `write_spec`, `write_plan`, `write_implementation`, `write_tests` (P10 may rename to `spec.write` style)
-2. **review** — `spec_review`, `plan_review`, plus implementation `review.*` reviewers
-3. **synthesis** — aggregate review outputs, assign owner (P11)
-4. **gate / merge** — human_spec_gate, human_final_gate, merge
+Node = processing unit; NodeRun = one execution record. `exec_policy.nodes[node_name]` configures worker/model/argv.
 
-P9: Python stage runners. P10: ActionNode + JobRunner. P11: full implementation chain.
+1. **write** — `write_spec`, `write_plan`, `write_implementation`, `write_tests`
+2. **review** — `review_spec`, `review_plan`, plus change reviewers: `review_diff`, `review_tests`, `review_spec_conformance`, `review_wide`, `review_spec_revision`
+3. **local** — `run_tests` (local command, not an LLM node — excluded from exec policy)
+4. **synthesis** — aggregate review outputs, assign owner (P11)
+5. **gate / merge** — human_spec_gate, human_final_gate, merge
+
+Registry type: `dev_process.<node_name>` (e.g. `dev_process.write_spec`).
+
+P9: Python stage runners. P10: all LLM execs via `run_node_exec()` + `node_runs[]` on checkpoint. P11: full implementation chain.
 
 ## 6. Stage artifacts
 
@@ -174,7 +179,7 @@ Plan path has **no** human gate.
 | Phase | Scope |
 |-------|--------|
 | **P9** | spec/plan split, loops, stops at `awaiting_implementation`; CLI `exec_argv` → checkpoint `exec_policy_snapshot.default_argv` |
-| **P10** | JobRunner, `jobs[]`, `exec_policy_snapshot`, job ActionNodes; remove run-level `exec_argv` |
+| **P10** | `run_node_exec()` on main path; `node_runs[]` on checkpoint records every LLM execution as a `NodeRun` (`node_name`, `node_type`, `stage`, `session_id`, `evidence_path`, `worker`, `model`, `argv`); `exec_policy_snapshot.nodes[node_name]` = argv resolution (not `jobs`); `exec_policy_path` input (start-only, CLI cwd-relative) with `policy_source` audit; resume rejects `exec_policy_path`; `model` is audit metadata (not injected into argv yet); evidence JSON includes `node_name`/`session_id`/`model`/`worker`; `provider_meta.session_id` → `provider_session_id`; unknown node names in policy file are rejected at start; `run_tests` is a local command — excluded from `NODE_NAMES` |
 | **P11** | implementation/test/review/synthesis, owner routing, stale, final/merge |
 
 ## 12. Breaking changes from P8

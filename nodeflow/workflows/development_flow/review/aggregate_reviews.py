@@ -118,7 +118,7 @@ class AggregateReviewsNode(PythonActionNode):
             "diff": ("review_diff", "diff"),
             "wide": ("review_wide", "diff"),
             "tests": ("review_tests", "tests"),
-            "spec": ("review_spec", "spec"),
+            "spec": ("review_spec_conformance", "spec"),
             "spec_revision": ("review_spec_revision", "spec"),
         }
         test_result = (

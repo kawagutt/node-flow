@@ -1,4 +1,4 @@
-"""spec.review stage."""
+"""review_spec node."""
 
 from __future__ import annotations
 
@@ -27,32 +27,46 @@ def run_spec_review_stage(
     exec_argv: list[str] | None = None,
     exec_worker_kind: Optional[str] = None,
     force_blocking: bool = False,
+    body: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     prompt_text = append_review_json_contract(
         "Review the specification for completeness and feasibility.\n\n"
         f"Task:\n{task_prompt}\n\n"
         f"## Spec\n{spec_text}\n"
     )
-    worker = resolve_exec_worker(exec_worker_kind)
-    argv = exec_argv if exec_argv is not None else spec_review_argv(blocking=force_blocking)
     cwd = str(repo_root)
-    execution_output = run_exec(
-        worker,
-        prompt=prompt_text,
-        cwd=cwd,
-        argv=argv,
-        timeout=EXEC_TIMEOUT_SECONDS,
-    )
-    evidence_path = record_exec_evidence(
-        artifact_root=artifact_root,
-        run_id=run_id,
-        stage="spec_review",
-        invoker=worker.invoker,
-        execution_output=execution_output,
-        argv=argv,
-        prompt=prompt_text,
-        cwd=cwd,
-    )
+
+    if body is not None:
+        from nodeflow.workflows.dev_process.node_runner import run_node_exec
+
+        blocking_argv = spec_review_argv(blocking=True) if force_blocking else None
+        execution_output, evidence_path, _rec = run_node_exec(
+            body,
+            node_name="review_spec",
+            stage="spec_review",
+            prompt=prompt_text,
+            cwd=cwd,
+            run_id=run_id,
+            artifact_root=artifact_root,
+            argv_override=blocking_argv,
+        )
+    else:
+        worker = resolve_exec_worker(exec_worker_kind)
+        argv = exec_argv if exec_argv is not None else spec_review_argv(blocking=force_blocking)
+        execution_output = run_exec(
+            worker, prompt=prompt_text, cwd=cwd, argv=argv, timeout=EXEC_TIMEOUT_SECONDS
+        )
+        evidence_path = record_exec_evidence(
+            artifact_root=artifact_root,
+            run_id=run_id,
+            stage="spec_review",
+            invoker=worker.invoker,
+            execution_output=execution_output,
+            argv=argv,
+            prompt=prompt_text,
+            cwd=cwd,
+        )
+
     aggregate = aggregate_stage_review(execution_output, stage="spec_review")
     out_dir = Path(artifact_root) / "spec_review"
     out_dir.mkdir(parents=True, exist_ok=True)
