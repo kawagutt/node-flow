@@ -9,7 +9,7 @@ from click.testing import CliRunner
 
 from nodeflow.workflows.dev_process.checkpoint import load_flow_checkpoint
 from nodeflow.workflows.dev_process.cli import main
-from nodeflow.workflows.dev_process.constants import STATE_AWAITING_SPEC
+from nodeflow.workflows.dev_process.constants import STATE_AWAITING_SPEC_HUMAN_GATE
 from nodeflow.workflows.dev_process.discovery import resolve_checkpoint_path
 from tests.workflows.dev_process.git_fixtures import git_repo_with_commit
 
@@ -33,7 +33,7 @@ def test_start_writes_spec_input_artifact(tmp_path: Path) -> None:
         ],
     )
     assert result.exit_code == 0, result.output
-    assert STATE_AWAITING_SPEC in result.output
+    assert STATE_AWAITING_SPEC_HUMAN_GATE in result.output
 
     runs = list((repo / ".nodeflow/runs").iterdir())
     assert len(runs) == 1

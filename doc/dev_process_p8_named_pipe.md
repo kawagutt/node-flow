@@ -1,20 +1,6 @@
-# Dev Process — P8 Named Pipe + Stage Input
+# Dev Process — CLI + Stage Input
 
-**Breaking (v1 refactor):** `codex_argv` removed (use `exec_argv` only). `standard` review preset is 3 reviewers; `deep` is the full 5.
-
-P8 adds a unified NodeFlow entry point and stage-level interactive input collection. It does **not** grow the dev-process orchestration surface.
-
-Related:
-
-- [dev_process.md](./dev_process.md) — architecture
-- [dev_process_p7_wrapper.md](./dev_process_p7_wrapper.md) — P7 `nodeflow-dev-process`
-
-## P7 vs P8
-
-| Phase | Entry | Scope |
-|-------|-------|-------|
-| P7 | `nodeflow-dev-process` | Thin wrapper around `run_flow` |
-| P8 | `nodeflow --pipe dev-process` | Same wrapper via named pipe; stage inputs collected by stages |
+Related: [dev_process.md](./dev_process.md) — architecture.
 
 ## Design rule
 
@@ -24,26 +10,34 @@ dev-process controls flow only (start / resume / merge, checkpoint discovery, wo
 
 **Do not add** to dev-process CLI: `--material`, `--comment`, `--reference-paths`, `--spec-note`, `--review-note`, etc.
 
-## Entry points
+## Entry point
+
+Run from the target repository root. Happy path:
 
 ```bash
-# P8 (recommended)
-nodeflow --pipe dev-process --repo-root /path/to/repo start
+nodeflow --pipe dev-process start
+nodeflow --pipe dev-process approve-spec
+nodeflow --pipe dev-process continue-implementation
+nodeflow --pipe dev-process approve-final
+nodeflow --pipe dev-process merge
+```
+
+All commands:
+
+```bash
+nodeflow --pipe dev-process start
 nodeflow --pipe dev-process status
 nodeflow --pipe dev-process approve-spec
+nodeflow --pipe dev-process continue-implementation
+nodeflow --pipe dev-process request-spec-revision
 nodeflow --pipe dev-process revise-spec
+nodeflow --pipe dev-process revise-plan
 nodeflow --pipe dev-process rework
 nodeflow --pipe dev-process approve-final
 nodeflow --pipe dev-process merge
-
-# P7 (compatibility)
-nodeflow-dev-process --repo-root /path/to/repo start
-
-# Low-level JSON PipeSpec (unchanged)
-nodeflow -w $NF examples/pipes/dev_process/dev_process.json -i action=start ...
 ```
 
-`--repo-root` and `--repo_root` are both accepted. Default repo root is `.` (resolved to git toplevel).
+`--repo-root` is optional; when omitted it defaults to `.` (resolved to git toplevel). Mainly useful for automation or running from outside the repository.
 
 ## dev-process CLI arguments
 
@@ -89,13 +83,11 @@ CI should always pass `--non-interactive`.
 |-------|------------------------|----------|
 | **spec** | `task_prompt` | **Fail** — supply `--task-prompt` on `start` or pre-write `spec/input.json` |
 | **revise_spec** | *(none — uses spec_review findings)* | **Allowed** — optional `--comment` adds human context |
-| **request_spec_revision** | `revision_comment` | **Fail** — use `--comment`, pre-write `revision/input.json`, or legacy PipeSpec `task_prompt` |
+| **request_spec_revision** | `revision_comment` | **Fail** — use `--comment` or pre-write `revision/input.json` |
 | **revise_plan** | *(none — uses plan_review findings)* | **Allowed** — optional `--comment` adds human context |
 | **rework** | explicit `rework_comment` | **Allowed fallback** — uses `"rework requested"`; prior **review findings** from artifacts are always included in `rework_context` |
 
-Rework is the exception: review output is the primary human input. An explicit rework comment is still collected interactively or via `rework/input.json`; when neither is present in non-interactive mode (e.g. programmatic `rework_implementation` via PipeSpec/node), the fallback comment keeps backward compatibility with P7.
-
-**revise_spec** also accepts legacy `task_prompt` on the flow port (mapped to `revision_comment`) for PipeSpec/node callers only — not as a dev-process CLI flag.
+Rework is the exception: review output is the primary human input. An explicit rework comment is still collected interactively or via `rework/input.json`; when neither is present in non-interactive mode, the fallback `"rework requested"` applies.
 
 ## `--task-prompt` semantics
 

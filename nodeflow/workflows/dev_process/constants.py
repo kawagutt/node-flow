@@ -4,9 +4,6 @@ from __future__ import annotations
 
 SCHEMA_VERSION = "dev_process.flow.v2"
 
-# Legacy v1 (tests referencing old names may import these aliases)
-STATE_AWAITING_SPEC = "awaiting_spec_human_gate"
-
 STATE_INITIALIZED = "initialized"
 STATE_AWAITING_SPEC_REVISION = "awaiting_spec_revision"
 STATE_AWAITING_SPEC_HUMAN_GATE = "awaiting_spec_human_gate"

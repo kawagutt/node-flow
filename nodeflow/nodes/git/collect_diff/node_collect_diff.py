@@ -1,4 +1,9 @@
-"""Collect git diff, status, and untracked files for implement/review stages."""
+"""Collect git diff, status, and untracked files.
+
+Diff mode (input ``diff_mode`` or params ``diff_mode``):
+  ``committed`` (default) — ``git diff <base_ref> HEAD``
+  ``working_tree``        — ``git diff <base_ref>`` (includes unstaged changes)
+"""
 
 from __future__ import annotations
 
@@ -7,7 +12,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Dict, List, Sequence
 
-from nodeflow.core.base_node import ExecutionContext
+from nodeflow.core.base_node import ExecutionContext, NodeExecutionFailure
 from nodeflow.core.node_kinds import PythonActionNode
 
 
@@ -112,6 +117,12 @@ class CollectDiffNode(PythonActionNode):
     ) -> Dict[str, Any]:
         repo_root = Path(str(inputs.get("repo_root") or ".")).resolve()
         base_ref = str(inputs.get("base_ref") or "HEAD")
+        diff_mode = str(inputs.get("diff_mode") or params.get("diff_mode") or "committed")
+        _VALID_DIFF_MODES = ("committed", "working_tree")
+        if diff_mode not in _VALID_DIFF_MODES:
+            raise NodeExecutionFailure(
+                f"diff_mode must be 'committed' or 'working_tree', got {diff_mode!r}"
+            )
         max_chars = int(params.get("max_chars", 8000))
         excerpt_max_files = int(params.get("untracked_excerpt_max_files", 10))
         excerpt_max_bytes = int(params.get("untracked_excerpt_max_bytes", 2000))
@@ -122,7 +133,8 @@ class CollectDiffNode(PythonActionNode):
         else:
             ignored_prefixes = [".nodeflow/"]
 
-        rc_diff, diff_text_full = _run_git(repo_root, ["diff", base_ref])
+        diff_argv = ["diff", base_ref, "HEAD"] if diff_mode == "committed" else ["diff", base_ref]
+        rc_diff, diff_text_full = _run_git(repo_root, diff_argv)
         rc_status, status_short_raw = _run_git(repo_root, ["status", "--short"])
         status_short = _filter_status_short(status_short_raw, ignored_prefixes)
         rc_untracked, untracked_files = _filtered_untracked_paths(repo_root, ignored_prefixes)
@@ -143,6 +155,7 @@ class CollectDiffNode(PythonActionNode):
             "diff_result": {
                 "ok": ok,
                 "base_ref": base_ref,
+                "diff_mode": diff_mode,
                 "compare_target": base_ref,
                 "diff": diff_text,
                 "truncated": truncated,

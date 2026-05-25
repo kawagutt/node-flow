@@ -47,7 +47,7 @@ def render_common_context(
     status_title: str = "## Git status (short)",
     untracked_title: str = "## Untracked paths",
     excerpts_title: str = "## Untracked file excerpts",
-    diff_title: str = "## Git diff",
+    diff_title: str = "## Git diff (committed changes since base ref)",
     extra_sections: str = "",
 ) -> str:
     excerpt_block = (

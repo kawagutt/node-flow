@@ -32,8 +32,7 @@
 
 **v1 (2026-05-24): P0–P8 complete.** Core flow, real Codex smokes (`record_only` + `git_merge_branch`), stage interactive input, and named-pipe CLI.
 
-- **Recommended entry point:** `nodeflow --pipe dev-process` — see [dev_process_p8_named_pipe.md](./dev_process_p8_named_pipe.md)
-- **Compatibility wrapper:** `nodeflow-dev-process` — see [dev_process_p7_wrapper.md](./dev_process_p7_wrapper.md)
+- **Entry point:** `nodeflow --pipe dev-process` — see [dev_process_p8_named_pipe.md](./dev_process_p8_named_pipe.md)
 
 Recorded runs: [dev_process_smoke_log.md](./dev_process_smoke_log.md).
 
@@ -213,7 +212,7 @@ On resume, a supplied value must match the checkpoint or the flow fails.
 
 `exec_argv`: pass via node `params`, PipeSpec list inputs, or CLI JSON: `-i exec_argv='["codex","exec"]'`.  
 Optional `exec_model` on start: audit/display metadata only (execution model is selected in `exec_argv`).  
-Set via PipeSpec / `DevProcessFlowNode` port or `params` only — not exposed on `nodeflow-dev-process` / `nodeflow --pipe dev-process` CLI flags. On resume, an explicit `exec_model` must match the checkpoint.  
+Set via PipeSpec / `DevProcessFlowNode` port or `params` only — not exposed on `nodeflow --pipe dev-process` CLI flags. On resume, an explicit `exec_model` must match the checkpoint.  
 CLI `-i` values starting with `[` or `{` are parsed as JSON (arrays/objects).
 
 Scalar `-i` values are wrapped for PipeSpec delivery; `dev_process.flow` accepts both flat and per-port dict payloads.
@@ -263,38 +262,18 @@ Allowed git commands in `git_merge_branch` are local-only: `status`, `show-ref`,
 Set on `start` via input port or node `default_config` (validated at start).  
 Example: `examples/reference/dev_process/codex_params.example.json`.
 
-## Real Codex dry-run
+## CLI
 
-See [dev_process_real_codex_dry_run.md](./dev_process_real_codex_dry_run.md) for manual `nodeflow` PipeSpec procedures (optional; prefer [dev_process_p8_named_pipe.md](./dev_process_p8_named_pipe.md) for day-to-day use).
-
-Recorded real Codex smoke results (2026-05-24): [dev_process_smoke_log.md](./dev_process_smoke_log.md) (`record_only` and `git_merge_branch`).
-
-## P8 named pipe CLI (recommended)
-
-See [dev_process_p8_named_pipe.md](./dev_process_p8_named_pipe.md). Unified entry:
+See [dev_process_p8_named_pipe.md](./dev_process_p8_named_pipe.md). Run from the target repository root:
 
 ```bash
-nodeflow --pipe dev-process --repo-root /path/to/repo start
-nodeflow --pipe dev-process --repo-root /path/to/repo status
-nodeflow --pipe dev-process --repo-root /path/to/repo approve-spec
-nodeflow --pipe dev-process --repo-root /path/to/repo revise-spec
-nodeflow --pipe dev-process --repo-root /path/to/repo rework
-nodeflow --pipe dev-process --repo-root /path/to/repo approve-final
-nodeflow --pipe dev-process --repo-root /path/to/repo merge
+nodeflow --pipe dev-process start
+nodeflow --pipe dev-process approve-spec
+nodeflow --pipe dev-process continue-implementation
+nodeflow --pipe dev-process approve-final
+nodeflow --pipe dev-process merge
 ```
 
-Stage-specific inputs (task prompt, reference paths, revision/rework comments) are collected by the corresponding stage — not as dev-process CLI business arguments. Use `--non-interactive` in CI.
+Stage-specific inputs are owned by each stage. The CLI only provides minimal pass-through conveniences such as `start --task-prompt`; dev-process does not grow stage-specific business flags. Use `--non-interactive` in CI.
 
-## P7 wrapper CLI (compatibility)
-
-See [dev_process_p7_wrapper.md](./dev_process_p7_wrapper.md). Entry point:
-
-```bash
-nodeflow-dev-process --repo-root /path/to/repo start --task-prompt '...'
-nodeflow-dev-process --repo-root /path/to/repo status
-nodeflow-dev-process --repo-root /path/to/repo approve-spec
-nodeflow-dev-process --repo-root /path/to/repo approve-final
-nodeflow-dev-process --repo-root /path/to/repo merge
-```
-
-The wrapper discovers the latest checkpoint under `.nodeflow/runs/` and calls `run_flow` — no manual `CP=...` handling.
+Recorded smoke runs: [dev_process_smoke_log.md](./dev_process_smoke_log.md).

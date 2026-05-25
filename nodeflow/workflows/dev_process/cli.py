@@ -1,4 +1,4 @@
-"""P7/P8 thin CLI wrapper for dev-process — no duplicated state machine or git ops."""
+"""Thin CLI wrapper for dev-process — no duplicated state machine or git ops."""
 
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ def _assert_action_allowed(doc: Dict[str, Any], action: str) -> None:
         raise NodeExecutionFailure(
             f"action {action!r} is not allowed in state {state!r}; "
             f"allowed_actions={allowed!r}. "
-            f"Use `nodeflow-dev-process status` to inspect the latest checkpoint."
+            f"Use `nodeflow --pipe dev-process status` to inspect the latest checkpoint."
         )
 
 
@@ -441,7 +441,7 @@ def cmd_merge(ctx: click.Context, checkpoint: Optional[str], run_id: Optional[st
 
 if __name__ == "__main__":
     try:
-        main(prog_name="nodeflow-dev-process")
+        main(prog_name="nodeflow-dev-process-cli")
     except click.ClickException as e:
         click.echo(f"Error: {e.message}", err=True)
         sys.exit(1)

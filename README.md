@@ -78,33 +78,21 @@ Field semantics for workspace / checkpoints / summaries are **`doc/nodeflow_spec
 
 ## Dev-process CLI
 
-For the **dev-process** orchestration flow (spec → implement → review → merge). Stage-specific inputs (task prompt, revision comments, rework feedback) are collected by each stage — not as dev-process CLI flags.
+For the **dev-process** orchestration flow (spec → implement → review → merge). Stage-specific inputs are owned by each stage. The CLI only provides minimal pass-through conveniences such as `start --task-prompt`; dev-process does not grow stage-specific business flags.
 
-### Recommended (`nodeflow --pipe dev-process`)
-
-```bash
-nodeflow --pipe dev-process --repo-root /path/to/target-repo start
-nodeflow --pipe dev-process --repo-root /path/to/target-repo status
-nodeflow --pipe dev-process --repo-root /path/to/target-repo approve-spec
-nodeflow --pipe dev-process --repo-root /path/to/target-repo revise-spec
-nodeflow --pipe dev-process --repo-root /path/to/target-repo rework
-nodeflow --pipe dev-process --repo-root /path/to/target-repo approve-final
-nodeflow --pipe dev-process --repo-root /path/to/target-repo merge
-```
-
-See [doc/dev_process_p8_named_pipe.md](doc/dev_process_p8_named_pipe.md). Use `--non-interactive` in CI.
-
-### Compatibility (`nodeflow-dev-process`)
+Run from the target repository root:
 
 ```bash
-nodeflow-dev-process --repo-root /path/to/target-repo start --task-prompt '...'
-nodeflow-dev-process --repo-root /path/to/target-repo status
-nodeflow-dev-process --repo-root /path/to/target-repo approve-spec
+nodeflow --pipe dev-process start
+nodeflow --pipe dev-process approve-spec
+nodeflow --pipe dev-process continue-implementation
+nodeflow --pipe dev-process approve-final
+nodeflow --pipe dev-process merge
 ```
 
-Same `run_flow` backend; see [doc/dev_process_p7_wrapper.md](doc/dev_process_p7_wrapper.md).
+`--repo-root` is optional; when omitted it defaults to `.` (resolved to git toplevel). Use `--non-interactive` in CI. See [doc/dev_process_p8_named_pipe.md](doc/dev_process_p8_named_pipe.md).
 
-Merge policy on `start`: `record_only` (audit) or `git_merge_branch` (local merge). Architecture: [`doc/dev_process.md`](doc/dev_process.md). Recorded Codex runs: [`doc/dev_process_smoke_log.md`](doc/dev_process_smoke_log.md). Manual PipeSpec: [`doc/dev_process_real_codex_dry_run.md`](doc/dev_process_real_codex_dry_run.md).
+Merge policy on `start`: `record_only` (audit) or `git_merge_branch` (local merge). Architecture: [`doc/dev_process.md`](doc/dev_process.md). Recorded smoke runs: [`doc/dev_process_smoke_log.md`](doc/dev_process_smoke_log.md).
 
 ## API keys (optional)
 
@@ -150,10 +138,6 @@ nodeflow/
 ## Custom nodes
 
 Register classes on `nodeflow.core.registry.registry` with `register("your_type", YourClass)` for use from **PipeSpec** / programmatic execution. Custom code typically subclasses `BaseNode` or `ActionNode` / `PythonActionNode` and lives in your workspace, not in this package.
-
-## Upgrading from legacy YAML
-
-- **CLI / file loading:** Use **`nodeflow examples/pipes/hello.json -w . -i key=value`** for JSON PipeSpec execution, or **`nodeflow --pipe dev-process`** for the dev-process orchestration flow. Legacy YAML `graph` + `final` pipelines are removed.
 
 ## License
 

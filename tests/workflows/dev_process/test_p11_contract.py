@@ -268,7 +268,7 @@ def test_test_owner_rework_skips_implementation(tmp_path: Path, monkeypatch) -> 
     assert len(impl_calls) == 0, "write_implementation should be skipped for test owner"
 
     cp2 = load_flow_checkpoint(reworked["flow_result"]["flow_checkpoint_path"])
-    rework_node_runs = (cp2.get("node_runs") or [])[len(cp.get("node_runs") or []):]
+    rework_node_runs = (cp2.get("node_runs") or [])[len(cp.get("node_runs") or []) :]
     rework_names = [r["node_name"] for r in rework_node_runs]
     assert "write_tests" in rework_names
     assert "write_implementation" not in rework_names

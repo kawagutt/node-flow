@@ -40,6 +40,6 @@ class BuildDiffReviewPromptNode(PythonActionNode):
             diff_clipped=diff_clipped,
             untracked_title="## Untracked paths (git ls-files --others --exclude-standard)",
             excerpts_title="## Untracked file excerpts (text only; may be truncated)",
-            diff_title="## Git diff (working tree vs base ref)",
+            diff_title="## Git diff (committed changes since base ref)",
         )
         return {"codex_task_prompt": {"text": text}}

@@ -49,7 +49,7 @@ class BuildSpecReviewPromptNode(PythonActionNode):
             untracked=untracked,
             excerpts=excerpts,
             diff_clipped=diff_clipped,
-            diff_title="## Git diff (working tree vs base ref)",
+            diff_title="## Git diff (committed changes since base ref)",
             extra_sections=extra_sections,
         )
         return {"codex_task_prompt": {"text": text}}

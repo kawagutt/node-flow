@@ -1,4 +1,4 @@
-"""P7 dev-process CLI wrapper tests."""
+"""Dev-process CLI tests."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from click.testing import CliRunner
 from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.workflows.dev_process.checkpoint import load_flow_checkpoint
 from nodeflow.workflows.dev_process.cli import main
-from nodeflow.workflows.dev_process.constants import STATE_AWAITING_SPEC, STATE_MERGED
+from nodeflow.workflows.dev_process.constants import STATE_AWAITING_SPEC_HUMAN_GATE, STATE_MERGED
 from nodeflow.workflows.dev_process.discovery import find_latest_checkpoint, resolve_checkpoint_path
 from nodeflow.workflows.dev_process.hermetic_argv import spec_argv
 from tests.workflows.dev_process.git_fixtures import git_repo_with_commit
@@ -85,7 +85,7 @@ def test_status_shows_state_and_paths(tmp_path: Path, cli_runner: CliRunner) -> 
     assert start.exit_code == 0, start.output
     status = cli_runner.invoke(main, ["--repo-root", str(repo), "status"])
     assert status.exit_code == 0, status.output
-    assert f"state: {STATE_AWAITING_SPEC}" in status.output
+    assert f"state: {STATE_AWAITING_SPEC_HUMAN_GATE}" in status.output
     assert "artifact_root:" in status.output
     assert "timeline:" in status.output
     assert "flow_checkpoint_path:" in status.output
