@@ -313,6 +313,8 @@ def _preflight_worker_auth(
     """
     import shutil
 
+    import click as _click
+
     if len(argv) < 2:
         return
     codex_bin = argv[0]
@@ -321,6 +323,7 @@ def _preflight_worker_auth(
     if not is_codex and not is_npx:
         return
 
+    _click.echo(">> Codex auth preflight...", err=True)
     resolved_env = _build_merged_env(env)
     check_path = resolved_env.get("PATH", "") if resolved_env else os.environ.get("PATH", "")
     if not shutil.which(codex_bin, path=check_path if resolved_env else None):
@@ -342,9 +345,7 @@ def _preflight_worker_auth(
             env=resolved_env,
         )
     except subprocess.TimeoutExpired:
-        raise NodeExecutionFailure(
-            "codex worker preflight timed out (60 s). Check network / auth."
-        )
+        raise NodeExecutionFailure("codex worker preflight timed out (60 s). Check network / auth.")
     if proc.returncode != 0:
         stderr_tail = (proc.stderr or "").strip()[-500:]
         raise NodeExecutionFailure(

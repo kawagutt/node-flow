@@ -5,15 +5,19 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import click
 import pytest
 
 from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.workflows.dev_process.stage_inputs import (
+    REVISION_QUESTIONS,
+    REWORK_QUESTIONS,
     SPEC_INPUT_QUESTIONS,
     InputQuestion,
     collect_revision_inputs,
     collect_spec_inputs,
     collect_stage_inputs,
+    default_prompt_fn,
     write_stage_input_artifact,
 )
 
@@ -110,3 +114,106 @@ def test_collect_revision_inputs(tmp_path: Path) -> None:
     assert inputs["revision_comment"] == "narrow scope"
     assert input_path.name == "input.json"
     assert "revision" in str(input_path)
+
+
+# --- multiline / click.edit tests ---
+
+
+def test_default_prompt_fn_uses_editor_for_multiline(monkeypatch: pytest.MonkeyPatch) -> None:
+    question = InputQuestion(
+        key="notes",
+        label="Notes",
+        required=False,
+        multiline=True,
+    )
+    called: dict = {}
+
+    def fake_edit(text: str = "", require_save: bool = True) -> str:
+        called["text"] = text
+        called["require_save"] = require_save
+        return "line1\nline2\n"
+
+    monkeypatch.setattr(click, "edit", fake_edit)
+    result = default_prompt_fn(question, default="initial")
+    assert result == "line1\nline2"
+    assert called["text"] == "initial"
+    assert called["require_save"] is True
+
+
+def test_default_prompt_fn_multiline_returns_default_when_editor_cancelled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    question = InputQuestion(
+        key="notes",
+        label="Notes",
+        required=False,
+        multiline=True,
+    )
+    monkeypatch.setattr(click, "edit", lambda **kwargs: None)
+    assert default_prompt_fn(question, default="existing") == "existing"
+
+
+def test_default_prompt_fn_multiline_returns_empty_when_cancelled_without_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    question = InputQuestion(
+        key="notes",
+        label="Notes",
+        required=False,
+        multiline=True,
+    )
+    monkeypatch.setattr(click, "edit", lambda **kwargs: None)
+    assert default_prompt_fn(question) == ""
+
+
+def test_expected_questions_are_multiline() -> None:
+    spec_questions = {q.key: q for q in SPEC_INPUT_QUESTIONS}
+    assert spec_questions["notes"].multiline is False
+    assert spec_questions["task_prompt"].multiline is False
+
+    revision_questions = {q.key: q for q in REVISION_QUESTIONS}
+    assert revision_questions["revision_comment"].multiline is True
+
+    rework_questions = {q.key: q for q in REWORK_QUESTIONS}
+    assert rework_questions["rework_comment"].multiline is True
+
+
+def test_required_multiline_cancelled_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Editor cancel on a required multiline field → collect_stage_inputs raises."""
+    monkeypatch.setattr(click, "edit", lambda **kwargs: None)
+    monkeypatch.setattr(click, "echo", lambda *a, **kw: None)
+
+    questions = [
+        InputQuestion("comment", "Comment", required=True, multiline=True),
+    ]
+    with pytest.raises(NodeExecutionFailure, match="requires 'comment'"):
+        collect_stage_inputs(
+            stage="test",
+            questions=questions,
+            provided={},
+            interactive=True,
+        )
+
+
+def test_status_writes_to_stderr(capsys: pytest.CaptureFixture[str]) -> None:
+    from nodeflow.workflows.dev_process.flow_actions import _status
+
+    _status("Writing spec...")
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert ">> Writing spec..." in captured.err
+
+
+def test_default_prompt_fn_multiline_prints_editor_guide(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    question = InputQuestion("notes", "Notes", required=False, multiline=True)
+    monkeypatch.setattr(click, "edit", lambda **kwargs: "ok")
+
+    default_prompt_fn(question)
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Notes (opening" in captured.err
+    assert "save and close to submit" in captured.err

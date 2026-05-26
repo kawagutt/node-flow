@@ -538,7 +538,9 @@ class TestPerNodeCodexHome:
         assert (ch / "config.toml").exists()
         assert (ch / "auth.json").read_text() == '{"token":"t"}'
 
-    def test_auth_missing_is_not_fatal(self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch") -> None:
+    def test_auth_missing_is_not_fatal(
+        self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
         """No error when default CODEX_HOME has no auth files."""
         from nodeflow.workflows.dev_process.node_runner import _write_node_codex_home
 

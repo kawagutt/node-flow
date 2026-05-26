@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import shlex
+import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -59,12 +62,29 @@ class InputQuestion:
     label: str
     required: bool
     kind: InputKind = "text"
+    multiline: bool = False
 
 
 PromptFn = Callable[[InputQuestion, Optional[str]], str]
 
 
 def default_prompt_fn(question: InputQuestion, default: Optional[str] = None) -> str:
+    if question.multiline:
+        editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vi"
+        try:
+            editor_cmd = shlex.split(editor)[0] if editor.strip() else "vi"
+        except ValueError:
+            editor_cmd = editor.strip().split()[0] if editor.strip() else "vi"
+        editor_name = Path(shutil.which(editor_cmd) or editor_cmd).name
+        click.echo(
+            f"{question.label} (opening {editor_name}"
+            f" — save and close to submit, quit without saving to cancel)",
+            err=True,
+        )
+        result = click.edit(text=default or "", require_save=True)
+        if result is not None:
+            return result.strip()
+        return default or ""
     if question.kind == "path_list":
         raw = click.prompt(question.label, default=default or "", show_default=bool(default))
         return raw
@@ -262,7 +282,9 @@ SPEC_INPUT_QUESTIONS = [
 ]
 
 REVISION_QUESTIONS = [
-    InputQuestion("revision_comment", "Revision comment", required=True, kind="text"),
+    InputQuestion(
+        "revision_comment", "Revision comment", required=True, kind="text", multiline=True
+    ),
     InputQuestion(
         "reference_paths",
         "Additional reference paths (optional, comma-separated)",
@@ -277,6 +299,7 @@ REWORK_QUESTIONS = [
         "Implementation feedback",
         required=True,
         kind="text",
+        multiline=True,
     ),
 ]
 

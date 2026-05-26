@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import click as _click
+
 from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.workflows.dev_process import timeline
 from nodeflow.workflows.dev_process.checkpoint import load_flow_checkpoint, write_flow_checkpoint
@@ -98,6 +100,11 @@ from nodeflow.workflows.dev_process.stages import (
 from nodeflow.workflows.dev_process.stale import clear_stage_stale, mark_stale
 from nodeflow.workflows.dev_process.state_machine import assert_action_allowed
 from nodeflow.workflows.dev_process.synthesis import assign_owners_to_findings, route_owner_to_state
+
+
+def _status(msg: str) -> None:
+    """Print a progress message to stderr so the user knows what is happening."""
+    _click.echo(f">> {msg}", err=True)
 
 
 def _write_constraints_audit(body: Dict[str, Any]) -> str | None:
@@ -449,6 +456,7 @@ def _handle_start(
         "task_prompt": task_prompt,
         "source_workspace_check": swc,
     }
+    _status(f"Flow started (run_id: {rid})")
     timeline.append_event(
         artifact_root, rid, "flow_started", state=STATE_INITIALIZED, action=ACTION_START
     )
@@ -517,6 +525,7 @@ def _run_spec_cycle(
                 sp_input_path
             )
 
+    _status("Writing spec...")
     timeline.append_event(run_context["artifact_root"], run_id, "writing_spec", stage="spec")
     try:
         sp = run_spec_stage(
@@ -538,6 +547,7 @@ def _run_spec_cycle(
     clear_stage_stale(body, "spec")
 
     spec_text = _read_spec_text(run_context["artifact_root"])
+    _status("Reviewing spec...")
     timeline.append_event(
         run_context["artifact_root"], run_id, "reviewing_spec", stage="spec_review"
     )
@@ -597,6 +607,7 @@ def _run_plan_cycle(
             revision_context = _revision_context_from_plan_review(body)
         previous_plan = _read_plan_text(run_context["artifact_root"])
 
+    _status("Writing plan...")
     timeline.append_event(run_context["artifact_root"], run_id, "writing_plan", stage="plan")
     try:
         pl = run_plan_stage(
@@ -617,6 +628,7 @@ def _run_plan_cycle(
     mark_stale(body, upstream="plan")
 
     plan_text = _read_plan_text(run_context["artifact_root"])
+    _status("Reviewing plan...")
     timeline.append_event(
         run_context["artifact_root"], run_id, "reviewing_plan", stage="plan_review"
     )
@@ -684,6 +696,7 @@ def _handle_revise_spec(
         or revision_provided.get("reference_paths")
         or interactive
     ):
+        _status("Collecting revision inputs...")
         rev_inputs, materials, rev_input_path, rev_ref_path = collect_revision_inputs(
             artifact_root=run_context["artifact_root"],
             repo_root=repo,
@@ -723,6 +736,7 @@ def _handle_revise_plan(
     comment = str(revision_provided.get("revision_comment") or "")
     materials: list[dict[str, Any]] | None = None
     if comment.strip() or revision_provided.get("reference_paths") or interactive:
+        _status("Collecting plan revision inputs...")
         rev_inputs, materials, rev_input_path, rev_ref_path = collect_revision_inputs(
             artifact_root=run_context["artifact_root"],
             repo_root=repo,
@@ -770,6 +784,7 @@ def _handle_continue_implementation(
     task_prompt = str(body.get("task_prompt") or "")
 
     if not skip_implementation:
+        _status("Implementing...")
         timeline.append_event(
             run_context["artifact_root"], run_id, "implementing", stage="implementation"
         )
@@ -797,6 +812,7 @@ def _handle_continue_implementation(
 
     impl = body.get("stages", {}).get("implementation") or {} if skip_implementation else impl
 
+    _status("Writing tests...")
     timeline.append_event(
         run_context["artifact_root"], run_id, "writing_tests", stage="test_implementation"
     )
@@ -818,6 +834,7 @@ def _handle_continue_implementation(
     clear_stage_stale(body, "test_implementation")
     mark_stale(body, upstream="test_implementation")
 
+    _status("Running tests...")
     timeline.append_event(run_context["artifact_root"], run_id, "running_tests", stage="run_tests")
     try:
         run_tests_st = run_run_tests_stage(
@@ -843,6 +860,7 @@ def _handle_continue_implementation(
         + list(test_impl.get("evidence_paths") or []),
     }
 
+    _status("Reviewing changes...")
     timeline.append_event(run_context["artifact_root"], run_id, "reviewing_changes", stage="review")
     preset = str((body.get("dev_process") or {}).get("review_depth_preset") or "standard")
     try:
@@ -937,6 +955,7 @@ def _handle_rework(
         )
     run_context = body["run_context"]
     review_st = body.get("stages", {}).get("review")
+    _status("Collecting rework inputs...")
     rw_inputs, rw_input_path = collect_rework_inputs(
         artifact_root=run_context["artifact_root"],
         provided=rework_provided,
