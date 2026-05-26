@@ -125,3 +125,43 @@ def test_approve_final_then_merge(tmp_path: Path) -> None:
         {},
     )
     assert final["flow_output"]["flow_result"]["state"] == STATE_AWAITING_MERGE
+
+
+def test_auto_continue_stops_at_merge_gate(tmp_path: Path) -> None:
+    """auto_continue=True must NOT auto-merge; merge requires explicit command."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git_repo_with_commit(repo)
+    flow = full_through_review(repo)
+    cp = flow["flow_result"]["flow_checkpoint_path"]
+    final = DevProcessFlowNode().execute(
+        {
+            "action": ACTION_APPROVE_FINAL,
+            "repo_root": str(repo),
+            "flow_checkpoint_path": cp,
+        },
+        {"auto_continue": True, "prompt_at_gates": False},
+    )
+    fr = final["flow_output"]["flow_result"]
+    assert fr["state"] == STATE_AWAITING_MERGE
+    assert fr["state"] != "merged"
+
+
+def test_prompt_at_gates_stops_at_merge_gate(tmp_path: Path) -> None:
+    """prompt_at_gates=True must still stop at merge gate (no auto-merge)."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git_repo_with_commit(repo)
+    flow = full_through_review(repo)
+    cp = flow["flow_result"]["flow_checkpoint_path"]
+    final = DevProcessFlowNode().execute(
+        {
+            "action": ACTION_APPROVE_FINAL,
+            "repo_root": str(repo),
+            "flow_checkpoint_path": cp,
+        },
+        {"auto_continue": True, "prompt_at_gates": True},
+    )
+    fr = final["flow_output"]["flow_result"]
+    assert fr["state"] == STATE_AWAITING_MERGE
+    assert fr["state"] != "merged"

@@ -199,7 +199,7 @@ def main(
     ctx.obj["as_json"] = as_json
     ctx.obj["interactive"] = not non_interactive
     ctx.obj["auto_continue"] = not no_auto_continue
-    ctx.obj["prompt_at_gates"] = (not non_interactive) and (not no_gate_prompt)
+    ctx.obj["prompt_at_gates"] = (not as_json) and (not non_interactive) and (not no_gate_prompt)
 
 
 @main.command("start")

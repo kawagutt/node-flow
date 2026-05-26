@@ -438,6 +438,38 @@ def test_find_latest_skips_repo_mismatch_checkpoint(tmp_path: Path, cli_runner: 
     assert latest_doc["task_prompt"] == "valid run"
 
 
+def test_no_auto_continue_stops_at_awaiting_implementation(
+    tmp_path: Path, cli_runner: CliRunner
+) -> None:
+    """--no-auto-continue makes approve-spec stop at awaiting_implementation."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git_repo_with_commit(repo)
+    common = ["--repo-root", str(repo), "--no-gate-prompt"]
+
+    start = cli_runner.invoke(
+        main,
+        common
+        + [
+            "start",
+            "--task-prompt",
+            "no-auto test",
+            "--workspace-strategy",
+            "current_repo",
+            "--merge-policy",
+            "record_only",
+        ],
+    )
+    assert start.exit_code == 0, start.output
+
+    appr = cli_runner.invoke(
+        main,
+        ["--repo-root", str(repo), "--no-gate-prompt", "--no-auto-continue", "approve-spec"],
+    )
+    assert appr.exit_code == 0, appr.output
+    assert "awaiting_implementation" in appr.output
+
+
 def test_explicit_checkpoint_self_reference_mismatch_fails(
     tmp_path: Path, cli_runner: CliRunner
 ) -> None:
