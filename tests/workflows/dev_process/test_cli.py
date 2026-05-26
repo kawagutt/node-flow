@@ -36,6 +36,7 @@ def test_discovery_latest_checkpoint(tmp_path: Path) -> None:
         [
             "--repo-root",
             str(repo),
+            "--no-gate-prompt",
             "start",
             "--task-prompt",
             "run one",
@@ -51,6 +52,7 @@ def test_discovery_latest_checkpoint(tmp_path: Path) -> None:
         [
             "--repo-root",
             str(repo),
+            "--no-gate-prompt",
             "start",
             "--task-prompt",
             "run two",
@@ -75,6 +77,7 @@ def test_status_shows_state_and_paths(tmp_path: Path, cli_runner: CliRunner) -> 
         [
             "--repo-root",
             str(repo),
+            "--no-gate-prompt",
             "start",
             "--task-prompt",
             "status test",
@@ -83,7 +86,7 @@ def test_status_shows_state_and_paths(tmp_path: Path, cli_runner: CliRunner) -> 
         ],
     )
     assert start.exit_code == 0, start.output
-    status = cli_runner.invoke(main, ["--repo-root", str(repo), "status"])
+    status = cli_runner.invoke(main, ["--repo-root", str(repo), "--no-gate-prompt", "status"])
     assert status.exit_code == 0, status.output
     assert f"state: {STATE_AWAITING_SPEC_HUMAN_GATE}" in status.output
     assert "artifact_root:" in status.output
@@ -97,7 +100,7 @@ def test_wrapper_hermetic_full_path_to_merged(tmp_path: Path, cli_runner: CliRun
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repo_with_commit(repo)
-    common = ["--repo-root", str(repo)]
+    common = ["--repo-root", str(repo), "--no-gate-prompt"]
 
     start = cli_runner.invoke(
         main,
@@ -117,11 +120,7 @@ def test_wrapper_hermetic_full_path_to_merged(tmp_path: Path, cli_runner: CliRun
 
     appr = cli_runner.invoke(main, common + ["approve-spec"])
     assert appr.exit_code == 0, appr.output
-    assert "awaiting_implementation" in appr.output
-
-    cont = cli_runner.invoke(main, common + ["continue-implementation"])
-    assert cont.exit_code == 0, cont.output
-    assert "awaiting_final_approval" in cont.output
+    assert "awaiting_final_approval" in appr.output
 
     final = cli_runner.invoke(main, common + ["approve-final"])
     assert final.exit_code == 0, final.output
@@ -143,7 +142,7 @@ def test_resume_uses_latest_checkpoint_without_manual_cp(
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repo_with_commit(repo)
-    common = ["--repo-root", str(repo)]
+    common = ["--repo-root", str(repo), "--no-gate-prompt"]
     cli_runner.invoke(
         main,
         common
@@ -165,7 +164,7 @@ def test_explicit_checkpoint_flag(tmp_path: Path, cli_runner: CliRunner) -> None
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repo_with_commit(repo)
-    common = ["--repo-root", str(repo)]
+    common = ["--repo-root", str(repo), "--no-gate-prompt"]
     cli_runner.invoke(
         main,
         common
@@ -187,7 +186,7 @@ def test_run_id_scopes_latest_checkpoint(tmp_path: Path, cli_runner: CliRunner) 
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repo_with_commit(repo)
-    common = ["--repo-root", str(repo)]
+    common = ["--repo-root", str(repo), "--no-gate-prompt"]
     r1 = cli_runner.invoke(
         main,
         common
@@ -226,7 +225,7 @@ def test_disallowed_action_fails_before_run_flow(tmp_path: Path, cli_runner: Cli
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repo_with_commit(repo)
-    common = ["--repo-root", str(repo)]
+    common = ["--repo-root", str(repo), "--no-gate-prompt"]
     cli_runner.invoke(
         main,
         common
@@ -252,6 +251,7 @@ def test_exec_argv_json_array_on_start(tmp_path: Path, cli_runner: CliRunner) ->
         [
             "--repo-root",
             str(repo),
+            "--no-gate-prompt",
             "start",
             "--task-prompt",
             "argv cli",
@@ -273,7 +273,7 @@ def test_no_checkpoint_status_fails(tmp_path: Path, cli_runner: CliRunner) -> No
     git_repo_with_commit(repo)
     with pytest.raises(NodeExecutionFailure, match="no dev-process checkpoint"):
         find_latest_checkpoint(repo)
-    status = cli_runner.invoke(main, ["--repo-root", str(repo), "status"])
+    status = cli_runner.invoke(main, ["--repo-root", str(repo), "--no-gate-prompt", "status"])
     assert status.exit_code != 0
     assert "no dev-process checkpoint" in status.output.lower() or "Error:" in status.output
 
@@ -282,7 +282,7 @@ def test_explicit_checkpoint_wrong_run_id_fails(tmp_path: Path, cli_runner: CliR
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repo_with_commit(repo)
-    common = ["--repo-root", str(repo)]
+    common = ["--repo-root", str(repo), "--no-gate-prompt"]
     cli_runner.invoke(
         main,
         common
@@ -315,6 +315,7 @@ def test_explicit_checkpoint_other_repo_fails(tmp_path: Path, cli_runner: CliRun
         [
             "--repo-root",
             str(repo_a),
+            "--no-gate-prompt",
             "start",
             "--task-prompt",
             "repo a",
@@ -325,7 +326,7 @@ def test_explicit_checkpoint_other_repo_fails(tmp_path: Path, cli_runner: CliRun
     cp_a = resolve_checkpoint_path(repo_a, checkpoint=None, run_id=None)
     result = cli_runner.invoke(
         main,
-        ["--repo-root", str(repo_b), "status", "--checkpoint", cp_a],
+        ["--repo-root", str(repo_b), "--no-gate-prompt", "status", "--checkpoint", cp_a],
     )
     assert result.exit_code != 0
     assert "repo_root does not match" in result.output.lower() or "Error:" in result.output
@@ -337,7 +338,7 @@ def test_run_id_substring_does_not_match_unrelated_run(
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repo_with_commit(repo)
-    common = ["--repo-root", str(repo)]
+    common = ["--repo-root", str(repo), "--no-gate-prompt"]
     cli_runner.invoke(
         main,
         common
@@ -362,6 +363,7 @@ def test_exec_argv_non_string_elements_fail(tmp_path: Path, cli_runner: CliRunne
         [
             "--repo-root",
             str(repo),
+            "--no-gate-prompt",
             "start",
             "--task-prompt",
             "bad argv",
@@ -384,6 +386,7 @@ def test_explicit_checkpoint_outside_runs_dir_fails(tmp_path: Path, cli_runner: 
         [
             "--repo-root",
             str(repo),
+            "--no-gate-prompt",
             "start",
             "--task-prompt",
             "outside runs",
@@ -396,7 +399,7 @@ def test_explicit_checkpoint_outside_runs_dir_fails(tmp_path: Path, cli_runner: 
     outside.write_text(Path(cp).read_text(encoding="utf-8"), encoding="utf-8")
     result = cli_runner.invoke(
         main,
-        ["--repo-root", str(repo), "status", "--checkpoint", str(outside)],
+        ["--repo-root", str(repo), "--no-gate-prompt", "status", "--checkpoint", str(outside)],
     )
     assert result.exit_code != 0
     assert "must be under" in result.output.lower() or "Error:" in result.output
@@ -411,6 +414,7 @@ def test_find_latest_skips_repo_mismatch_checkpoint(tmp_path: Path, cli_runner: 
         [
             "--repo-root",
             str(repo),
+            "--no-gate-prompt",
             "start",
             "--task-prompt",
             "valid run",
@@ -446,6 +450,7 @@ def test_explicit_checkpoint_self_reference_mismatch_fails(
         [
             "--repo-root",
             str(repo),
+            "--no-gate-prompt",
             "start",
             "--task-prompt",
             "selfref wrapper",

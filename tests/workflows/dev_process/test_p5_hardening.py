@@ -218,7 +218,7 @@ def test_rework_blocking_review_resets_human_gates_final(tmp_path: Path) -> None
             "repo_root": str(ctx["repo"]),
             "flow_checkpoint_path": cp2,
         },
-        {"force_review_blocking": True},
+        {"force_review_blocking": True, "auto_continue": False},
     )["flow_output"]
     assert rework["flow_result"]["merge_ready"] is False
     from nodeflow.workflows.dev_process.checkpoint import load_flow_checkpoint
@@ -383,7 +383,7 @@ def test_resume_workspace_strategy_params_fallback_matches_checkpoint(tmp_path: 
             "repo_root": str(repo),
             "flow_checkpoint_path": cp,
         },
-        {"workspace_strategy": "git_worktree"},
+        {"workspace_strategy": "git_worktree", "auto_continue": False},
     )["flow_output"]
     assert approved["flow_result"]["state"] == STATE_AWAITING_IMPLEMENTATION
 

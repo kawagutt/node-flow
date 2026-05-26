@@ -108,6 +108,8 @@ class DevProcessFlowNode(PythonActionNode):
             merge_policy = _optional_config_scalar(inputs, params, "merge_policy")
 
         _inline_policy = params.get("_exec_policy_overrides")
+        auto_continue = parse_bool_param(params.get("auto_continue", True), default=True)
+        prompt_at_gates = parse_bool_param(params.get("prompt_at_gates", False), default=False)
         try:
             result = run_flow(
                 action=action,
@@ -125,6 +127,8 @@ class DevProcessFlowNode(PythonActionNode):
                 workspace_strategy=workspace_strategy,
                 exec_worker_kind=exec_worker_kind,
                 merge_policy=merge_policy,
+                auto_continue=auto_continue,
+                prompt_at_gates=prompt_at_gates,
             )
         except NodeExecutionFailure:
             raise

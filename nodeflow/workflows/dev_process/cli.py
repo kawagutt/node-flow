@@ -126,6 +126,8 @@ def _run_resume_action(
     run_id: Optional[str],
     as_json: bool,
     interactive: bool,
+    auto_continue: bool = True,
+    prompt_at_gates: bool = False,
     human_comment_text: str = "",
     revision_comment: str = "",
     **run_flow_kwargs: Any,
@@ -146,6 +148,8 @@ def _run_resume_action(
             human_comment_text=human_comment_text,
             revision_provided=revision_provided,
             interactive=interactive,
+            auto_continue=auto_continue,
+            prompt_at_gates=prompt_at_gates,
             **run_flow_kwargs,
         )
     except NodeExecutionFailure as e:
@@ -167,8 +171,25 @@ def _run_resume_action(
     is_flag=True,
     help="Do not prompt for stage inputs; fail when required input is missing.",
 )
+@click.option(
+    "--no-auto-continue",
+    is_flag=True,
+    help="Stop after each step instead of auto-continuing to the next non-human-gate state.",
+)
+@click.option(
+    "--no-gate-prompt",
+    is_flag=True,
+    help="Stop at human gates instead of prompting interactively.",
+)
 @click.pass_context
-def main(ctx: click.Context, repo_root: str, as_json: bool, non_interactive: bool) -> None:
+def main(
+    ctx: click.Context,
+    repo_root: str,
+    as_json: bool,
+    non_interactive: bool,
+    no_auto_continue: bool,
+    no_gate_prompt: bool,
+) -> None:
     """Thin wrapper around dev_process.flow — discovers checkpoints, calls run_flow."""
     ctx.ensure_object(dict)
     try:
@@ -177,6 +198,8 @@ def main(ctx: click.Context, repo_root: str, as_json: bool, non_interactive: boo
         raise click.ClickException(str(e)) from e
     ctx.obj["as_json"] = as_json
     ctx.obj["interactive"] = not non_interactive
+    ctx.obj["auto_continue"] = not no_auto_continue
+    ctx.obj["prompt_at_gates"] = (not non_interactive) and (not no_gate_prompt)
 
 
 @main.command("start")
@@ -242,6 +265,8 @@ def cmd_start(
             exec_policy_path=exec_policy_path,
             interactive=ctx.obj["interactive"],
             spec_inputs_provided=spec_inputs_provided,
+            auto_continue=ctx.obj["auto_continue"],
+            prompt_at_gates=ctx.obj["prompt_at_gates"],
         )
     except NodeExecutionFailure as e:
         raise click.ClickException(str(e)) from e
@@ -288,7 +313,7 @@ def cmd_status(ctx: click.Context, checkpoint: Optional[str], run_id: Optional[s
 @click.option("--run-id", default=None)
 @click.pass_context
 def cmd_approve_spec(ctx: click.Context, checkpoint: Optional[str], run_id: Optional[str]) -> None:
-    """Approve spec and run plan cycle (stops at awaiting_implementation)."""
+    """Approve spec → plan → implementation → review (auto-continues to final approval gate)."""
     _run_resume_action(
         repo_root=ctx.obj["repo_root"],
         action=ACTION_APPROVE_SPEC,
@@ -296,6 +321,8 @@ def cmd_approve_spec(ctx: click.Context, checkpoint: Optional[str], run_id: Opti
         run_id=run_id,
         as_json=ctx.obj["as_json"],
         interactive=ctx.obj["interactive"],
+        auto_continue=ctx.obj["auto_continue"],
+        prompt_at_gates=ctx.obj["prompt_at_gates"],
     )
 
 
@@ -316,6 +343,8 @@ def cmd_continue_implementation(
         run_id=run_id,
         as_json=ctx.obj["as_json"],
         interactive=ctx.obj["interactive"],
+        auto_continue=ctx.obj["auto_continue"],
+        prompt_at_gates=ctx.obj["prompt_at_gates"],
     )
 
 
@@ -332,6 +361,8 @@ def cmd_rework(ctx: click.Context, checkpoint: Optional[str], run_id: Optional[s
         run_id=run_id,
         as_json=ctx.obj["as_json"],
         interactive=ctx.obj["interactive"],
+        auto_continue=ctx.obj["auto_continue"],
+        prompt_at_gates=ctx.obj["prompt_at_gates"],
     )
 
 
@@ -358,6 +389,8 @@ def cmd_request_spec_revision(
         run_id=run_id,
         as_json=ctx.obj["as_json"],
         interactive=ctx.obj["interactive"],
+        auto_continue=ctx.obj["auto_continue"],
+        prompt_at_gates=ctx.obj["prompt_at_gates"],
         human_comment_text=comment,
         revision_comment=comment,
     )
@@ -386,6 +419,8 @@ def cmd_revise_plan(
         run_id=run_id,
         as_json=ctx.obj["as_json"],
         interactive=ctx.obj["interactive"],
+        auto_continue=ctx.obj["auto_continue"],
+        prompt_at_gates=ctx.obj["prompt_at_gates"],
         revision_comment=comment,
     )
 
@@ -413,6 +448,8 @@ def cmd_revise_spec(
         run_id=run_id,
         as_json=ctx.obj["as_json"],
         interactive=ctx.obj["interactive"],
+        auto_continue=ctx.obj["auto_continue"],
+        prompt_at_gates=ctx.obj["prompt_at_gates"],
         revision_comment=comment,
     )
 
@@ -430,6 +467,8 @@ def cmd_approve_final(ctx: click.Context, checkpoint: Optional[str], run_id: Opt
         run_id=run_id,
         as_json=ctx.obj["as_json"],
         interactive=ctx.obj["interactive"],
+        auto_continue=ctx.obj["auto_continue"],
+        prompt_at_gates=ctx.obj["prompt_at_gates"],
     )
 
 
@@ -446,6 +485,8 @@ def cmd_merge(ctx: click.Context, checkpoint: Optional[str], run_id: Optional[st
         run_id=run_id,
         as_json=ctx.obj["as_json"],
         interactive=ctx.obj["interactive"],
+        auto_continue=ctx.obj["auto_continue"],
+        prompt_at_gates=ctx.obj["prompt_at_gates"],
     )
 
 

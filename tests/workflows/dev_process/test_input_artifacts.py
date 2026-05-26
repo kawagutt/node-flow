@@ -72,6 +72,7 @@ def test_start_interactive_collects_task_prompt(tmp_path: Path, monkeypatch) -> 
         [
             "--repo-root",
             str(repo),
+            "--no-gate-prompt",
             "start",
             "--workspace-strategy",
             "current_repo",

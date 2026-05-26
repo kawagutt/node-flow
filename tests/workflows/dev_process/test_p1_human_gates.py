@@ -92,7 +92,7 @@ def test_blocking_review_next_action_prefers_rework(tmp_path: Path) -> None:
     cp = start["flow_result"]["flow_checkpoint_path"]
     appr = DevProcessFlowNode().execute(
         {"action": "approve_spec", "repo_root": str(repo), "flow_checkpoint_path": cp},
-        {},
+        {"auto_continue": False},
     )
     cp2 = appr["flow_output"]["flow_result"]["flow_checkpoint_path"]
     cont = continue_to_review(repo, cp2, force_blocking=True)

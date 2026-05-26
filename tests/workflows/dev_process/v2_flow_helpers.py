@@ -31,7 +31,10 @@ from nodeflow.workflows.dev_process.hermetic_argv import (
 
 
 def run_action(repo: Path, payload: dict[str, Any], params: dict | None = None) -> dict[str, Any]:
-    out = DevProcessFlowNode().execute(payload, params or {})
+    p = dict(params or {})
+    p.setdefault("auto_continue", False)
+    p.setdefault("prompt_at_gates", False)
+    out = DevProcessFlowNode().execute(payload, p)
     return out["flow_output"]
 
 

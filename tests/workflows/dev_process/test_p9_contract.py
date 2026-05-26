@@ -295,6 +295,7 @@ def test_plan_review_fail_then_revise_plan(tmp_path: Path, monkeypatch: pytest.M
         flow_checkpoint_path=cp2,
         revision_provided={"revision_comment": "fix plan gaps"},
         interactive=False,
+        auto_continue=False,
     )
     assert plan_review_calls == 2
     assert revised["flow_result"]["state"] == STATE_AWAITING_IMPLEMENTATION
@@ -479,6 +480,7 @@ def test_revise_plan_without_comment_succeeds(
         repo_root=str(repo),
         flow_checkpoint_path=after_approve["flow_result"]["flow_checkpoint_path"],
         interactive=False,
+        auto_continue=False,
     )
     assert revised["flow_result"]["state"] == STATE_AWAITING_IMPLEMENTATION
     assert captured.get("previous_plan") == before_plan

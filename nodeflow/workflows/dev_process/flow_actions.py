@@ -31,8 +31,10 @@ from nodeflow.workflows.dev_process.constants import (
     STATE_AWAITING_REWORK_DECISION,
     STATE_AWAITING_SPEC_HUMAN_GATE,
     STATE_AWAITING_SPEC_REVISION,
+    STATE_AWAITING_MERGE,
     STATE_FAILED,
     STATE_INITIALIZED,
+    TERMINAL_STATES,
     WORKSPACE_STRATEGY_CURRENT_REPO,
 )
 from nodeflow.workflows.dev_process.constraints import (
@@ -105,6 +107,155 @@ from nodeflow.workflows.dev_process.synthesis import assign_owners_to_findings, 
 def _status(msg: str) -> None:
     """Print a progress message to stderr so the user knows what is happening."""
     _click.echo(f">> {msg}", err=True)
+
+
+_HUMAN_GATE_STATES = frozenset({
+    STATE_AWAITING_SPEC_HUMAN_GATE,
+    STATE_AWAITING_FINAL,
+    STATE_AWAITING_MERGE,
+})
+
+_MAX_AUTO_STEPS = 15
+
+GateAction = Optional[tuple[str, Dict[str, Any]]]
+GateHandler = Optional[Any]  # Callable[[str, Dict[str, Any]], GateAction]
+
+
+def _dispatch_auto_action(
+    body: Dict[str, Any],
+    *,
+    action: str,
+    run_id: str,
+    extra: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Dispatch a single action during auto-continue."""
+    if action == ACTION_CONTINUE_IMPLEMENTATION:
+        return _handle_continue_implementation(body, run_id=run_id, force_review_blocking=False)
+    if action == ACTION_REVISE_PLAN:
+        return _handle_revise_plan(
+            body, run_id=run_id, interactive=False,
+            revision_provided=extra.get("revision_provided", {}),
+        )
+    if action in (ACTION_REVISE_SPEC, ACTION_REQUEST_SPEC_REVISION):
+        return _handle_revise_spec(
+            body, run_id=run_id, interactive=False,
+            revision_provided=extra.get("revision_provided", {}),
+            use_human_comment=action == ACTION_REQUEST_SPEC_REVISION,
+        )
+    if action == ACTION_REWORK:
+        return _handle_rework(
+            body, run_id=run_id, force_review_blocking=False, interactive=False,
+            rework_provided=extra.get(
+                "rework_provided", {"rework_comment": "auto-rework based on review findings"}
+            ),
+        )
+    if action == ACTION_APPROVE_SPEC:
+        return _handle_approve_spec(body, run_id=run_id)
+    if action == ACTION_APPROVE_FINAL:
+        return _handle_approve_final(body, run_id=run_id)
+    if action == ACTION_MERGE:
+        return _handle_merge(body, run_id=run_id)
+    if action in (ACTION_REJECT_SPEC, ACTION_REJECT_FINAL):
+        return _handle_reject(
+            body, run_id=run_id, action=action,
+            human_comment_text=extra.get("human_comment_text", ""),
+        )
+    return None
+
+
+def _interactive_gate_handler(state: str, result: Dict[str, Any]) -> GateAction:
+    """Prompt user at human gates. Returns ``(action, extra_kwargs)`` or *None* to stop."""
+    rc = result.get("run_context") or {}
+    artifact_root = rc.get("artifact_root", "")
+
+    if state == STATE_AWAITING_SPEC_HUMAN_GATE:
+        if artifact_root:
+            _status(f"Spec: {Path(artifact_root) / 'spec' / 'spec.md'}")
+        response = _click.prompt(
+            ">> Approve spec? (Enter=approve, type comment to revise)",
+            default="", show_default=False,
+        ).strip()
+        if not response:
+            return (ACTION_APPROVE_SPEC, {})
+        return (ACTION_REQUEST_SPEC_REVISION, {
+            "revision_provided": {"revision_comment": response},
+            "human_comment_text": response,
+        })
+
+    if state == STATE_AWAITING_FINAL:
+        if artifact_root:
+            _status(f"Artifacts: {artifact_root}")
+        response = _click.prompt(
+            ">> Approve final? (Enter=approve, type comment to rework)",
+            default="", show_default=False,
+        ).strip()
+        if not response:
+            return (ACTION_APPROVE_FINAL, {})
+        return (ACTION_REWORK, {
+            "rework_provided": {"rework_comment": response},
+        })
+
+    if state == STATE_AWAITING_MERGE:
+        _status("Reached merge gate. Run `dev-process merge` explicitly to merge.")
+        return None
+
+    return None
+
+
+def _auto_continue(
+    result: Dict[str, Any],
+    *,
+    run_id: str,
+    gate_handler: GateHandler = None,
+) -> Dict[str, Any]:
+    """Drive the flow forward until a stop-state or terminal state is reached.
+
+    *gate_handler*: when provided, called at human-gate states to decide the
+    next action.  When *None* (default), human gates are stop-states.
+    """
+    for _step in range(_MAX_AUTO_STEPS):
+        fr = result.get("flow_result") or {}
+        state = str(fr.get("state") or "")
+
+        if state in TERMINAL_STATES:
+            break
+
+        extra: Dict[str, Any] = {}
+
+        if state in _HUMAN_GATE_STATES:
+            if gate_handler is None:
+                break
+            gate_result = gate_handler(state, result)
+            if gate_result is None:
+                break
+            next_action, extra = gate_result
+        else:
+            next_action = fr.get("next_action")
+            if not next_action:
+                break
+
+        cp = result.get("flow_checkpoint_path")
+        if not cp:
+            break
+
+        _status(f"Auto-continuing: {next_action}...")
+        body = load_flow_checkpoint(cp)
+        rid = str((body.get("run_context") or {}).get("run_id") or run_id)
+
+        assert_action_allowed(state, next_action)
+        timeline.append_event(
+            body["run_context"]["artifact_root"], rid,
+            "action_received", action=next_action, state=state,
+        )
+
+        dispatched = _dispatch_auto_action(body, action=next_action, run_id=rid, extra=extra)
+        if dispatched is None:
+            break
+        result = dispatched
+    else:
+        _status(f"Stopped after {_MAX_AUTO_STEPS} auto-continue steps; check status.")
+
+    return result
 
 
 def _write_constraints_audit(body: Dict[str, Any]) -> str | None:
@@ -204,6 +355,8 @@ def run_flow(
     spec_inputs_provided: Optional[Dict[str, Any]] = None,
     revision_provided: Optional[Dict[str, Any]] = None,
     rework_provided: Optional[Dict[str, Any]] = None,
+    auto_continue: bool = True,
+    prompt_at_gates: bool = False,
 ) -> Dict[str, Any]:
     if action == ACTION_START and flow_checkpoint_path:
         raise NodeExecutionFailure("start does not accept flow_checkpoint_path")
@@ -232,7 +385,7 @@ def run_flow(
             if not WORKER_DEFAULT_ARGV.get(worker):
                 argv = _prompt_exec_mode()
 
-        return _handle_start(
+        result = _handle_start(
             repo_root=repo_root,
             task_prompt=task_prompt,
             run_id=run_id,
@@ -248,6 +401,11 @@ def run_flow(
             interactive=interactive,
             spec_inputs_provided=provided,
         )
+        if auto_continue:
+            _rid = str((result.get("run_context") or {}).get("run_id") or run_id or "")
+            _gh = _interactive_gate_handler if prompt_at_gates else None
+            result = _auto_continue(result, run_id=_rid, gate_handler=_gh)
+        return result
 
     if not flow_checkpoint_path:
         raise NodeExecutionFailure(f"action {action!r} requires flow_checkpoint_path")
@@ -272,63 +430,68 @@ def run_flow(
     )
 
     if action == ACTION_APPROVE_SPEC:
-        return _handle_approve_spec(body, run_id=run_id)
-    if action in (ACTION_REVISE_SPEC, ACTION_REQUEST_SPEC_REVISION):
+        result = _handle_approve_spec(body, run_id=run_id)
+    elif action in (ACTION_REVISE_SPEC, ACTION_REQUEST_SPEC_REVISION):
         rev_provided = dict(revision_provided or {})
         if action == ACTION_REQUEST_SPEC_REVISION:
             if human_comment_text.strip() and not rev_provided.get("revision_comment"):
                 rev_provided["revision_comment"] = human_comment_text.strip()
         elif task_prompt.strip() and not rev_provided.get("revision_comment"):
             rev_provided["revision_comment"] = task_prompt.strip()
-        return _handle_revise_spec(
+        result = _handle_revise_spec(
             body,
             run_id=run_id,
             interactive=interactive,
             revision_provided=rev_provided,
             use_human_comment=action == ACTION_REQUEST_SPEC_REVISION,
         )
-    if action == ACTION_REVISE_PLAN:
+    elif action == ACTION_REVISE_PLAN:
         rev_provided = dict(revision_provided or {})
         if task_prompt.strip() and not rev_provided.get("revision_comment"):
             rev_provided["revision_comment"] = task_prompt.strip()
-        return _handle_revise_plan(
+        result = _handle_revise_plan(
             body,
             run_id=run_id,
             interactive=interactive,
             revision_provided=rev_provided,
         )
-    if action == ACTION_CONTINUE_IMPLEMENTATION:
-        return _handle_continue_implementation(
+    elif action == ACTION_CONTINUE_IMPLEMENTATION:
+        result = _handle_continue_implementation(
             body,
             run_id=run_id,
             force_review_blocking=force_review_blocking,
         )
-    if action == ACTION_REWORK:
+    elif action == ACTION_REWORK:
         rw_provided = dict(rework_provided or {})
         if human_comment_text.strip() and not rw_provided.get("rework_comment"):
             rw_provided["rework_comment"] = human_comment_text.strip()
         if not rw_provided.get("rework_comment") and not interactive:
             rw_provided.setdefault("rework_comment", "rework requested")
-        return _handle_rework(
+        result = _handle_rework(
             body,
             run_id=run_id,
             force_review_blocking=force_review_blocking,
             interactive=interactive,
             rework_provided=rw_provided,
         )
-    if action == ACTION_MERGE:
-        return _handle_merge(body, run_id=run_id)
-    if action == ACTION_APPROVE_FINAL:
-        return _handle_approve_final(body, run_id=run_id)
-    if action in (ACTION_REJECT_SPEC, ACTION_REJECT_FINAL):
-        return _handle_reject(
+    elif action == ACTION_MERGE:
+        result = _handle_merge(body, run_id=run_id)
+    elif action == ACTION_APPROVE_FINAL:
+        result = _handle_approve_final(body, run_id=run_id)
+    elif action in (ACTION_REJECT_SPEC, ACTION_REJECT_FINAL):
+        result = _handle_reject(
             body,
             run_id=run_id,
             action=action,
             human_comment_text=human_comment_text,
         )
+    else:
+        raise NodeExecutionFailure(f"unsupported action {action!r}")
 
-    raise NodeExecutionFailure(f"unsupported action {action!r}")
+    if auto_continue:
+        _gh = _interactive_gate_handler if prompt_at_gates else None
+        result = _auto_continue(result, run_id=run_id, gate_handler=_gh)
+    return result
 
 
 def _load_and_validate_resume(
