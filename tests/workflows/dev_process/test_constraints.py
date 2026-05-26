@@ -515,6 +515,46 @@ class TestPerNodeCodexHome:
         assert "READ_ONLY_NODE" in review_content
         assert impl_home != review_home
 
+    def test_auth_files_linked(self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch") -> None:
+        """_write_node_codex_home symlinks auth files from the default CODEX_HOME."""
+        from nodeflow.workflows.dev_process.node_runner import _write_node_codex_home
+
+        fake_codex_home = tmp_path / "fake_codex"
+        fake_codex_home.mkdir()
+        (fake_codex_home / "auth.json").write_text('{"token":"t"}')
+        (fake_codex_home / "config.toml").write_text("[general]")
+        monkeypatch.setenv("CODEX_HOME", str(fake_codex_home))
+
+        artifact_root = tmp_path / "artifacts"
+        codex_home, _ = _write_node_codex_home(
+            artifact_root=str(artifact_root),
+            node_name="spec_review",
+            constraint_ids=["READ_ONLY_NODE"],
+            snapshot={"constraints": ["READ_ONLY_NODE"]},
+        )
+        ch = Path(codex_home)
+        assert (ch / "AGENTS.md").is_file()
+        assert (ch / "auth.json").exists()
+        assert (ch / "config.toml").exists()
+        assert (ch / "auth.json").read_text() == '{"token":"t"}'
+
+    def test_auth_missing_is_not_fatal(self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch") -> None:
+        """No error when default CODEX_HOME has no auth files."""
+        from nodeflow.workflows.dev_process.node_runner import _write_node_codex_home
+
+        empty_codex_home = tmp_path / "empty_codex"
+        empty_codex_home.mkdir()
+        monkeypatch.setenv("CODEX_HOME", str(empty_codex_home))
+
+        codex_home, _ = _write_node_codex_home(
+            artifact_root=str(tmp_path / "art"),
+            node_name="spec_review",
+            constraint_ids=["READ_ONLY_NODE"],
+            snapshot={"constraints": ["READ_ONLY_NODE"]},
+        )
+        assert (Path(codex_home) / "AGENTS.md").is_file()
+        assert not (Path(codex_home) / "auth.json").exists()
+
 
 def load_exec_policy_file_content(content: dict) -> dict:
     """Helper to validate policy content inline (simulates _validate_policy_overrides)."""

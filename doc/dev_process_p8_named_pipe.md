@@ -83,7 +83,7 @@ nodeflow --pipe dev-process merge
 > nodeflow --pipe dev-process start
 >
 > # Explicit argv (interactive or non-interactive)
-> nodeflow --pipe dev-process start --exec-argv '["codex","exec","--full-auto"]'
+> nodeflow --pipe dev-process start --exec-argv '["codex","exec","--sandbox","workspace-write"]'
 >
 > # Policy file with constraints and per-node config
 > nodeflow --pipe dev-process start --exec-policy-path ./exec_policy.json
@@ -91,11 +91,11 @@ nodeflow --pipe dev-process merge
 > # Both: policy for structure, exec-argv as fallback default
 > nodeflow --pipe dev-process start \
 >   --exec-policy-path ./exec_policy.json \
->   --exec-argv '["codex","exec","--full-auto"]'
+>   --exec-argv '["codex","exec","--sandbox","workspace-write"]'
 >
 > # Non-interactive (CI): explicit argv required
 > nodeflow --pipe dev-process start --non-interactive \
->   --exec-argv '["codex","exec","--full-auto"]'
+>   --exec-argv '["codex","exec","--sandbox","workspace-write"]'
 > ```
 
 ### Resume commands

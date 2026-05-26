@@ -1,7 +1,6 @@
 {
-  "description": "Example for real Codex on git_worktree runs. Review carefully before using --full-auto on a real repository.",
+  "description": "Example for real Codex on git_worktree runs. Review carefully before using --sandbox workspace-write on a real repository.",
   "exec_worker_kind": "codex",
-  "exec_argv": ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox"],
-  "workspace_strategy": "git_worktree",
-  "merge_policy": "git_merge_branch"
+  "exec_argv": ["codex", "exec", "--sandbox", "workspace-write"],
+  "workspace_strategy": "git_worktree"
 }

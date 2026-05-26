@@ -15,6 +15,7 @@ session resume) is worker-dependent and not guaranteed by ``run_node_exec`` itse
 from __future__ import annotations
 
 import hashlib
+import os
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -52,6 +53,39 @@ for this automated run.
 """
 
 
+def _default_codex_home() -> Path:
+    """Return the default CODEX_HOME directory (where ``codex login`` stores auth)."""
+    env_home = os.environ.get("CODEX_HOME")
+    if env_home:
+        return Path(env_home).expanduser()
+    return Path.home() / ".codex"
+
+
+_CODEX_AUTH_FILES = ("auth.json", "config.toml")
+
+
+def _link_codex_auth(target_dir: Path) -> None:
+    """Symlink auth-related files from the default CODEX_HOME into *target_dir*.
+
+    Without this, overriding ``CODEX_HOME`` for per-node AGENTS.md delivery
+    causes Codex to lose access to ``codex login`` credentials (→ 401).
+
+    Raises ``NodeExecutionFailure`` when a symlink cannot be created —
+    copying ``auth.json`` into the artifact tree would leak credentials.
+    """
+    src_dir = _default_codex_home()
+    for name in _CODEX_AUTH_FILES:
+        src = src_dir / name
+        dst = target_dir / name
+        if src.is_file() and not dst.exists() and not dst.is_symlink():
+            try:
+                dst.symlink_to(src)
+            except OSError as exc:
+                raise NodeExecutionFailure(
+                    f"failed to symlink Codex auth file into per-node CODEX_HOME: {name}"
+                ) from exc
+
+
 def _write_node_codex_home(
     *,
     artifact_root: str,
@@ -60,6 +94,9 @@ def _write_node_codex_home(
     snapshot: Dict[str, Any],
 ) -> Tuple[str, str]:
     """Generate per-node CODEX_HOME/AGENTS.md with only this node's effective constraints.
+
+    Also symlinks auth files from the real CODEX_HOME so that the
+    overridden ``CODEX_HOME`` still has valid credentials.
 
     Returns (codex_home_dir, agents_md_sha256).
     """
@@ -71,6 +108,7 @@ def _write_node_codex_home(
     codex_home_dir.mkdir(parents=True, exist_ok=True)
     agents_path = codex_home_dir / "AGENTS.md"
     agents_path.write_text(full_content, encoding="utf-8")
+    _link_codex_auth(codex_home_dir)
     return str(codex_home_dir), sha
 
 
@@ -249,6 +287,72 @@ def _write_validation_artifact(
     return str(path)
 
 
+def _build_merged_env(extra: Optional[Dict[str, str]]) -> Optional[Dict[str, str]]:
+    """Replicate the env merging that ``CodexExecNode._resolve_env`` performs.
+
+    Returns ``None`` (inherit parent env) when *extra* is empty.
+    """
+    if not extra:
+        return None
+    merged = dict(os.environ)
+    merged.update({str(k): str(v) for k, v in extra.items()})
+    return merged
+
+
+def _preflight_worker_auth(
+    argv: List[str],
+    *,
+    cwd: str,
+    env: Optional[Dict[str, str]],
+) -> None:
+    """Verify Codex auth works with the same cwd/env the real exec will use.
+
+    Runs a minimal ``codex exec --sandbox read-only`` (or skips when *argv*
+    is not a recognisable codex invocation or the binary is missing).
+    Raises ``NodeExecutionFailure`` on auth / connectivity failure.
+    """
+    import shutil
+
+    if len(argv) < 2:
+        return
+    codex_bin = argv[0]
+    is_codex = codex_bin.endswith("codex") and argv[1] == "exec"
+    is_npx = codex_bin == "npx" and len(argv) >= 3 and argv[1] == "codex" and argv[2] == "exec"
+    if not is_codex and not is_npx:
+        return
+
+    resolved_env = _build_merged_env(env)
+    check_path = resolved_env.get("PATH", "") if resolved_env else os.environ.get("PATH", "")
+    if not shutil.which(codex_bin, path=check_path if resolved_env else None):
+        return
+
+    if is_codex:
+        cmd = [codex_bin, "exec", "--sandbox", "read-only", "Reply with OK only."]
+    else:
+        cmd = ["npx", "codex", "exec", "--sandbox", "read-only", "Reply with OK only."]
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+            cwd=cwd,
+            env=resolved_env,
+        )
+    except subprocess.TimeoutExpired:
+        raise NodeExecutionFailure(
+            "codex worker preflight timed out (60 s). Check network / auth."
+        )
+    if proc.returncode != 0:
+        stderr_tail = (proc.stderr or "").strip()[-500:]
+        raise NodeExecutionFailure(
+            f"codex worker preflight failed (exit {proc.returncode}). "
+            f"The worker env may lack valid credentials.\n{stderr_tail}"
+        )
+
+
 def run_node_exec(
     body: Dict[str, Any],
     *,
@@ -302,6 +406,8 @@ def run_node_exec(
             snapshot=snapshot,
         )
         exec_env = {"CODEX_HOME": codex_home}
+
+    _preflight_worker_auth(argv, cwd=cwd, env=exec_env)
 
     node_runs = body.setdefault("node_runs", [])
     session_id = new_session_id(run_id=run_id, node_name=node_name, index=len(node_runs))

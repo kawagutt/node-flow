@@ -133,8 +133,8 @@ def _write_constraints_audit(body: Dict[str, Any]) -> str | None:
 
 _EXEC_MODE_CHOICES = {
     "1": {
-        "label": "Full auto (--full-auto)",
-        "argv": ["codex", "exec", "--full-auto"],
+        "label": "Full auto (--sandbox workspace-write)",
+        "argv": ["codex", "exec", "--sandbox", "workspace-write"],
     },
     "2": {
         "label": "Suggest mode (default Codex approval)",
@@ -164,7 +164,9 @@ def _prompt_exec_mode() -> list[str]:
     selected = _EXEC_MODE_CHOICES[choice]
     if selected["argv"] is not None:
         return selected["argv"]
-    raw = click.prompt("Enter exec_argv as JSON array", default='["codex", "exec", "--full-auto"]')
+    raw = click.prompt(
+        "Enter exec_argv as JSON array", default='["codex", "exec", "--sandbox", "workspace-write"]'
+    )
     try:
         argv = _json.loads(raw)
         if isinstance(argv, list) and all(isinstance(x, str) for x in argv) and argv:
