@@ -1962,9 +1962,7 @@ def _effective_rework_owner(
     return owner
 
 
-def _validate_final_rework_inputs(
-    dp: Dict[str, Any], rework_provided: Dict[str, Any]
-) -> None:
+def _validate_final_rework_inputs(dp: Dict[str, Any], rework_provided: Dict[str, Any]) -> None:
     """Fail fast before loop counters increment when final rework inputs are incomplete."""
     final_req = dp.get("final_rework_required")
     if not isinstance(final_req, dict):

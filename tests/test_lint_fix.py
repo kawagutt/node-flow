@@ -156,7 +156,7 @@ class TestLintFixStage:
             "nodeflow.workflows.dev_process.stages.lint_fix.subprocess.run",
             return_value=_make_ruff_result(0, stdout="OK\n"),
         ):
-            result = run_lint_fix_stage(
+            run_lint_fix_stage(
                 repo_root=repo,
                 changed_paths=["src.py"],
                 artifact_root=art,

@@ -8,9 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-_SKILLS_ROOT = (
-    Path(__file__).resolve().parents[3] / "skills" / "dev-process" / "nodes"
-)
+_SKILLS_ROOT = Path(__file__).resolve().parents[3] / "skills" / "dev-process" / "nodes"
 
 # Dedicated review node → development_flow prompt builder registry key
 NODE_PROMPT_BUILDER: dict[str, str] = {

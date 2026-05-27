@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.workflows.dev_process.argv_builder import resolve_node_exec
 from nodeflow.workflows.dev_process.exec_policy import default_node_entries
 from nodeflow.workflows.dev_process.plan_phases import PlanParseError, parse_new_plan
@@ -196,9 +195,7 @@ class TestChecklistCompliancePrompt:
         assert "Acceptance criteria:" in plan_arg
         assert "Criterion B" in plan_arg
         assert mock_build.call_args.kwargs["diff_result"] == {"files": [{"path": "a.py"}]}
-        assert (
-            prompt_params_for_reviewer("standard", "checklist_compliance")["max_diff_chars"] > 0
-        )
+        assert prompt_params_for_reviewer("standard", "checklist_compliance")["max_diff_chars"] > 0
 
 
 class TestReviewNodeSkills:
