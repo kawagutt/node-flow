@@ -242,14 +242,11 @@ class TestHandleReworkFinalRequired:
         body["run_context"]["repo_root"] = str(tmp_path / "repo")
         dp = body["dev_process"]
         dp["loop_counters"] = {"plan_revision": 0, "implementation_rework": 0}
-        with (
-            patch(
-                "nodeflow.workflows.dev_process.flow_actions._rework_save_and_reset",
-            ),
-            patch(
-                "nodeflow.workflows.dev_process.flow_actions._handle_revise_plan",
-                return_value={"flow_result": {"state": "awaiting_plan_revision"}},
-            ),
+        with patch(
+            "nodeflow.workflows.dev_process.flow_actions._rework_save_and_reset",
+        ), patch(
+            "nodeflow.workflows.dev_process.flow_actions._handle_revise_plan",
+            return_value={"flow_result": {"state": "awaiting_plan_revision"}},
         ):
             _handle_rework(
                 body,

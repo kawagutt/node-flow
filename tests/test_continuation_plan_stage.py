@@ -82,6 +82,7 @@ def test_continuation_writes_merged_plan_json(mock_gen, tmp_path: Path) -> None:
         continuation_start_index=3,
         existing_plan=existing,
         existing_plan_text=existing.raw_text,
+        body={},
     )
 
     loaded = load_plan_data(str(artifact))

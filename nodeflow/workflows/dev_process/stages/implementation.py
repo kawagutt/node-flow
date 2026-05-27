@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
-from nodeflow.workflows.dev_process.constants import EXEC_TIMEOUT_SECONDS
-from nodeflow.workflows.dev_process.evidence import record_exec_evidence
-from nodeflow.workflows.dev_process.exec_policy import default_argv_for_worker
+from nodeflow.core.base_node import NodeExecutionFailure
+from nodeflow.workflows.dev_process.node_runner import run_node_exec
 from nodeflow.workflows.dev_process.reuse import collect_diff
-from nodeflow.workflows.dev_process.workers import ExecWorker, resolve_exec_worker, run_exec
 
 
 def run_implementation_stage(
@@ -22,10 +20,8 @@ def run_implementation_stage(
     base_revision: str,
     approved_spec: str,
     approved_plan: str,
-    exec_argv: list[str] | None = None,
     rework_context: str | None = None,
-    exec_worker_kind: Optional[str] = None,
-    body: Optional[Dict[str, Any]] = None,
+    body: Dict[str, Any],
 ) -> Dict[str, Any]:
     prompt = (
         "Implement the approved plan in the repository working tree.\n\n"
@@ -40,34 +36,15 @@ def run_implementation_stage(
     )
     cwd = str(repo_root)
 
-    if body is not None:
-        from nodeflow.workflows.dev_process.node_runner import run_node_exec
-
-        execution_output, evidence_path, _rec = run_node_exec(
-            body,
-            node_name="write_implementation",
-            stage="implementation",
-            prompt=prompt,
-            cwd=cwd,
-            run_id=run_id,
-            artifact_root=artifact_root,
-        )
-    else:
-        worker: ExecWorker = resolve_exec_worker(exec_worker_kind)
-        argv = exec_argv if exec_argv is not None else default_argv_for_worker(worker.kind)
-        execution_output = run_exec(
-            worker, prompt=prompt, cwd=cwd, argv=argv, timeout=EXEC_TIMEOUT_SECONDS
-        )
-        evidence_path = record_exec_evidence(
-            artifact_root=artifact_root,
-            run_id=run_id,
-            stage="implementation",
-            invoker=worker.invoker,
-            execution_output=execution_output,
-            argv=argv,
-            prompt=prompt,
-            cwd=cwd,
-        )
+    execution_output, evidence_path, _rec = run_node_exec(
+        body,
+        node_name="write_implementation",
+        stage="implementation",
+        prompt=prompt,
+        cwd=cwd,
+        run_id=run_id,
+        artifact_root=artifact_root,
+    )
 
     diff_result = collect_diff(repo_root=repo_root, base_revision=base_revision)
 
@@ -75,8 +52,6 @@ def run_implementation_stage(
     branch_advanced = head_rev is not None and head_rev != base_revision
     diff_text = str(diff_result.get("diff") or "")
     if branch_advanced and not diff_text.strip():
-        from nodeflow.core.base_node import NodeExecutionFailure
-
         raise NodeExecutionFailure(
             f"implementation branch advanced (HEAD={head_rev[:12] if head_rev else '?'}) "
             f"but collected diff is empty — review would receive no change context"

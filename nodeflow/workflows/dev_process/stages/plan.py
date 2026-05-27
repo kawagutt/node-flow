@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.workflows.dev_process.artifact_versions import (
@@ -14,10 +14,7 @@ from nodeflow.workflows.dev_process.artifact_versions import (
     write_plan_latest_only,
     write_versioned_plan,
 )
-from nodeflow.workflows.dev_process.constants import EXEC_TIMEOUT_SECONDS
 from nodeflow.workflows.dev_process.contract_check import merge_continuation_plan
-from nodeflow.workflows.dev_process.evidence import record_exec_evidence
-from nodeflow.workflows.dev_process.exec_policy import default_argv_for_worker
 from nodeflow.workflows.dev_process.paths import assert_path_under_run_dir
 from nodeflow.workflows.dev_process.plan_phases import (
     PlanData,
@@ -31,7 +28,6 @@ from nodeflow.workflows.dev_process.plan_prompt import (
     build_plan_prompt,
     format_planning_mode_context,
 )
-from nodeflow.workflows.dev_process.workers import resolve_exec_worker, run_exec
 
 MAX_PLAN_PARSE_RETRIES = 3
 
@@ -65,15 +61,15 @@ def _run_plan_generation(
     approved_spec: str,
     revision_context: str | None = None,
     previous_plan: str | None = None,
-    exec_argv: list[str] | None = None,
-    exec_worker_kind: Optional[str] = None,
-    body: Optional[Dict[str, Any]] = None,
+    body: Dict[str, Any],
     completed_phases: list[Dict[str, Any]] | None = None,
     parse_error_feedback: str | None = None,
     continuation_findings: list[Dict[str, Any]] | None = None,
 ) -> tuple[str, str | None]:
     """Run plan generation agent and return (raw plan text, evidence_path)."""
-    dp = (body or {}).get("dev_process") if body else None
+    from nodeflow.workflows.dev_process.node_runner import run_node_exec
+
+    dp = body.get("dev_process") if isinstance(body.get("dev_process"), dict) else None
     mode_prefix = format_planning_mode_context(dp) if isinstance(dp, dict) else ""
 
     if continuation_findings is not None:
@@ -98,36 +94,16 @@ def _run_plan_generation(
     if mode_prefix:
         prompt_text = mode_prefix + "\n" + prompt_text
     cwd = str(repo_root)
-    evidence_path: str | None = None
 
-    if body is not None:
-        from nodeflow.workflows.dev_process.node_runner import run_node_exec
-
-        execution_output, evidence_path, _rec = run_node_exec(
-            body,
-            node_name="write_plan",
-            stage="plan",
-            prompt=prompt_text,
-            cwd=cwd,
-            run_id=run_id,
-            artifact_root=artifact_root,
-        )
-    else:
-        worker = resolve_exec_worker(exec_worker_kind)
-        argv = exec_argv if exec_argv is not None else default_argv_for_worker(worker.kind)
-        execution_output = run_exec(
-            worker, prompt=prompt_text, cwd=cwd, argv=argv, timeout=EXEC_TIMEOUT_SECONDS
-        )
-        evidence_path = record_exec_evidence(
-            artifact_root=artifact_root,
-            run_id=run_id,
-            stage="plan",
-            invoker=worker.invoker,
-            execution_output=execution_output,
-            argv=argv,
-            prompt=prompt_text,
-            cwd=cwd,
-        )
+    execution_output, evidence_path, _rec = run_node_exec(
+        body,
+        node_name="write_plan",
+        stage="plan",
+        prompt=prompt_text,
+        cwd=cwd,
+        run_id=run_id,
+        artifact_root=artifact_root,
+    )
 
     return _parse_plan_stdout(str(execution_output.get("stdout") or "")), evidence_path
 
@@ -139,11 +115,9 @@ def run_plan_stage(
     run_id: str,
     task_prompt: str,
     approved_spec: str,
-    exec_argv: list[str] | None = None,
     revision_context: str | None = None,
     previous_plan: str | None = None,
-    exec_worker_kind: Optional[str] = None,
-    body: Optional[Dict[str, Any]] = None,
+    body: Dict[str, Any],
     completed_phases: list[Dict[str, Any]] | None = None,
     continuation_findings: list[Dict[str, Any]] | None = None,
     continuation_start_index: int = 0,
@@ -164,8 +138,6 @@ def run_plan_stage(
             approved_spec=approved_spec,
             revision_context=revision_context,
             previous_plan=previous_plan,
-            exec_argv=exec_argv,
-            exec_worker_kind=exec_worker_kind,
             body=body,
             completed_phases=completed_phases,
             parse_error_feedback=parse_error_feedback,

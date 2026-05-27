@@ -29,6 +29,7 @@ ALLOWED_EXISTING_FORBIDDEN_DIRS: set[str] = set()
 
 ALLOWED_EXISTING_MISSING_NODE_FILE: set[str] = {
     "nodeflow/workflows/dev_process/stages",
+    "nodeflow/workflows/dev_process/nodes",
 }
 
 

@@ -102,3 +102,8 @@ def review_argv(*, blocking: bool = False) -> list[str]:
     payload = json.dumps(_review_payload(blocking=blocking))
     script = f"import json; print({payload!r})"
     return [sys.executable, "-c", script]
+
+
+def blocking_review_argv() -> list[str]:
+    """Alias for ``review_argv(blocking=True)`` (force_review_blocking integration tests)."""
+    return review_argv(blocking=True)

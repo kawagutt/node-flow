@@ -4,18 +4,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
-from nodeflow.workflows.dev_process.constants import EXEC_TIMEOUT_SECONDS
-from nodeflow.workflows.dev_process.evidence import record_exec_evidence
-from nodeflow.workflows.dev_process.exec_policy import default_argv_for_worker
-from nodeflow.workflows.dev_process.node_runner import blocking_review_argv
+from nodeflow.workflows.dev_process.node_runner import review_argv_override_from_body, run_node_exec
 from nodeflow.workflows.dev_process.paths import assert_path_under_run_dir
 from nodeflow.workflows.dev_process.stages.review_aggregate import (
     aggregate_stage_review,
     append_review_json_contract,
 )
-from nodeflow.workflows.dev_process.workers import resolve_exec_worker, run_exec
 
 
 def run_plan_review_stage(
@@ -26,10 +22,7 @@ def run_plan_review_stage(
     task_prompt: str,
     spec_text: str,
     plan_text: str,
-    exec_argv: list[str] | None = None,
-    exec_worker_kind: Optional[str] = None,
-    force_blocking: bool = False,
-    body: Optional[Dict[str, Any]] = None,
+    body: Dict[str, Any],
 ) -> Dict[str, Any]:
     prompt_text = append_review_json_contract(
         "Review the plan for feasibility against the spec.\n\n"
@@ -39,39 +32,19 @@ def run_plan_review_stage(
     )
     cwd = str(repo_root)
 
-    if body is not None:
-        from nodeflow.workflows.dev_process.node_runner import run_node_exec
-
-        blocking_argv = blocking_review_argv() if force_blocking else None
-        execution_output, evidence_path, _rec = run_node_exec(
-            body,
-            node_name="review_plan",
-            stage="plan_review",
-            prompt=prompt_text,
-            cwd=cwd,
-            run_id=run_id,
-            artifact_root=artifact_root,
-            argv_override=blocking_argv,
-        )
-    else:
-        worker = resolve_exec_worker(exec_worker_kind)
-        argv = exec_argv if exec_argv is not None else default_argv_for_worker(worker.kind)
-        execution_output = run_exec(
-            worker, prompt=prompt_text, cwd=cwd, argv=argv, timeout=EXEC_TIMEOUT_SECONDS
-        )
-        evidence_path = record_exec_evidence(
-            artifact_root=artifact_root,
-            run_id=run_id,
-            stage="plan_review",
-            invoker=worker.invoker,
-            execution_output=execution_output,
-            argv=argv,
-            prompt=prompt_text,
-            cwd=cwd,
-        )
+    execution_output, evidence_path, _rec = run_node_exec(
+        body,
+        node_name="review_plan",
+        stage="plan_review",
+        prompt=prompt_text,
+        cwd=cwd,
+        run_id=run_id,
+        artifact_root=artifact_root,
+        argv_override=review_argv_override_from_body(body),
+    )
 
     aggregate = aggregate_stage_review(execution_output, stage="plan_review")
-    dp = (body or {}).get("dev_process") if body else None
+    dp = body.get("dev_process") if isinstance(body.get("dev_process"), dict) else None
     if dp is not None:
         from nodeflow.workflows.dev_process.artifact_versions import (
             plan_review_dir,

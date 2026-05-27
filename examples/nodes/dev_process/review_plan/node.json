@@ -1,0 +1,8 @@
+{
+  "kind": "node",
+  "version": "1.7",
+  "type": "dev_process.review_plan",
+  "input_ports": ["ctx"],
+  "output_ports": ["ctx"],
+  "default_config": {}
+}

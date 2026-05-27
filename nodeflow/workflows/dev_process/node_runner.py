@@ -354,6 +354,115 @@ def _preflight_worker_auth(
         )
 
 
+def append_node_run_record(body: Dict[str, Any], record: NodeRun) -> None:
+    """Append a ``NodeRun`` to ``body[\"node_runs\"]``."""
+    body.setdefault("node_runs", []).append(record.to_dict())
+
+
+def _write_skipped_evidence(
+    *,
+    artifact_root: str,
+    node_name: str,
+    skip_reason: str,
+) -> str:
+    """Write a minimal skipped-node evidence JSON for audit."""
+    import json
+
+    ev_dir = Path(artifact_root) / "evidence" / "skipped"
+    ev_dir.mkdir(parents=True, exist_ok=True)
+    ev_path = ev_dir / f"{node_name}.json"
+    ev_path.write_text(
+        json.dumps(
+            {
+                "node_name": node_name,
+                "kind": "skipped",
+                "skip_reason": skip_reason,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return str(ev_path)
+
+
+def record_skipped_node_run(
+    body: Dict[str, Any],
+    *,
+    node_name: str,
+    stage: str,
+    skip_reason: str,
+    evidence_path: str = "",
+    artifact_root: Optional[str] = None,
+) -> NodeRun:
+    """Record a skipped leaf node attempt (no worker exec)."""
+    ev_path = evidence_path
+    if not ev_path and artifact_root:
+        ev_path = _write_skipped_evidence(
+            artifact_root=artifact_root,
+            node_name=node_name,
+            skip_reason=skip_reason,
+        )
+    record = NodeRun(
+        node_name=node_name,
+        node_type=f"{NODE_TYPE_PREFIX}.{node_name}",
+        stage=stage,
+        kind="skipped",
+        worker="local",
+        model=None,
+        session_id=None,
+        evidence_path=ev_path,
+        argv=[],
+        skipped=True,
+        skip_reason=skip_reason,
+    )
+    append_node_run_record(body, record)
+    return record
+
+
+def record_local_node_run(
+    body: Dict[str, Any],
+    *,
+    node_name: str,
+    stage: str,
+    evidence_path: str,
+    argv: Optional[List[str]] = None,
+    kind: str = "local",
+) -> NodeRun:
+    """Record a local (non-LLM) leaf node execution."""
+    record = NodeRun(
+        node_name=node_name,
+        node_type=f"{NODE_TYPE_PREFIX}.{node_name}",
+        stage=stage,
+        kind=kind,
+        worker="local",
+        model=None,
+        session_id=None,
+        evidence_path=evidence_path,
+        argv=list(argv or []),
+        skipped=False,
+    )
+    append_node_run_record(body, record)
+    return record
+
+
+def review_argv_override_from_body(body: Dict[str, Any]) -> Optional[List[str]]:
+    """Optional per-review argv override (e.g. force-blocking integration tests)."""
+    dp = body.get("dev_process") if isinstance(body.get("dev_process"), dict) else {}
+    raw = dp.get("review_argv_override")
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not all(isinstance(x, str) for x in raw):
+        raise NodeExecutionFailure("dev_process.review_argv_override must be a list of strings")
+    return list(raw)
+
+
+def clear_review_argv_override(body: Dict[str, Any]) -> None:
+    """Remove scoped review argv override so it does not leak across review segments."""
+    dp = body.get("dev_process")
+    if isinstance(dp, dict):
+        dp.pop("review_argv_override", None)
+
+
 def run_node_exec(
     body: Dict[str, Any],
     *,
@@ -370,8 +479,7 @@ def run_node_exec(
     """Execute one node and record it in ``body["node_runs"]``.
 
     *argv_override*, when given, replaces the argv resolved from
-    ``exec_policy_snapshot``.  This is used for test hooks such as
-    ``force_blocking`` review argv.
+    ``exec_policy_snapshot`` (e.g. ``dev_process.review_argv_override`` on body).
 
     Returns ``(execution_output, evidence_path, record)``.
     """
@@ -434,11 +542,11 @@ def run_node_exec(
         codex_home=codex_home,
         agents_md_sha256=agents_md_sha256,
     )
-    node_type = f"{NODE_TYPE_PREFIX}.{node_name}"
     record = NodeRun(
         node_name=node_name,
-        node_type=node_type,
+        node_type=f"{NODE_TYPE_PREFIX}.{node_name}",
         stage=stage,
+        kind="llm",
         worker=worker_kind,
         model=model,
         session_id=session_id,
@@ -446,7 +554,7 @@ def run_node_exec(
         argv=argv,
         constraints=constraint_ids,
     )
-    node_runs.append(record.to_dict())
+    append_node_run_record(body, record)
 
     if needs_validation:
         validation_result = _validate_post_constraints(
@@ -459,31 +567,3 @@ def run_node_exec(
             )
 
     return execution_output, evidence_path, record
-
-
-def blocking_review_argv() -> list[str]:
-    """Hermetic argv emitting blocking review JSON (``force_blocking`` test hook).
-
-    TODO(PR2): remove — close ``force_blocking`` in stage functions and inject
-    blocking argv from tests via ``exec_policy`` argv override only.
-    """
-    import json
-    import sys
-
-    payload = json.dumps(
-        {
-            "ok": False,
-            "blocking_findings": [
-                {
-                    "id": "R001",
-                    "area": "review",
-                    "summary": "blocking review (test hook)",
-                    "suggested_fix": "fix",
-                }
-            ],
-            "non_blocking_findings": [],
-            "spec_revision_needed": False,
-        }
-    )
-    script = f"import json; print({payload!r})"
-    return [sys.executable, "-c", script]

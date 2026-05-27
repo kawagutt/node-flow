@@ -103,6 +103,7 @@ def test_node_run_dataclass_roundtrip() -> None:
         node_name="write_spec",
         node_type="dev_process.write_spec",
         stage="spec",
+        kind="llm",
         worker="codex",
         model="gpt-4.1",
         session_id="abc123",

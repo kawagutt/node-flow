@@ -104,6 +104,38 @@ from nodeflow.workflows.dev_process.state_machine import assert_action_allowed
 from nodeflow.workflows.dev_process.synthesis import assign_owners_to_findings, route_owner_to_state
 
 
+def _apply_force_blocking_review_argv(body: Dict[str, Any], *, force: bool) -> None:
+    """Integration-test hook: inject blocking review stdout via ``review_argv_override``."""
+    if not force:
+        return
+    import json
+    import sys
+
+    payload = json.dumps(
+        {
+            "ok": False,
+            "blocking_findings": [
+                {
+                    "id": "R001",
+                    "area": "review",
+                    "summary": "blocking review (test hook)",
+                    "suggested_fix": "fix",
+                }
+            ],
+            "non_blocking_findings": [],
+            "spec_revision_needed": False,
+        }
+    )
+    script = f"import json; print({payload!r})"
+    body.setdefault("dev_process", {})["review_argv_override"] = [sys.executable, "-c", script]
+
+
+def _clear_review_argv_override(body: Dict[str, Any]) -> None:
+    from nodeflow.workflows.dev_process.node_runner import clear_review_argv_override
+
+    clear_review_argv_override(body)
+
+
 def _status(msg: str) -> None:
     """Print a progress message to stderr so the user knows what is happening."""
     _click.echo(f">> {msg}", err=True)
@@ -1528,6 +1560,7 @@ def _run_single_phase(
         phase=phase_id,
     )
     preset = str(dp.get("review_depth_preset") or "standard")
+    _apply_force_blocking_review_argv(body, force=force_review_blocking)
     try:
         rev = run_review_stage(
             repo_root=repo,
@@ -1538,7 +1571,6 @@ def _run_single_phase(
             approved_plan=augmented_plan,
             diff_result=impl_bundle.get("diff_result") or {},
             test_result=impl_bundle.get("test_result") or {},
-            force_blocking=force_review_blocking,
             review_depth_preset=preset,
             body=body,
             review_targets=phase_review_targets or None,
@@ -1553,6 +1585,8 @@ def _run_single_phase(
             body=body, run_id=run_id, action=ACTION_CONTINUE_IMPLEMENTATION, reason=str(e)
         )
         raise
+    finally:
+        _clear_review_argv_override(body)
 
     review_result = rev.get("review_result") or {}
     blocking = list(review_result.get("blocking_findings") or [])
@@ -1676,7 +1710,6 @@ def _run_final_review(
             approved_plan=plan_text,
             diff_result=final_diff_result,
             test_result={},
-            force_blocking=False,
             review_depth_preset=preset,
             body=body,
             review_targets=["final_diff"],

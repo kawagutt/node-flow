@@ -4,16 +4,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from nodeflow.core.base_node import NodeExecutionFailure
-from nodeflow.workflows.dev_process.constants import EXEC_TIMEOUT_SECONDS
-from nodeflow.workflows.dev_process.evidence import record_exec_evidence
-from nodeflow.workflows.dev_process.exec_policy import default_argv_for_worker
+from nodeflow.workflows.dev_process.node_runner import run_node_exec
 from nodeflow.workflows.dev_process.paths import assert_path_under_run_dir
 from nodeflow.workflows.dev_process.reuse import collect_repo_context
 from nodeflow.workflows.dev_process.spec_prompt import build_spec_prompt
-from nodeflow.workflows.dev_process.workers import ExecWorker, resolve_exec_worker, run_exec
 
 
 def _parse_spec_stdout(stdout: str) -> str:
@@ -36,13 +33,11 @@ def run_spec_stage(
     run_id: str,
     task_prompt: str,
     base_revision: str,
-    exec_argv: list[str] | None = None,
     revision_context: str | None = None,
     notes: str | None = None,
     reference_materials: list[dict[str, Any]] | None = None,
     previous_spec: str | None = None,
-    exec_worker_kind: Optional[str] = None,
-    body: Optional[Dict[str, Any]] = None,
+    body: Dict[str, Any],
 ) -> Dict[str, Any]:
     repo_context = collect_repo_context(
         repo_root=repo_root,
@@ -60,41 +55,22 @@ def run_spec_stage(
     )
     cwd = str(repo_root)
 
-    if body is not None:
-        from nodeflow.workflows.dev_process.node_runner import run_node_exec
-
-        execution_output, evidence_path, _rec = run_node_exec(
-            body,
-            node_name="write_spec",
-            stage="spec",
-            prompt=prompt_text,
-            cwd=cwd,
-            run_id=run_id,
-            artifact_root=artifact_root,
-        )
-    else:
-        worker: ExecWorker = resolve_exec_worker(exec_worker_kind)
-        argv = exec_argv if exec_argv is not None else default_argv_for_worker(worker.kind)
-        execution_output = run_exec(
-            worker, prompt=prompt_text, cwd=cwd, argv=argv, timeout=EXEC_TIMEOUT_SECONDS
-        )
-        evidence_path = record_exec_evidence(
-            artifact_root=artifact_root,
-            run_id=run_id,
-            stage="spec",
-            invoker=worker.invoker,
-            execution_output=execution_output,
-            argv=argv,
-            prompt=prompt_text,
-            cwd=cwd,
-        )
+    execution_output, evidence_path, _rec = run_node_exec(
+        body,
+        node_name="write_spec",
+        stage="spec",
+        prompt=prompt_text,
+        cwd=cwd,
+        run_id=run_id,
+        artifact_root=artifact_root,
+    )
 
     spec_text = _parse_spec_stdout(str(execution_output.get("stdout") or ""))
-    dp = (body or {}).get("dev_process") if body else None
+    dp = body.get("dev_process") if isinstance(body.get("dev_process"), dict) else None
     if dp is not None:
         from nodeflow.workflows.dev_process.artifact_versions import write_versioned_spec
 
-        epoch_bump = bool((body or {}).get("spec_epoch_bump", False))
+        epoch_bump = bool(body.get("spec_epoch_bump", False))
         version_info = write_versioned_spec(artifact_root, spec_text, dp, epoch_bump=epoch_bump)
         spec_path = version_info["latest_path"]
     else:

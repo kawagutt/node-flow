@@ -551,11 +551,18 @@ def test_spec_review_prompt_includes_json_contract(
 
     captured: dict[str, str] = {}
 
-    def _run_exec(worker: object, **kwargs: object) -> dict:
+    def _run_node_exec(body: object, **kwargs: object) -> tuple:
         captured["prompt"] = str(kwargs.get("prompt") or "")
-        return {"stdout": '{"ok": true, "blocking_findings": [], "non_blocking_findings": []}'}
+        return (
+            {
+                "ok": True,
+                "stdout": '{"ok": true, "blocking_findings": [], "non_blocking_findings": []}',
+            },
+            "/tmp/evidence.json",
+            None,
+        )
 
-    monkeypatch.setattr(spec_review_mod, "run_exec", _run_exec)
+    monkeypatch.setattr(spec_review_mod, "run_node_exec", _run_node_exec)
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -568,6 +575,7 @@ def test_spec_review_prompt_includes_json_contract(
         run_id="run1",
         task_prompt="task",
         spec_text="# Spec\n",
+        body={"node_runs": [], "dev_process": {"exec_policy_snapshot": {"nodes": {}}}},
     )
     assert REVIEW_JSON_OUTPUT_CONTRACT.splitlines()[0] in captured["prompt"]
 

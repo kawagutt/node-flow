@@ -6,6 +6,7 @@ from nodeflow.core.registry import registry
 from nodeflow.workflows.dev_process.dev_process_flow.node_dev_process_flow import (
     DevProcessFlowNode,
 )
+from nodeflow.workflows.dev_process.nodes.stage_nodes import STAGE_NODE_CLASSES
 from nodeflow.workflows.dev_process.review_prompts.node_review_prompts import (
     DevProcessReviewDiffPromptNode,
     DevProcessReviewSpecConformancePromptNode,
@@ -17,6 +18,8 @@ from nodeflow.workflows.dev_process.review_prompts.node_review_prompts import (
 
 def register_dev_process_nodes() -> None:
     registry.register("dev_process.flow", DevProcessFlowNode, override=True)
+    for cls in STAGE_NODE_CLASSES:
+        registry.register(f"dev_process.{cls.node_name}", cls, override=True)
     registry.register(
         "dev_process.review_prompt.diff",
         DevProcessReviewDiffPromptNode,

@@ -43,10 +43,16 @@ class TestPlanPromptAgents:
 
 
 class TestReviewAgentSelection:
-    @patch("nodeflow.workflows.dev_process.node_runner.run_node_exec")
-    @patch("nodeflow.workflows.dev_process.stages.review.build_review_prompt")
+    @patch("nodeflow.workflows.dev_process.stages.review.write_stage_checkpoint")
+    @patch("nodeflow.workflows.dev_process.stages.review.aggregate_reviews")
+    @patch("nodeflow.workflows.dev_process.stages.review_agent.run_node_exec")
+    @patch("nodeflow.workflows.dev_process.stages.review_agent.build_review_prompt")
     def test_review_agents_recorded_as_independent_nodes(
-        self, mock_build: MagicMock, mock_exec: MagicMock
+        self,
+        mock_build: MagicMock,
+        mock_exec: MagicMock,
+        mock_aggregate: MagicMock,
+        mock_checkpoint: MagicMock,
     ) -> None:
         mock_build.return_value = "prompt"
         mock_exec.return_value = (
@@ -54,6 +60,11 @@ class TestReviewAgentSelection:
             "/tmp/evidence.json",
             {},
         )
+        mock_aggregate.return_value = (
+            {"ok": True, "blocking_findings": [], "decision": "merge_ok"},
+            {"ok": True},
+        )
+        mock_checkpoint.return_value = {"artifacts": []}
         body: dict[str, Any] = {"dev_process": {"exec_policy_snapshot": {"nodes": {}}}}
         run_review_stage(
             repo_root=Path("/tmp"),
@@ -76,7 +87,7 @@ class TestReviewAgentSelection:
         assert review_node_name("checklist_compliance") not in node_names
 
     @patch("nodeflow.workflows.dev_process.stages.review.aggregate_reviews")
-    @patch("nodeflow.workflows.dev_process.stages.review._run_one_reviewer_via_node")
+    @patch("nodeflow.workflows.dev_process.stages.review.run_one_review_agent_stage")
     def test_plan_agents_select_only_those_reviewers(
         self, mock_run: MagicMock, mock_aggregate: MagicMock
     ) -> None:
@@ -107,12 +118,12 @@ class TestReviewAgentSelection:
             review_targets=["implementation_phase"],
             review_scope="phase",
         )
-        called_agents = [c.kwargs["reviewer_key"] for c in mock_run.call_args_list]
+        called_agents = [c.kwargs["agent"] for c in mock_run.call_args_list]
         assert called_agents == ["architecture", "checklist_compliance"]
         expected_nodes = [review_node_name(a) for a in called_agents]
         assert mock_aggregate.call_args.kwargs["expected_review_keys"] == expected_nodes
 
-    @patch("nodeflow.workflows.dev_process.stages.review._run_one_reviewer_via_node")
+    @patch("nodeflow.workflows.dev_process.stages.review.run_one_review_agent_stage")
     def test_targets_do_not_add_extra_reviewers(self, mock_run: MagicMock) -> None:
         mock_run.return_value = (
             {"ok": True, "blocking_findings": [], "non_blocking_findings": []},
@@ -133,9 +144,9 @@ class TestReviewAgentSelection:
             review_targets=["implementation_phase", "test_phase"],
             review_scope="phase",
         )
-        assert [c.kwargs["reviewer_key"] for c in mock_run.call_args_list] == ["architecture"]
+        assert [c.kwargs["agent"] for c in mock_run.call_args_list] == ["architecture"]
 
-    @patch("nodeflow.workflows.dev_process.stages.review._run_one_reviewer_via_node")
+    @patch("nodeflow.workflows.dev_process.stages.review.run_one_review_agent_stage")
     def test_final_review_uses_fixed_agent_set(self, mock_run: MagicMock) -> None:
         mock_run.return_value = (
             {"ok": True, "blocking_findings": [], "non_blocking_findings": []},
@@ -154,16 +165,27 @@ class TestReviewAgentSelection:
             body=body,
             review_scope="final",
         )
-        called = [c.kwargs["reviewer_key"] for c in mock_run.call_args_list]
+        called = [c.kwargs["agent"] for c in mock_run.call_args_list]
         assert called == list(FINAL_REVIEW_AGENTS)
 
 
 class TestChecklistCompliancePrompt:
-    @patch("nodeflow.workflows.dev_process.node_runner.run_node_exec")
-    @patch("nodeflow.workflows.dev_process.stages.review.build_review_prompt")
+    @patch("nodeflow.workflows.dev_process.stages.review.write_stage_checkpoint")
+    @patch("nodeflow.workflows.dev_process.stages.review.aggregate_reviews")
+    @patch("nodeflow.workflows.dev_process.stages.review_agent.run_node_exec")
+    @patch("nodeflow.workflows.dev_process.stages.review_agent.build_review_prompt")
     def test_checklist_compliance_gets_diff_checklist_and_criteria(
-        self, mock_build: MagicMock, mock_exec: MagicMock
+        self,
+        mock_build: MagicMock,
+        mock_exec: MagicMock,
+        mock_aggregate: MagicMock,
+        mock_checkpoint: MagicMock,
     ) -> None:
+        mock_aggregate.return_value = (
+            {"ok": True, "blocking_findings": [], "decision": "merge_ok"},
+            {"ok": True},
+        )
+        mock_checkpoint.return_value = {"artifacts": []}
         mock_build.return_value = "prompt"
         mock_exec.return_value = (
             {"ok": True, "blocking_findings": [], "non_blocking_findings": []},
@@ -249,27 +271,24 @@ class TestPerAgentExecPolicy:
         assert m1 == "code_main"
         assert m2 == "strong_reasoning"
 
-    @patch("nodeflow.workflows.dev_process.node_runner.run_exec")
-    @patch("nodeflow.workflows.dev_process.stages.review.build_review_prompt")
-    @patch("nodeflow.workflows.dev_process.node_runner.record_exec_evidence")
+    @patch("nodeflow.workflows.dev_process.stages.review.aggregate_reviews")
+    @patch("nodeflow.workflows.dev_process.stages.review.write_stage_checkpoint")
     def test_review_agent_uses_own_exec_policy_argv(
         self,
-        mock_evidence: MagicMock,
-        mock_build: MagicMock,
-        mock_run_exec: MagicMock,
+        mock_checkpoint: MagicMock,
+        mock_aggregate: MagicMock,
     ) -> None:
         import sys
 
-        mock_build.return_value = "prompt"
-        mock_run_exec.return_value = {
-            "ok": True,
-            "blocking_findings": [],
-            "non_blocking_findings": [],
-        }
-        mock_evidence.return_value = "/tmp/evidence.json"
+        mock_aggregate.return_value = (
+            {"ok": True, "blocking_findings": [], "decision": "merge_ok"},
+            {"ok": True},
+        )
+        mock_checkpoint.return_value = {"artifacts": []}
         arch_argv = [sys.executable, "-c", "print('marker-arch')"]
         test_argv = [sys.executable, "-c", "print('marker-test')"]
         body: dict[str, Any] = {
+            "node_runs": [],
             "dev_process": {
                 "exec_policy_snapshot": {
                     "default_worker": "codex",
@@ -279,23 +298,26 @@ class TestPerAgentExecPolicy:
                         review_node_name("test_quality"): {"argv": test_argv},
                     },
                 }
-            }
+            },
         }
-        run_review_stage(
-            repo_root=Path("/tmp"),
-            artifact_root="/tmp/art",
-            run_id="r1",
-            base_revision="abc",
-            approved_spec="spec",
-            approved_plan="plan",
-            diff_result={},
-            test_result={},
-            body=body,
-            review_agents=["architecture", "test_quality"],
-            review_scope="phase",
-        )
+        Path("/tmp/art/review").mkdir(parents=True, exist_ok=True)
+        with patch(
+            "nodeflow.workflows.dev_process.stages.review_agent.build_review_prompt",
+            return_value="prompt",
+        ):
+            run_review_stage(
+                repo_root=Path("/tmp"),
+                artifact_root="/tmp/art",
+                run_id="r1",
+                base_revision="abc",
+                approved_spec="spec",
+                approved_plan="plan",
+                diff_result={},
+                test_result={},
+                body=body,
+                review_agents=["architecture", "test_quality"],
+                review_scope="phase",
+            )
         argv_by_node = {nr["node_name"]: nr["argv"] for nr in body.get("node_runs", [])}
         assert argv_by_node[review_node_name("architecture")] == arch_argv
         assert argv_by_node[review_node_name("test_quality")] == test_argv
-        assert mock_run_exec.call_args_list[0].kwargs["argv"] == arch_argv
-        assert mock_run_exec.call_args_list[1].kwargs["argv"] == test_argv

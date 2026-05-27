@@ -17,11 +17,14 @@ class NodeRun:
     node_name: str
     node_type: str
     stage: str
+    kind: str  # "llm" | "local" | "aggregate" | "skipped"
     worker: str
     model: Optional[str]
-    session_id: str
+    session_id: Optional[str]
     evidence_path: str
     argv: List[str]
+    skipped: bool = False
+    skip_reason: Optional[str] = None
     constraints: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:

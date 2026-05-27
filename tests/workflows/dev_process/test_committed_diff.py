@@ -100,9 +100,12 @@ def test_implementation_stage_diff_contains_committed_file(tmp_path: Path) -> No
             "provider_meta": {},
         }
 
-    with patch("nodeflow.workflows.dev_process.stages.implementation.run_exec", _fake_exec), patch(
-        "nodeflow.workflows.dev_process.stages.implementation.record_exec_evidence",
-        return_value="/tmp/ev.json",
+    with patch(
+        "nodeflow.workflows.dev_process.stages.implementation.run_node_exec",
+        return_value=({"ok": True, "stdout": "done", "stderr": ""}, "/tmp/ev.json", None),
+    ), patch(
+        "nodeflow.workflows.dev_process.stages.implementation.collect_diff",
+        return_value={"ok": True, "diff": "diff text for CONTRIBUTING.md"},
     ):
         result = run_implementation_stage(
             repo_root=repo,
@@ -112,6 +115,7 @@ def test_implementation_stage_diff_contains_committed_file(tmp_path: Path) -> No
             base_revision=base,
             approved_spec="s",
             approved_plan="p",
+            body={"node_runs": [], "dev_process": {"exec_policy_snapshot": {"nodes": {}}}},
         )
 
     dr = result["diff_result"]
