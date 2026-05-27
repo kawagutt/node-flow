@@ -1,0 +1,95 @@
+{
+  "kind": "pipe",
+  "version": "1.7",
+  "pipe": {
+    "outputs": {
+      "cycle_result": "review_aggregate.ctx"
+    }
+  },
+  "nodes": [
+    {
+      "id": "write_implementation",
+      "path": "examples/nodes/dev_process/write_implementation/node.json",
+      "inputs": {
+        "ctx": "input.ctx"
+      }
+    },
+    {
+      "id": "write_tests",
+      "path": "examples/nodes/dev_process/write_tests/node.json",
+      "inputs": {
+        "ctx": "write_implementation.ctx"
+      }
+    },
+    {
+      "id": "lint_fix",
+      "path": "examples/nodes/dev_process/lint_fix/node.json",
+      "inputs": {
+        "ctx": "write_tests.ctx"
+      }
+    },
+    {
+      "id": "run_tests",
+      "path": "examples/nodes/dev_process/run_tests/node.json",
+      "inputs": {
+        "ctx": "lint_fix.ctx"
+      }
+    },
+    {
+      "id": "review_requirements",
+      "path": "examples/nodes/dev_process/review_requirements/node.json",
+      "inputs": {
+        "ctx": "run_tests.ctx"
+      }
+    },
+    {
+      "id": "review_architecture",
+      "path": "examples/nodes/dev_process/review_architecture/node.json",
+      "inputs": {
+        "ctx": "review_requirements.ctx"
+      }
+    },
+    {
+      "id": "review_test_quality",
+      "path": "examples/nodes/dev_process/review_test_quality/node.json",
+      "inputs": {
+        "ctx": "review_architecture.ctx"
+      }
+    },
+    {
+      "id": "review_checklist_compliance",
+      "path": "examples/nodes/dev_process/review_checklist_compliance/node.json",
+      "inputs": {
+        "ctx": "review_test_quality.ctx"
+      }
+    },
+    {
+      "id": "review_impact",
+      "path": "examples/nodes/dev_process/review_impact/node.json",
+      "inputs": {
+        "ctx": "review_checklist_compliance.ctx"
+      }
+    },
+    {
+      "id": "review_diff_detail",
+      "path": "examples/nodes/dev_process/review_diff_detail/node.json",
+      "inputs": {
+        "ctx": "review_impact.ctx"
+      }
+    },
+    {
+      "id": "review_naming_doc",
+      "path": "examples/nodes/dev_process/review_naming_doc/node.json",
+      "inputs": {
+        "ctx": "review_diff_detail.ctx"
+      }
+    },
+    {
+      "id": "review_aggregate",
+      "path": "examples/nodes/dev_process/review_aggregate/node.json",
+      "inputs": {
+        "ctx": "review_naming_doc.ctx"
+      }
+    }
+  ]
+}

@@ -40,7 +40,11 @@ class PipeNode(BaseNode):
         spec: PipeSpec,
         raw_params: dict[str, Any],
     ) -> dict[str, dict[str, Any]]:
-        """Shallow-copy each child's ``NodeSpec.params`` and propagate ``_workspace_dir`` when present."""
+        """Shallow-copy each child's ``NodeSpec.params`` and propagate select pipe params.
+
+        ``PipeNode`` is wiring-only, but some infra params are useful to broadcast to
+        children (e.g. workspace resolution, runner call rule compatibility toggles).
+        """
         resolved: dict[str, dict[str, Any]] = {
             nid: dict(ns.params) for nid, ns in spec.nodes.items()
         }
@@ -48,6 +52,10 @@ class PipeNode(BaseNode):
         if isinstance(workspace_dir, str):
             for node_params in resolved.values():
                 node_params.setdefault("_workspace_dir", workspace_dir)
+        allow_pending_noop = raw_params.get("_allow_pending_inputs_noop")
+        if allow_pending_noop is True:
+            for node_params in resolved.values():
+                node_params.setdefault("_allow_pending_inputs_noop", True)
         return resolved
 
     def run(

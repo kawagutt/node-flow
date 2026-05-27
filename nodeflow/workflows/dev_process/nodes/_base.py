@@ -23,6 +23,10 @@ class DevProcessLeafNode(PythonActionNode):
     ) -> dict[str, Any]:
         raw = inputs.get("ctx")
         if raw is None:
+            # Runner may call execute() before upstream delivery (doc §14.1).
+            # Only allow this no-op path when explicitly enabled by the parent pipe.
+            if params.get("_allow_pending_inputs_noop") is True:
+                return {}
             raise NodeExecutionFailure(f"{self.node_name}: missing input port 'ctx'")
         ctx, body = copy_flow_ctx(raw)
         self._execute(ctx, body, flow_params(ctx), params, context)

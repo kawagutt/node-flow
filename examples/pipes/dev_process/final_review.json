@@ -1,0 +1,39 @@
+{
+  "kind": "pipe",
+  "version": "1.7",
+  "pipe": {
+    "outputs": {
+      "cycle_result": "review_aggregate.ctx"
+    }
+  },
+  "nodes": [
+    {
+      "id": "review_requirements",
+      "path": "examples/nodes/dev_process/review_requirements/node.json",
+      "inputs": {
+        "ctx": "input.ctx"
+      }
+    },
+    {
+      "id": "review_test_quality",
+      "path": "examples/nodes/dev_process/review_test_quality/node.json",
+      "inputs": {
+        "ctx": "review_requirements.ctx"
+      }
+    },
+    {
+      "id": "review_checklist_compliance",
+      "path": "examples/nodes/dev_process/review_checklist_compliance/node.json",
+      "inputs": {
+        "ctx": "review_test_quality.ctx"
+      }
+    },
+    {
+      "id": "review_aggregate",
+      "path": "examples/nodes/dev_process/review_aggregate/node.json",
+      "inputs": {
+        "ctx": "review_checklist_compliance.ctx"
+      }
+    }
+  ]
+}
