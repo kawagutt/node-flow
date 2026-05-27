@@ -2,30 +2,33 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 from typing import Any
 
 from nodeflow.core.base_node import NodeExecutionFailure
-from nodeflow.workflows.dev_process.constants import SCHEMA_VERSION
 from nodeflow.workflows.dev_process.flow_context import _phase_repo_root, _workspace_repo_root
+from nodeflow.workflows.dev_process.flow_ctx import (
+    FlowCtx,
+    SegmentParams,
+    copy_flow_ctx,
+    flow_params,
+    require_flow_ctx,
+)
+from nodeflow.workflows.dev_process.flow_ctx import (
+    make_flow_ctx as _make_flow_ctx,
+)
 
-
-def copy_flow_ctx(raw: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Deep-copy FlowCtx and nested body (value-passing contract)."""
-    if not isinstance(raw, dict):
-        raise NodeExecutionFailure("FlowCtx must be a dict")
-    ctx = deepcopy(raw)
-    body_raw = ctx.get("body")
-    if not isinstance(body_raw, dict):
-        raise NodeExecutionFailure("FlowCtx.body must be a dict")
-    body = deepcopy(body_raw)
-    ctx["body"] = body
-    return ctx, body
-
-
-def flow_params(ctx: dict[str, Any]) -> dict[str, Any]:
-    params = ctx.get("params")
-    return params if isinstance(params, dict) else {}
+__all__ = [
+    "FlowCtx",
+    "SegmentParams",
+    "require_flow_ctx",
+    "copy_flow_ctx",
+    "make_flow_ctx",
+    "flow_params",
+    "repo_root_from_ctx",
+    "review_artifact_root_from_ctx",
+    "artifact_root_from_body",
+    "run_id_from_body",
+]
 
 
 def repo_root_from_ctx(ctx: dict[str, Any]) -> Any:
@@ -85,11 +88,5 @@ def make_flow_ctx(
     segment: str = "",
     params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build a minimal FlowCtx dict for tests and Runner smoke."""
-    ctx: dict[str, Any] = {
-        "schema_version": SCHEMA_VERSION,
-        "body": body,
-        "segment": segment,
-        "params": dict(params or {}),
-    }
-    return ctx
+    """Compatibility wrapper for typed FlowCtx builder."""
+    return _make_flow_ctx(body=body, segment=segment, params=params)
