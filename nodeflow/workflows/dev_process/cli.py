@@ -30,7 +30,7 @@ from nodeflow.workflows.dev_process.discovery import (
     checkpoint_status,
     resolve_checkpoint_path,
 )
-from nodeflow.workflows.dev_process.flow_runner import run_flow
+from nodeflow.workflows.dev_process.flow_actions import run_flow
 from nodeflow.workflows.dev_process.paths import resolve_git_toplevel
 
 

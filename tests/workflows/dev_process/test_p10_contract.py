@@ -28,7 +28,7 @@ from nodeflow.workflows.dev_process.checkpoint import load_flow_checkpoint
 from nodeflow.workflows.dev_process.constants import (
     STATE_AWAITING_SPEC_REVISION,
 )
-from nodeflow.workflows.dev_process.flow_runner import run_flow
+from nodeflow.workflows.dev_process.flow_actions import run_flow
 from nodeflow.workflows.dev_process.node_run import NodeRun
 from tests.workflows.dev_process.git_fixtures import git_repo_with_commit
 from tests.workflows.dev_process.v2_flow_helpers import (

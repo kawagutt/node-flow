@@ -8,7 +8,7 @@ from typing import Any, Dict, Mapping, Optional
 from nodeflow.core.base_node import ExecutionContext, NodeExecutionFailure
 from nodeflow.core.node_kinds import PythonActionNode
 from nodeflow.workflows.dev_process.constants import ACTION_START
-from nodeflow.workflows.dev_process.flow_runner import run_flow
+from nodeflow.workflows.dev_process.flow_actions import run_flow
 from nodeflow.workflows.dev_process.params import parse_bool_param
 
 

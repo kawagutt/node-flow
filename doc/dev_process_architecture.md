@@ -32,6 +32,11 @@ Linear segments are delegated to subpipes via `run_subpipe()`:
 - `phase_step`: `write_implementation` -> `write_tests` -> `lint_fix` -> `run_tests` -> `review_*` -> `review_aggregate`
 - `final_review`: final-scope `review_*` -> `review_aggregate`
 
+`plan_cycle` is intentionally write-only. The coordinator must validate phase
+contracts and initialize phase metadata before any plan review runs, so
+`review_plan` is separated into `plan_review` instead of being embedded in
+`plan_cycle`.
+
 Observability split (unchanged):
 
 | Concern | Role |

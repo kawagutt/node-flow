@@ -18,7 +18,7 @@ from nodeflow.workflows.dev_process.constants import (
 from nodeflow.workflows.dev_process.dev_process_flow.node_dev_process_flow import (
     DevProcessFlowNode,
 )
-from nodeflow.workflows.dev_process.flow_runner import run_flow
+from nodeflow.workflows.dev_process.flow_actions import run_flow
 from nodeflow.workflows.dev_process.paths import (
     planned_branch_name_for_run,
 )
@@ -425,7 +425,7 @@ def test_exec_argv_via_params_hermetic(tmp_path: Path) -> None:
 
 def test_exec_argv_persisted_in_checkpoint(tmp_path: Path) -> None:
     from nodeflow.workflows.dev_process.checkpoint import load_flow_checkpoint
-    from nodeflow.workflows.dev_process.flow_runner import _resolve_exec_argv, _stored_exec_argv
+    from nodeflow.workflows.dev_process.flow_context import _resolve_exec_argv, _stored_exec_argv
     from tests.workflows.dev_process.hermetic_argv import spec_argv
 
     repo = tmp_path / "repo_exec_argv_resume"

@@ -26,8 +26,8 @@ from nodeflow.workflows.dev_process.constants import (
     STATE_AWAITING_SPEC_REVISION,
     V3_CHECKPOINT_STAGES,
 )
+from nodeflow.workflows.dev_process.flow_actions import run_flow
 from nodeflow.workflows.dev_process.flow_merge import _merge_gate_ok
-from nodeflow.workflows.dev_process.flow_runner import run_flow
 from tests.workflows.dev_process.git_fixtures import git_repo_with_commit
 from tests.workflows.dev_process.hermetic_argv import spec_argv
 from tests.workflows.dev_process.v2_flow_helpers import (
