@@ -104,8 +104,23 @@ On resume, when `repo_root` is supplied it is resolved to the git toplevel and c
 
 ## implementation stages
 
-`continue_implementation` runs **implementation** (Codex), **test_implementation**, **run_tests**, then **review**.  
-Codex runs first in implementation; **`collect_diff` runs after Codex** so review receives post-implementation changes.
+`continue_implementation` runs **implementation** (Codex), **test_implementation**, **lint_fix**, **run_tests**, then **review** via the `phase_step` subpipe.
+
+Review input `diff_result` is **best-effort context**, not the sole review source. Review agents must inspect the repository and related files directly when needed (see `REVIEW_REPOSITORY_INSPECTION_TEXT` in `prompt_common.py`). The prompt includes this contract explicitly.
+
+### Subpipes (PR4)
+
+Linear segments run via `run_subpipe()`:
+
+| Subpipe | Nodes | Notes |
+|---------|-------|-------|
+| `spec_cycle` | `write_spec` → `review_spec` | |
+| `plan_cycle` | `write_plan` only | Coordinator runs plan contract validation / phase init before `plan_review` |
+| `plan_review` | `review_plan` only | |
+| `phase_step` | implementation chain + review agents + aggregate | |
+| `final_review` | final-scope review agents + aggregate | Artifacts under `final_review/` or run root, not `phases/<id>/` |
+
+`plan_cycle` is intentionally **write-only**; do not expect `review_plan` inside that pipe.
 
 ## P2 — review presets
 

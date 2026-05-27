@@ -16,14 +16,21 @@ Define the **process graph**, **checkpoint states**, **artifacts**, and **phase 
 | Layer | Role |
 |-------|------|
 | **Coordinator** | `DevProcessFlowNode` — loops, human gates, `revision_context`, checkpoint write |
-| **Subpipe** | Linear stage chains (`spec_cycle`, `plan_cycle`, `phase_step`) via generic `PipeNode` (PR3+) |
+| **Subpipe** | Linear stage chains (`spec_cycle`, `plan_cycle`, `plan_review`, `phase_step`, `final_review`) via generic `PipeNode` |
 | **Leaf ActionNode** | One execution attempt = one `node_runs[]` entry (PR2+) |
 
 Principle: `1 PipeSpec leaf node execution attempt = 1 node_runs[] entry`.
 
-### Current implementation (until PR4)
+### Current implementation
 
-`DevProcessFlowNode` is an **orchestrator** (ActionNode), **not** a PipeNode. It calls stage functions in `flow_actions.py` directly (no subpipe JSON yet).
+`DevProcessFlowNode` is an **orchestrator** (ActionNode), **not** a PipeNode.  
+Linear segments are delegated to subpipes via `run_subpipe()`:
+
+- `spec_cycle`: `write_spec` -> `review_spec`
+- `plan_cycle`: `write_plan` (coordinator performs contract validation/phase init)
+- `plan_review`: `review_plan`
+- `phase_step`: `write_implementation` -> `write_tests` -> `lint_fix` -> `run_tests` -> `review_*` -> `review_aggregate`
+- `final_review`: final-scope `review_*` -> `review_aggregate`
 
 Observability split (unchanged):
 

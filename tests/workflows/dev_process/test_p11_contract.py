@@ -221,7 +221,9 @@ def test_node_runs_session_ids_unique_across_rework(tmp_path: Path) -> None:
     reworked = rework_from_blocking(repo, flow["flow_result"]["flow_checkpoint_path"])
     cp = load_flow_checkpoint(reworked["flow_result"]["flow_checkpoint_path"])
     runs = cp.get("node_runs") or []
-    sids = [r["session_id"] for r in runs]
+    llm_runs = [r for r in runs if r.get("kind") == "llm"]
+    sids = [r["session_id"] for r in llm_runs]
+    assert all(sids), "LLM node_runs must record session_id"
     assert len(sids) == len(set(sids)), "duplicate session_ids across rework cycles"
 
 
@@ -236,9 +238,10 @@ def test_evidence_count_matches_node_runs_after_rework(tmp_path: Path) -> None:
     reworked = rework_from_blocking(repo, flow["flow_result"]["flow_checkpoint_path"])
     cp = load_flow_checkpoint(reworked["flow_result"]["flow_checkpoint_path"])
     runs = cp.get("node_runs") or []
-    art = list((repo / ".nodeflow/runs").iterdir())[0]
-    evidence_files = list(art.rglob("evidence/*.json"))
-    assert len(runs) == len(evidence_files)
+    for r in runs:
+        ep = r.get("evidence_path")
+        assert ep, f"evidence_path missing on {r['node_name']}"
+        assert Path(ep).is_file(), f"evidence file missing: {ep}"
 
 
 # -- test owner rework skips write_implementation --
@@ -248,16 +251,16 @@ def test_test_owner_rework_skips_implementation(tmp_path: Path, monkeypatch) -> 
     """When rework_owner='test', write_implementation is skipped."""
     import json as _json
 
-    from nodeflow.workflows.dev_process import flow_actions as fa
+    import nodeflow.workflows.dev_process.nodes.stage_nodes as stage_nodes_mod
 
     impl_calls: list[str] = []
-    real_impl = fa.run_implementation_stage
+    real_impl = stage_nodes_mod.run_implementation_stage
 
     def _track_impl(**kwargs):
         impl_calls.append("called")
         return real_impl(**kwargs)
 
-    monkeypatch.setattr(fa, "run_implementation_stage", _track_impl)
+    monkeypatch.setattr(stage_nodes_mod, "run_implementation_stage", _track_impl)
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -278,4 +281,7 @@ def test_test_owner_rework_skips_implementation(tmp_path: Path, monkeypatch) -> 
     rework_node_runs = (cp2.get("node_runs") or [])[len(cp.get("node_runs") or []) :]
     rework_names = [r["node_name"] for r in rework_node_runs]
     assert "write_tests" in rework_names
-    assert "write_implementation" not in rework_names
+    impl_runs = [r for r in rework_node_runs if r["node_name"] == "write_implementation"]
+    assert len(impl_runs) == 1
+    assert impl_runs[0].get("skipped") is True
+    assert impl_runs[0].get("skip_reason") == "skip_implementation"

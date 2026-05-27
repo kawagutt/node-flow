@@ -3,13 +3,13 @@
   "version": "1.7",
   "pipe": {
     "outputs": {
-      "cycle_result": "write_plan.ctx"
+      "cycle_result": "review_plan.ctx"
     }
   },
   "nodes": [
     {
-      "id": "write_plan",
-      "path": "examples/nodes/dev_process/write_plan/node.json",
+      "id": "review_plan",
+      "path": "examples/nodes/dev_process/review_plan/node.json",
       "inputs": {
         "ctx": "input.ctx"
       }

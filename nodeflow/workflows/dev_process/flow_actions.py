@@ -70,6 +70,7 @@ from nodeflow.workflows.dev_process.merge import (
     record_reviewed_branch_snapshot,
     validate_merge_policy,
 )
+from nodeflow.workflows.dev_process.nodes import make_flow_ctx
 from nodeflow.workflows.dev_process.paths import (
     abs_path,
     allocate_run_dir,
@@ -89,19 +90,12 @@ from nodeflow.workflows.dev_process.stage_inputs import (
     format_revision_context,
     load_stored_spec_inputs,
 )
-from nodeflow.workflows.dev_process.stages import (
-    run_implementation_stage,
-    run_plan_review_stage,
-    run_plan_stage,
-    run_review_stage,
-    run_run_tests_stage,
-    run_spec_review_stage,
-    run_spec_stage,
-    run_test_implementation_stage,
-)
 from nodeflow.workflows.dev_process.stale import clear_stage_stale, mark_stale
 from nodeflow.workflows.dev_process.state_machine import assert_action_allowed
+from nodeflow.workflows.dev_process.subpipe_runner import run_subpipe
 from nodeflow.workflows.dev_process.synthesis import assign_owners_to_findings, route_owner_to_state
+
+_NODEFLOW_WORKSPACE = Path(__file__).resolve().parents[3]
 
 
 def _apply_force_blocking_review_argv(body: Dict[str, Any], *, force: bool) -> None:
@@ -773,53 +767,39 @@ def _run_spec_cycle(
 
     spec_epoch_bump = bool(body.get("dev_process", {}).pop("spec_rework_epoch_bump", False))
 
-    _status("Writing spec...")
-    timeline.append_event(run_context["artifact_root"], run_id, "writing_spec", stage="spec")
     body["spec_epoch_bump"] = spec_epoch_bump
-    try:
-        sp = run_spec_stage(
-            repo_root=repo,
-            artifact_root=run_context["artifact_root"],
-            run_id=run_id,
-            task_prompt=resolved_task_prompt,
-            base_revision=run_context["source_base_revision"],
-            revision_context=revision_context,
-            notes=notes or None,
-            reference_materials=materials,
-            previous_spec=previous_spec,
-            body=body,
-        )
-    except NodeExecutionFailure as e:
-        _fail_checkpoint(body=body, run_id=run_id, action=action, reason=str(e))
-        raise
-    body["stages"]["spec"] = sp
-    clear_stage_stale(body, "spec")
-
-    spec_text = _read_spec_text(run_context["artifact_root"])
-    _status("Reviewing spec...")
-    timeline.append_event(
-        run_context["artifact_root"], run_id, "reviewing_spec", stage="spec_review"
+    _status("Spec cycle...")
+    timeline.append_event(run_context["artifact_root"], run_id, "spec_cycle", stage="spec_cycle")
+    ctx = make_flow_ctx(
+        body,
+        segment="spec_cycle",
+        params={
+            "task_prompt": resolved_task_prompt,
+            "revision_context": revision_context,
+            "notes": notes or None,
+            "reference_materials": materials,
+            "previous_spec": previous_spec,
+        },
     )
     try:
-        sr = run_spec_review_stage(
-            repo_root=repo,
-            artifact_root=run_context["artifact_root"],
-            run_id=run_id,
-            task_prompt=resolved_task_prompt,
-            spec_text=spec_text,
-            body=body,
+        ctx = run_subpipe(
+            "examples/pipes/dev_process/spec_cycle.json",
+            ctx,
+            workspace=str(_NODEFLOW_WORKSPACE),
         )
     except NodeExecutionFailure as e:
         _fail_checkpoint(body=body, run_id=run_id, action=action, reason=str(e))
         raise
-    body["stages"]["spec_review"] = sr
+    body = ctx["body"]
+    clear_stage_stale(body, "spec")
     clear_stage_stale(body, "spec_review")
 
     gates = body.setdefault("dev_process", {}).setdefault("human_gates", {})
     gates["spec"] = "pending"
     gates["final"] = "not_reached"
 
-    if sr.get("decision") == "fail":
+    sr = body.get("stages", {}).get("spec_review", {})
+    if isinstance(sr, dict) and sr.get("decision") == "fail":
         dp = body.setdefault("dev_process", {})
         from nodeflow.workflows.dev_process.phase_loop import (
             check_loop_limit,
@@ -947,28 +927,34 @@ def _run_plan_cycle(
 
     _status("Writing plan..." if not is_continuation else "Writing continuation plan...")
     timeline.append_event(run_context["artifact_root"], run_id, "writing_plan", stage="plan")
+    ctx = make_flow_ctx(
+        body,
+        segment="plan_cycle",
+        params={
+            "repo_root": str(plan_repo.resolve()),
+            "task_prompt": task_prompt,
+            "approved_spec": spec_text,
+            "revision_context": revision_context,
+            "previous_plan": previous_plan,
+            "completed_phases": completed_phases_info,
+            "continuation_findings": continuation_findings,
+            "continuation_start_index": continuation_start_index,
+            "existing_plan": existing_plan,
+            "existing_plan_text": existing_plan_text,
+            "defer_plan_version_commit": defer_plan_version,
+        },
+    )
     try:
-        pl = run_plan_stage(
-            repo_root=plan_repo,
-            artifact_root=run_context["artifact_root"],
-            run_id=run_id,
-            task_prompt=task_prompt,
-            approved_spec=spec_text,
-            revision_context=revision_context,
-            previous_plan=previous_plan,
-            body=body,
-            completed_phases=completed_phases_info,
-            continuation_findings=continuation_findings,
-            continuation_start_index=continuation_start_index,
-            existing_plan=existing_plan,
-            existing_plan_text=existing_plan_text,
-            defer_plan_version_commit=defer_plan_version,
+        ctx = run_subpipe(
+            "examples/pipes/dev_process/plan_cycle.json",
+            ctx,
+            workspace=str(_NODEFLOW_WORKSPACE),
         )
     except NodeExecutionFailure as e:
         _fail_checkpoint(body=body, run_id=run_id, action=action, reason=str(e))
         raise
-    # Same dict as pl — later updates (e.g. plan_version, contract_validation_*) mutate in place.
-    body.setdefault("stages", {})["plan"] = pl
+    body = ctx["body"]
+    dp = body.setdefault("dev_process", {})
     clear_stage_stale(body, "plan")
     mark_stale(body, upstream="plan")
 
@@ -1009,38 +995,44 @@ def _run_plan_cycle(
             _fail_checkpoint(body=body, run_id=run_id, action=action, reason=str(e))
             raise
         _rework_contract_validated = True
-        if defer_plan_version and pl.get("plan_version_deferred"):
+        plan_st_for_version = body.setdefault("stages", {}).setdefault("plan", {})
+        if defer_plan_version and plan_st_for_version.get("plan_version_deferred"):
             from nodeflow.workflows.dev_process.artifact_versions import (
                 clear_plan_draft_pending_contract_validation,
                 commit_plan_version,
             )
 
             commit_plan_version(run_context["artifact_root"], new_plan, dp)
-            pl["plan_version"] = dp.get("current_plan_version", "")
-            clear_plan_draft_pending_contract_validation(dp, pl)
+            plan_st_for_version["plan_version"] = dp.get("current_plan_version", "")
+            clear_plan_draft_pending_contract_validation(dp, plan_st_for_version)
 
-    plan_text = _read_plan_text(run_context["artifact_root"])
     _status("Reviewing plan...")
     timeline.append_event(
         run_context["artifact_root"], run_id, "reviewing_plan", stage="plan_review"
     )
+    ctx = make_flow_ctx(
+        body,
+        segment="plan_review",
+        params={
+            "task_prompt": task_prompt,
+            "approved_spec": spec_text,
+        },
+    )
     try:
-        pr = run_plan_review_stage(
-            repo_root=repo,
-            artifact_root=run_context["artifact_root"],
-            run_id=run_id,
-            task_prompt=task_prompt,
-            spec_text=spec_text,
-            plan_text=plan_text,
-            body=body,
+        ctx = run_subpipe(
+            "examples/pipes/dev_process/plan_review.json",
+            ctx,
+            workspace=str(_NODEFLOW_WORKSPACE),
         )
     except NodeExecutionFailure as e:
         _fail_checkpoint(body=body, run_id=run_id, action=action, reason=str(e))
         raise
-    body["stages"]["plan_review"] = pr
+    body = ctx["body"]
+    dp = body.setdefault("dev_process", {})
     clear_stage_stale(body, "plan_review")
 
-    if pr.get("decision") == "fail":
+    pr = body.get("stages", {}).get("plan_review", {})
+    if isinstance(pr, dict) and pr.get("decision") == "fail":
         from nodeflow.workflows.dev_process.phase_loop import (
             check_loop_limit,
             increment_loop_counter,
@@ -1419,166 +1411,42 @@ def _run_single_phase(
         or dp.get("task_branch", {}).get("base_ref")
         or run_context["source_base_revision"]
     )
+    preset = str(dp.get("review_depth_preset") or "standard")
+    _apply_force_blocking_review_argv(body, force=force_review_blocking)
+    ctx: dict[str, Any] | None = None
+    try:
+        ctx = make_flow_ctx(
+            body,
+            segment="phase_step",
+            params={
+                "phase_id": phase_id,
+                "task_prompt": task_prompt,
+                "skip_implementation": skip_implementation,
+                "rework_context": rework_context,
+                "approved_spec": spec_text,
+                "approved_plan": augmented_plan,
+                "phase_plan_text": phase_plan_text,
+                "base_revision": base_rev,
+                "review_agents": phase_review_agents,
+                "review_targets": phase_review_targets,
+                "review_checklist": phase_checklist,
+                "review_acceptance_criteria": phase_criteria,
+                "review_scope": "phase",
+                "review_depth_preset": preset,
+            },
+        )
 
-    if not skip_implementation:
-        _status(f"[{phase_id}] Implementing...")
         timeline.append_event(
             run_context["artifact_root"],
             run_id,
-            "implementing",
-            stage="implementation",
+            "phase_step",
+            stage="phase_step",
             phase=phase_id,
         )
-        try:
-            impl = run_implementation_stage(
-                repo_root=repo,
-                artifact_root=phase_artifact_root,
-                run_id=run_id,
-                task_prompt=task_prompt,
-                base_revision=base_rev,
-                approved_spec=spec_text,
-                approved_plan=augmented_plan,
-                rework_context=rework_context,
-                body=body,
-            )
-        except NodeExecutionFailure as e:
-            _fail_checkpoint(
-                body=body, run_id=run_id, action=ACTION_CONTINUE_IMPLEMENTATION, reason=str(e)
-            )
-            raise
-        impl["phase_id"] = phase_id
-        body["stages"]["implementation"] = impl
-        clear_stage_stale(body, "implementation")
-        mark_stale(body, upstream="implementation")
-
-    if skip_implementation:
-        impl = body.get("stages", {}).get("implementation") or {}
-        impl_phase = impl.get("phase_id", "")
-        if impl_phase and impl_phase != phase_id:
-            raise NodeExecutionFailure(
-                f"skip_implementation: cached implementation is for {impl_phase!r}, "
-                f"not current phase {phase_id!r}; cannot skip safely"
-            )
-
-    _status(f"[{phase_id}] Writing tests...")
-    timeline.append_event(
-        run_context["artifact_root"],
-        run_id,
-        "writing_tests",
-        stage="test_implementation",
-        phase=phase_id,
-    )
-    try:
-        test_impl = run_test_implementation_stage(
-            repo_root=repo,
-            artifact_root=phase_artifact_root,
-            run_id=run_id,
-            approved_spec=spec_text,
-            approved_plan=phase_plan_text,
-            body=body,
-            rework_context=rework_context,
-        )
-    except NodeExecutionFailure as e:
-        _fail_checkpoint(
-            body=body, run_id=run_id, action=ACTION_CONTINUE_IMPLEMENTATION, reason=str(e)
-        )
-        raise
-    body["stages"]["test_implementation"] = test_impl
-    clear_stage_stale(body, "test_implementation")
-    mark_stale(body, upstream="test_implementation")
-
-    from nodeflow.workflows.dev_process.phase_git import collect_phase_changed_paths
-    from nodeflow.workflows.dev_process.stages.lint_fix import run_lint_fix_stage
-
-    _status(f"[{phase_id}] Lint fix...")
-    timeline.append_event(
-        run_context["artifact_root"],
-        run_id,
-        "lint_fix",
-        stage="lint_fix",
-        phase=phase_id,
-    )
-    changed = collect_phase_changed_paths(
-        repo, artifact_roots=[run_context["artifact_root"], phase_artifact_root]
-    )
-    lint_result = run_lint_fix_stage(
-        repo_root=repo,
-        changed_paths=changed,
-        artifact_root=run_context["artifact_root"],
-        phase_id=phase_id,
-    )
-    body["stages"]["lint_fix"] = lint_result
-
-    _status(f"[{phase_id}] Running tests...")
-    timeline.append_event(
-        run_context["artifact_root"],
-        run_id,
-        "running_tests",
-        stage="run_tests",
-        phase=phase_id,
-    )
-    from nodeflow.workflows.dev_process.reuse import collect_diff
-
-    pre_test_diff = collect_diff(repo_root=repo, base_revision=base_rev)
-
-    try:
-        run_tests_st = run_run_tests_stage(
-            repo_root=repo,
-            artifact_root=phase_artifact_root,
-            run_id=run_id,
-            diff_result=pre_test_diff,
-            execution_output=impl.get("execution_output") or {},
-        )
-    except NodeExecutionFailure as e:
-        _fail_checkpoint(
-            body=body, run_id=run_id, action=ACTION_CONTINUE_IMPLEMENTATION, reason=str(e)
-        )
-        raise
-    body["stages"]["run_tests"] = run_tests_st
-    clear_stage_stale(body, "run_tests")
-    run_tests_ok = _is_tests_ok(run_tests_st)
-
-    phase_diff_result = collect_diff(repo_root=repo, base_revision=base_rev)
-
-    lint_log_paths = list(lint_result.get("log_paths") or [])
-    impl_bundle = {
-        "status": run_tests_st.get("status", "completed"),
-        "test_result": run_tests_st.get("test_result"),
-        "diff_result": phase_diff_result,
-        "lint_result": lint_result,
-        "evidence_paths": list(impl.get("evidence_paths") or [])
-        + list(test_impl.get("evidence_paths") or []),
-        "lint_log_paths": lint_log_paths,
-    }
-
-    _status(f"[{phase_id}] Reviewing changes...")
-    timeline.append_event(
-        run_context["artifact_root"],
-        run_id,
-        "reviewing_changes",
-        stage="review",
-        phase=phase_id,
-    )
-    preset = str(dp.get("review_depth_preset") or "standard")
-    _apply_force_blocking_review_argv(body, force=force_review_blocking)
-    try:
-        rev = run_review_stage(
-            repo_root=repo,
-            artifact_root=phase_artifact_root,
-            run_id=run_id,
-            base_revision=base_rev,
-            approved_spec=spec_text,
-            approved_plan=augmented_plan,
-            diff_result=impl_bundle.get("diff_result") or {},
-            test_result=impl_bundle.get("test_result") or {},
-            review_depth_preset=preset,
-            body=body,
-            review_targets=phase_review_targets or None,
-            review_agents=phase_review_agents or None,
-            review_checklist=phase_checklist or None,
-            review_acceptance_criteria=phase_criteria or None,
-            lint_result=lint_result,
-            review_scope="phase",
+        ctx = run_subpipe(
+            "examples/pipes/dev_process/phase_step.json",
+            ctx,
+            workspace=str(_NODEFLOW_WORKSPACE),
         )
     except NodeExecutionFailure as e:
         _fail_checkpoint(
@@ -1586,10 +1454,44 @@ def _run_single_phase(
         )
         raise
     finally:
+        # Ensure test-hook argv override does not leak to subsequent segments.
         _clear_review_argv_override(body)
+        if ctx is not None and isinstance(ctx.get("body"), dict):
+            _clear_review_argv_override(ctx["body"])
+
+    body = ctx["body"]
+    dp = body.setdefault("dev_process", {})
+    clear_stage_stale(body, "implementation")
+    clear_stage_stale(body, "test_implementation")
+    clear_stage_stale(body, "lint_fix")
+    clear_stage_stale(body, "run_tests")
+    clear_stage_stale(body, "review")
+
+    impl = body.get("stages", {}).get("implementation") or {}
+    test_impl = body.get("stages", {}).get("test_implementation") or {}
+    lint_result = body.get("stages", {}).get("lint_fix") or {}
+    run_tests_st = body.get("stages", {}).get("run_tests") or {}
+    if not isinstance(impl, dict):
+        impl = {}
+    if not isinstance(test_impl, dict):
+        test_impl = {}
+    if not isinstance(lint_result, dict):
+        lint_result = {}
+    if not isinstance(run_tests_st, dict):
+        run_tests_st = {}
+    run_tests_ok = _is_tests_ok(run_tests_st)
+
+    rev = body.get("stages", {}).get("review") or {}
+    if not isinstance(rev, dict):
+        rev = {}
+        body.setdefault("stages", {})["review"] = rev
 
     review_result = rev.get("review_result") or {}
-    blocking = list(review_result.get("blocking_findings") or [])
+    blocking = (
+        list(review_result.get("blocking_findings") or [])
+        if isinstance(review_result, dict)
+        else []
+    )
     blocking = assign_owners_to_findings(blocking)
     if isinstance(review_result, dict):
         review_result = dict(review_result)
@@ -1599,8 +1501,7 @@ def _run_single_phase(
     branch_name, branch_head = record_reviewed_branch_snapshot(body)
     rev["reviewed_branch_name"] = branch_name
     rev["reviewed_branch_head"] = branch_head
-    body["stages"]["review"] = rev
-    clear_stage_stale(body, "review")
+    body.setdefault("stages", {})["review"] = rev
 
     results = dp.get("phase_results", {})
     pr = results.setdefault(phase_id, {})
@@ -1701,26 +1602,41 @@ def _run_final_review(
     try:
         from nodeflow.workflows.dev_process.review_config import FINAL_REVIEW_AGENTS
 
-        rev = run_review_stage(
-            repo_root=repo,
-            artifact_root=final_artifact_root,
-            run_id=run_id,
-            base_revision=base_ref,
-            approved_spec=spec_text,
-            approved_plan=plan_text,
-            diff_result=final_diff_result,
-            test_result={},
-            review_depth_preset=preset,
-            body=body,
-            review_targets=["final_diff"],
-            review_agents=list(FINAL_REVIEW_AGENTS),
-            review_scope="final",
+        ctx = make_flow_ctx(
+            body,
+            segment="final_review",
+            params={
+                "artifact_root": final_artifact_root,
+                "review_agents": list(FINAL_REVIEW_AGENTS),
+                "review_targets": ["final_diff"],
+                "review_scope": "final",
+                "review_depth_preset": preset,
+                "approved_spec": spec_text,
+                "approved_plan": plan_text,
+                "base_revision": base_ref,
+                "diff_result": final_diff_result,
+                "test_result": {},
+            },
+        )
+        ctx = run_subpipe(
+            "examples/pipes/dev_process/final_review.json",
+            ctx,
+            workspace=str(_NODEFLOW_WORKSPACE),
         )
     except NodeExecutionFailure as e:
         _fail_checkpoint(
             body=body, run_id=run_id, action=ACTION_CONTINUE_IMPLEMENTATION, reason=str(e)
         )
         raise
+
+    body = ctx["body"]
+    dp = body.setdefault("dev_process", {})
+    clear_stage_stale(body, "review")
+
+    rev = body.get("stages", {}).get("review") or {}
+    if not isinstance(rev, dict):
+        rev = {}
+        body.setdefault("stages", {})["review"] = rev
 
     review_result = rev.get("review_result") or {}
     blocking = list(review_result.get("blocking_findings") or [])

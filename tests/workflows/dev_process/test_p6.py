@@ -255,7 +255,7 @@ def _commit_during_implement(monkeypatch: pytest.MonkeyPatch) -> None:
         return out
 
     monkeypatch.setattr(
-        "nodeflow.workflows.dev_process.flow_actions.run_implementation_stage",
+        "nodeflow.workflows.dev_process.nodes.stage_nodes.run_implementation_stage",
         _wrapped,
     )
 

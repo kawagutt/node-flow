@@ -214,10 +214,10 @@ def test_without_exec_argv_jobs_use_hermetic_fallback(tmp_path: Path) -> None:
 
 
 def test_spec_review_fail_then_revise_spec(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from nodeflow.workflows.dev_process import flow_actions as flow_actions_mod
+    import nodeflow.workflows.dev_process.nodes.stage_nodes as stage_nodes_mod
 
     review_calls = 0
-    real_review = flow_actions_mod.run_spec_review_stage
+    real_review = stage_nodes_mod.run_spec_review_stage
 
     def _review(**kwargs: object) -> dict:
         nonlocal review_calls
@@ -231,15 +231,15 @@ def test_spec_review_fail_then_revise_spec(tmp_path: Path, monkeypatch: pytest.M
         return real_review(**kwargs)  # type: ignore[arg-type]
 
     spec_calls = 0
-    real_spec = flow_actions_mod.run_spec_stage
+    real_spec = stage_nodes_mod.run_spec_stage
 
     def _spec(**kwargs: object) -> dict:
         nonlocal spec_calls
         spec_calls += 1
         return real_spec(**kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(flow_actions_mod, "run_spec_review_stage", _review)
-    monkeypatch.setattr(flow_actions_mod, "run_spec_stage", _spec)
+    monkeypatch.setattr(stage_nodes_mod, "run_spec_review_stage", _review)
+    monkeypatch.setattr(stage_nodes_mod, "run_spec_stage", _spec)
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -281,10 +281,10 @@ def test_request_spec_revision_from_human_gate(tmp_path: Path) -> None:
 
 
 def test_plan_review_fail_then_revise_plan(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from nodeflow.workflows.dev_process import flow_actions as flow_actions_mod
+    import nodeflow.workflows.dev_process.nodes.stage_nodes as stage_nodes_mod
 
     plan_review_calls = 0
-    real_plan_review = flow_actions_mod.run_plan_review_stage
+    real_plan_review = stage_nodes_mod.run_plan_review_stage
 
     def _plan_review(**kwargs: object) -> dict:
         nonlocal plan_review_calls
@@ -297,7 +297,7 @@ def test_plan_review_fail_then_revise_plan(tmp_path: Path, monkeypatch: pytest.M
             }
         return real_plan_review(**kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(flow_actions_mod, "run_plan_review_stage", _plan_review)
+    monkeypatch.setattr(stage_nodes_mod, "run_plan_review_stage", _plan_review)
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -322,17 +322,17 @@ def test_plan_review_fail_then_revise_plan(tmp_path: Path, monkeypatch: pytest.M
 def test_revise_spec_includes_human_comment_with_findings(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from nodeflow.workflows.dev_process import flow_actions as flow_actions_mod
+    import nodeflow.workflows.dev_process.nodes.stage_nodes as stage_nodes_mod
 
     captured: dict[str, str] = {}
-    real_spec = flow_actions_mod.run_spec_stage
+    real_spec = stage_nodes_mod.run_spec_stage
 
     def _capture_spec(**kwargs: object) -> dict:
         captured["revision_context"] = str(kwargs.get("revision_context") or "")
         return real_spec(**kwargs)  # type: ignore[arg-type]
 
     review_calls = 0
-    real_review = flow_actions_mod.run_spec_review_stage
+    real_review = stage_nodes_mod.run_spec_review_stage
 
     def _review(**kwargs: object) -> dict:
         nonlocal review_calls
@@ -348,8 +348,8 @@ def test_revise_spec_includes_human_comment_with_findings(
             }
         return real_review(**kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(flow_actions_mod, "run_spec_stage", _capture_spec)
-    monkeypatch.setattr(flow_actions_mod, "run_spec_review_stage", _review)
+    monkeypatch.setattr(stage_nodes_mod, "run_spec_stage", _capture_spec)
+    monkeypatch.setattr(stage_nodes_mod, "run_spec_review_stage", _review)
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -372,10 +372,10 @@ def test_revise_spec_includes_human_comment_with_findings(
 def test_revise_spec_without_comment_uses_findings_only(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from nodeflow.workflows.dev_process import flow_actions as flow_actions_mod
+    import nodeflow.workflows.dev_process.nodes.stage_nodes as stage_nodes_mod
 
     review_calls = 0
-    real_review = flow_actions_mod.run_spec_review_stage
+    real_review = stage_nodes_mod.run_spec_review_stage
 
     def _review(**kwargs: object) -> dict:
         nonlocal review_calls
@@ -391,7 +391,7 @@ def test_revise_spec_without_comment_uses_findings_only(
             }
         return real_review(**kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(flow_actions_mod, "run_spec_review_stage", _review)
+    monkeypatch.setattr(stage_nodes_mod, "run_spec_review_stage", _review)
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -410,17 +410,17 @@ def test_revise_spec_without_comment_uses_findings_only(
 def test_revise_spec_includes_previous_spec_in_prompt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from nodeflow.workflows.dev_process import flow_actions as flow_actions_mod
+    import nodeflow.workflows.dev_process.nodes.stage_nodes as stage_nodes_mod
 
     captured: dict[str, str | None] = {}
-    real_spec = flow_actions_mod.run_spec_stage
+    real_spec = stage_nodes_mod.run_spec_stage
 
     def _capture_spec(**kwargs: object) -> dict:
         captured["previous_spec"] = kwargs.get("previous_spec")  # type: ignore[assignment]
         return real_spec(**kwargs)  # type: ignore[arg-type]
 
     review_calls = 0
-    real_review = flow_actions_mod.run_spec_review_stage
+    real_review = stage_nodes_mod.run_spec_review_stage
 
     def _review(**kwargs: object) -> dict:
         nonlocal review_calls
@@ -433,8 +433,8 @@ def test_revise_spec_includes_previous_spec_in_prompt(
             }
         return real_review(**kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(flow_actions_mod, "run_spec_stage", _capture_spec)
-    monkeypatch.setattr(flow_actions_mod, "run_spec_review_stage", _review)
+    monkeypatch.setattr(stage_nodes_mod, "run_spec_stage", _capture_spec)
+    monkeypatch.setattr(stage_nodes_mod, "run_spec_review_stage", _review)
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -454,10 +454,10 @@ def test_revise_spec_includes_previous_spec_in_prompt(
 def test_revise_plan_without_comment_succeeds(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from nodeflow.workflows.dev_process import flow_actions as flow_actions_mod
+    import nodeflow.workflows.dev_process.nodes.stage_nodes as stage_nodes_mod
 
     plan_review_calls = 0
-    real_plan_review = flow_actions_mod.run_plan_review_stage
+    real_plan_review = stage_nodes_mod.run_plan_review_stage
 
     def _plan_review(**kwargs: object) -> dict:
         nonlocal plan_review_calls
@@ -474,14 +474,14 @@ def test_revise_plan_without_comment_succeeds(
         return real_plan_review(**kwargs)  # type: ignore[arg-type]
 
     captured: dict[str, str | None] = {}
-    real_plan = flow_actions_mod.run_plan_stage
+    real_plan = stage_nodes_mod.run_plan_stage
 
     def _capture_plan(**kwargs: object) -> dict:
         captured["previous_plan"] = kwargs.get("previous_plan")  # type: ignore[assignment]
         return real_plan(**kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(flow_actions_mod, "run_plan_review_stage", _plan_review)
-    monkeypatch.setattr(flow_actions_mod, "run_plan_stage", _capture_plan)
+    monkeypatch.setattr(stage_nodes_mod, "run_plan_review_stage", _plan_review)
+    monkeypatch.setattr(stage_nodes_mod, "run_plan_stage", _capture_plan)
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -507,10 +507,10 @@ def test_revise_plan_without_comment_succeeds(
 def test_spec_revision_without_workspace_keeps_attempt_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from nodeflow.workflows.dev_process import flow_actions as flow_actions_mod
+    import nodeflow.workflows.dev_process.nodes.stage_nodes as stage_nodes_mod
 
     review_calls = 0
-    real_review = flow_actions_mod.run_spec_review_stage
+    real_review = stage_nodes_mod.run_spec_review_stage
 
     def _review(**kwargs: object) -> dict:
         nonlocal review_calls
@@ -523,7 +523,7 @@ def test_spec_revision_without_workspace_keeps_attempt_one(
             }
         return real_review(**kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(flow_actions_mod, "run_spec_review_stage", _review)
+    monkeypatch.setattr(stage_nodes_mod, "run_spec_review_stage", _review)
 
     repo = tmp_path / "repo"
     repo.mkdir()

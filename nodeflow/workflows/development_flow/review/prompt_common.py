@@ -8,6 +8,13 @@ from typing import Any, Dict, List
 from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.workflows.development_flow.review.review_parse import REVIEW_JSON_CONTRACT_TEXT
 
+REVIEW_REPOSITORY_INSPECTION_TEXT = """## Review scope (required)
+Do not rely only on the provided diff_result.
+Review the current repository state and all files relevant to the requested change,
+including implementation files, tests, configs, generated artifacts, and documentation when applicable.
+If diff_result is incomplete, stale, or missing, inspect the repository directly before concluding.
+"""
+
 
 def as_text(value: Any) -> str:
     if isinstance(value, str):
@@ -65,6 +72,7 @@ def render_common_context(
     )
     return (
         f"{mission}"
+        f"{REVIEW_REPOSITORY_INSPECTION_TEXT}\n"
         f"{REVIEW_JSON_CONTRACT_TEXT}\n\n"
         f"{extra_sections}"
         f"## Base ref\n{base_ref}\n\n"

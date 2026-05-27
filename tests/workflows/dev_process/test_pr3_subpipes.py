@@ -30,6 +30,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 SUBPIPE_PATHS = (
     "examples/pipes/dev_process/spec_cycle.json",
     "examples/pipes/dev_process/plan_cycle.json",
+    "examples/pipes/dev_process/plan_review.json",
     "examples/pipes/dev_process/phase_step.json",
     "examples/pipes/dev_process/final_review.json",
 )
@@ -124,7 +125,7 @@ def _minimal_body(tmp_path: Path) -> dict[str, Any]:
 def test_subpipe_loads(spec_path: str) -> None:
     spec = load_pipeline(str(REPO_ROOT), spec_path)
     assert "cycle_result" in spec.pipe.output_sources
-    assert len(spec.graph_node_order) >= 2
+    assert len(spec.graph_node_order) >= 1
 
 
 def test_spec_cycle_smoke(hermetic_run_node_exec: None, tmp_path: Path) -> None:
@@ -143,7 +144,36 @@ def test_spec_cycle_smoke(hermetic_run_node_exec: None, tmp_path: Path) -> None:
     assert len(out_body["node_runs"]) - runs_before == 2
 
 
-@patch("nodeflow.workflows.dev_process.stages.review.aggregate_reviews")
+def test_run_subpipe_passes_allow_pending_inputs_noop_to_pipe_node(
+    hermetic_run_node_exec: None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """run_subpipe must enable leaf no-op for Runner pre-delivery execute calls."""
+    import nodeflow.workflows.dev_process.subpipe_runner as subpipe_mod
+
+    captured: dict[str, Any] = {}
+    real_execute = subpipe_mod.execute_or_raise
+
+    def _spy(node: Any, inputs: dict, params: dict | None = None) -> dict:
+        captured["params"] = dict(params or {})
+        return real_execute(node, inputs, params)
+
+    monkeypatch.setattr(subpipe_mod, "execute_or_raise", _spy)
+
+    body = _minimal_body(tmp_path)
+    ctx = make_flow_ctx(body, segment="spec_cycle")
+    run_subpipe(
+        "examples/pipes/dev_process/spec_cycle.json",
+        ctx,
+        workspace=str(REPO_ROOT),
+    )
+
+    assert captured["params"].get("_allow_pending_inputs_noop") is True
+    assert captured["params"].get("_workspace_dir") == str(REPO_ROOT)
+
+
+@patch("nodeflow.workflows.dev_process.reuse.aggregate_reviews")
 def test_phase_step_smoke_node_runs_match_pipe_nodes(
     mock_aggregate: Any,
     hermetic_run_node_exec: None,
@@ -190,7 +220,7 @@ def test_phase_step_smoke_node_runs_match_pipe_nodes(
     assert out_body["stages"]["review"]["status"] == "completed"
 
 
-@patch("nodeflow.workflows.dev_process.stages.review.aggregate_reviews")
+@patch("nodeflow.workflows.dev_process.reuse.aggregate_reviews")
 def test_final_review_smoke_node_runs_match_pipe_nodes(
     mock_aggregate: Any,
     hermetic_run_node_exec: None,
@@ -201,11 +231,14 @@ def test_final_review_smoke_node_runs_match_pipe_nodes(
         {"ok": True},
     )
     body = _minimal_body(tmp_path)
+    run_artifact = Path(body["run_context"]["artifact_root"])
+    final_artifact_root = str(run_artifact / "final_review")
     runs_before = len(body["node_runs"])
     ctx = make_flow_ctx(
         body,
         segment="final_review",
         params={
+            "artifact_root": final_artifact_root,
             "review_agents": ["requirements", "test_quality", "checklist_compliance"],
             "review_scope": "final",
             "approved_spec": "# Spec",
@@ -223,6 +256,52 @@ def test_final_review_smoke_node_runs_match_pipe_nodes(
     assert added == FINAL_REVIEW_NODE_COUNT
     names = [r["node_name"] for r in out_body["node_runs"][runs_before:]]
     assert names == list(spec.graph_node_order)
+
+    final_aggregate = Path(final_artifact_root) / "review" / "aggregate.json"
+    assert final_aggregate.is_file(), "final review aggregate must live under final_artifact_root"
+    phase_aggregate = run_artifact / "phases" / "phase_001" / "review" / "aggregate.json"
+    assert not phase_aggregate.exists(), "final review must not write under phase artifact root"
+
+
+@patch("nodeflow.workflows.dev_process.reuse.aggregate_reviews")
+def test_final_review_scope_final_uses_run_root_without_explicit_artifact_root(
+    mock_aggregate: Any,
+    hermetic_run_node_exec: None,
+    tmp_path: Path,
+) -> None:
+    """review_scope=final alone must not route review artifacts to phases/<id>/."""
+    mock_aggregate.return_value = (
+        {"ok": True, "blocking_findings": [], "decision": "merge_ok"},
+        {"ok": True},
+    )
+    body = _minimal_body(tmp_path)
+    run_artifact = Path(body["run_context"]["artifact_root"])
+    ctx = make_flow_ctx(
+        body,
+        segment="final_review",
+        params={
+            "review_agents": ["requirements"],
+            "review_scope": "final",
+            "approved_spec": "# Spec",
+            "approved_plan": "# Plan",
+            "diff_result": {},
+            "test_result": {"ok": True},
+        },
+    )
+    run_subpipe(FINAL_REVIEW_SPEC, ctx, workspace=str(REPO_ROOT))
+
+    run_aggregate = run_artifact / "review" / "aggregate.json"
+    assert run_aggregate.is_file()
+    phase_aggregate = run_artifact / "phases" / "phase_001" / "review" / "aggregate.json"
+    assert not phase_aggregate.exists()
+
+
+def test_final_review_pipe_matches_final_review_agents() -> None:
+    from nodeflow.workflows.dev_process.review_config import FINAL_REVIEW_AGENTS, review_node_name
+
+    spec = load_pipeline(str(REPO_ROOT), FINAL_REVIEW_SPEC)
+    expected = [review_node_name(a) for a in FINAL_REVIEW_AGENTS] + ["review_aggregate"]
+    assert list(spec.graph_node_order) == expected
 
 
 def test_run_subpipe_missing_cycle_result_is_fatal(

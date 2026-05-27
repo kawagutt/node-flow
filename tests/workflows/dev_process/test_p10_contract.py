@@ -118,10 +118,10 @@ def test_node_run_dataclass_roundtrip() -> None:
 
 
 def test_revise_spec_adds_more_node_runs(tmp_path: Path, monkeypatch) -> None:
-    from nodeflow.workflows.dev_process import flow_actions as fa
+    import nodeflow.workflows.dev_process.nodes.stage_nodes as stage_nodes_mod
 
     review_calls = 0
-    real_review = fa.run_spec_review_stage
+    real_review = stage_nodes_mod.run_spec_review_stage
 
     def _review(**kwargs):
         nonlocal review_calls
@@ -134,7 +134,7 @@ def test_revise_spec_adds_more_node_runs(tmp_path: Path, monkeypatch) -> None:
             }
         return real_review(**kwargs)
 
-    monkeypatch.setattr(fa, "run_spec_review_stage", _review)
+    monkeypatch.setattr(stage_nodes_mod, "run_spec_review_stage", _review)
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -191,18 +191,18 @@ def test_continue_implementation_populates_all_node_runs(tmp_path: Path) -> None
 
 
 def test_node_runs_count_matches_evidence_count(tmp_path: Path) -> None:
-    """len(node_runs) == number of evidence JSON files on disk."""
+    """Each node_runs entry points at an on-disk evidence artifact (PR4 leaf model)."""
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repo_with_commit(repo)
     flow = full_through_review(repo)
     cp = load_flow_checkpoint(flow["flow_checkpoint_path"])
     runs = cp.get("node_runs") or []
-    art = _artifact_root(repo)
-    evidence_files = list(art.rglob("evidence/*.json"))
-    assert len(runs) == len(
-        evidence_files
-    ), f"node_runs={len(runs)} evidence_files={len(evidence_files)}"
+    assert len(runs) > 0
+    for r in runs:
+        ep = r.get("evidence_path")
+        assert ep, f"evidence_path missing on {r['node_name']}"
+        assert Path(ep).is_file(), f"evidence file missing: {ep}"
 
 
 def test_all_evidence_paths_exist(tmp_path: Path) -> None:
@@ -227,7 +227,9 @@ def test_full_flow_session_ids_unique(tmp_path: Path) -> None:
     flow = full_through_review(repo)
     cp = load_flow_checkpoint(flow["flow_checkpoint_path"])
     runs = cp.get("node_runs") or []
-    sids = [r["session_id"] for r in runs]
+    llm_runs = [r for r in runs if r.get("kind") == "llm"]
+    sids = [r["session_id"] for r in llm_runs]
+    assert all(sids), "LLM node_runs must record session_id"
     assert len(sids) == len(set(sids)), "duplicate session_ids in full flow"
 
 

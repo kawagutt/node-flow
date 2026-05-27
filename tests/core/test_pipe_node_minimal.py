@@ -49,3 +49,19 @@ def test_pipe_node_completes_on_pipe_outputs_not_final() -> None:
     assert pipe.read_status() == "done"
     assert out["result"] == {"v": 3}
     assert "_state" in out
+
+
+def test_pipe_node_propagates_infra_params_to_child_nodes() -> None:
+    """PipeNode must broadcast workspace + pending-input no-op flag to all children."""
+    spec = _linear_spec()
+    pipe = PipeNode(spec)
+    resolved = pipe._resolved_node_params(
+        spec,
+        {
+            "_workspace_dir": "/tmp/ws",
+            "_allow_pending_inputs_noop": True,
+        },
+    )
+    for node_id in ("a", "b"):
+        assert resolved[node_id]["_workspace_dir"] == "/tmp/ws"
+        assert resolved[node_id]["_allow_pending_inputs_noop"] is True

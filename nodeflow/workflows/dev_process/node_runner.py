@@ -362,20 +362,25 @@ def append_node_run_record(body: Dict[str, Any], record: NodeRun) -> None:
 def _write_skipped_evidence(
     *,
     artifact_root: str,
+    run_id: str,
     node_name: str,
+    stage: str,
     skip_reason: str,
+    run_index: int,
 ) -> str:
     """Write a minimal skipped-node evidence JSON for audit."""
     import json
 
-    ev_dir = Path(artifact_root) / "evidence" / "skipped"
+    ev_dir = Path(artifact_root) / "evidence"
     ev_dir.mkdir(parents=True, exist_ok=True)
-    ev_path = ev_dir / f"{node_name}.json"
+    ev_path = ev_dir / f"{run_id}.{node_name}.{run_index}.skipped.json"
     ev_path.write_text(
         json.dumps(
             {
                 "node_name": node_name,
+                "stage": stage,
                 "kind": "skipped",
+                "skipped": True,
                 "skip_reason": skip_reason,
             },
             indent=2,
@@ -396,11 +401,23 @@ def record_skipped_node_run(
 ) -> NodeRun:
     """Record a skipped leaf node attempt (no worker exec)."""
     ev_path = evidence_path
-    if not ev_path and artifact_root:
+    if not ev_path:
+        root = (artifact_root or "").strip()
+        if not root:
+            rc = body.get("run_context")
+            if isinstance(rc, dict):
+                root = str(rc.get("artifact_root") or "").strip()
+        if not root:
+            raise NodeExecutionFailure("artifact_root required to write skipped node evidence")
+        run_id = str((body.get("run_context") or {}).get("run_id") or "run")
+        run_index = len(body.get("node_runs") or [])
         ev_path = _write_skipped_evidence(
-            artifact_root=artifact_root,
+            artifact_root=root,
+            run_id=run_id,
             node_name=node_name,
+            stage=stage,
             skip_reason=skip_reason,
+            run_index=run_index,
         )
     record = NodeRun(
         node_name=node_name,
