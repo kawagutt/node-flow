@@ -55,6 +55,11 @@ def _hermetic_exec_policy() -> dict[str, Any]:
             "review_spec_conformance": {"worker": "codex", "argv": review_argv()},
             "review_wide": {"worker": "codex", "argv": review_argv()},
             "review_spec_revision": {"worker": "codex", "argv": review_argv()},
+            "review_requirements": {"worker": "codex", "argv": review_argv()},
+            "review_architecture": {"worker": "codex", "argv": review_argv()},
+            "review_test_quality": {"worker": "codex", "argv": review_argv()},
+            "review_checklist_compliance": {"worker": "codex", "argv": review_argv()},
+            "review_impact": {"worker": "codex", "argv": review_argv()},
         },
     }
 

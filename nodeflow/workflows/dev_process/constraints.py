@@ -76,6 +76,13 @@ REVIEW_NODE_NAMES = frozenset(
         "review_spec_conformance",
         "review_wide",
         "review_spec_revision",
+        "review_requirements",
+        "review_architecture",
+        "review_test_quality",
+        "review_checklist_compliance",
+        "review_impact",
+        "review_diff_detail",
+        "review_naming_doc",
     }
 )
 

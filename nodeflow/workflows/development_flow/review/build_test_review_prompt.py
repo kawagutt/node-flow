@@ -10,6 +10,7 @@ from nodeflow.core.node_kinds import PythonActionNode
 from nodeflow.workflows.development_flow.review.prompt_common import (
     extract_diff_context,
     render_common_context,
+    resolve_reviewer_mission,
 )
 
 
@@ -25,10 +26,13 @@ class BuildTestReviewPromptNode(PythonActionNode):
         base_ref, diff_clipped, status_short, untracked, _excerpts = extract_diff_context(
             inputs, params
         )
-        mission = (
-            "Run a test-focused review. "
-            "Find likely missing tests, flaky assertions, and behavior that should be covered "
-            "by unit/integration/end-to-end checks.\n\n"
+        mission = resolve_reviewer_mission(
+            params,
+            (
+                "Run a test-focused review. "
+                "Find likely missing tests, flaky assertions, and behavior that should be covered "
+                "by unit/integration/end-to-end checks.\n\n"
+            ),
         )
         text = render_common_context(
             mission=mission,

@@ -160,6 +160,9 @@ def checkpoint_status(doc: Dict[str, Any], *, checkpoint_path: str) -> Dict[str,
             if summaries:
                 summary_path = str(summaries[-1].resolve())
 
+    dp = doc.get("dev_process") if isinstance(doc.get("dev_process"), dict) else {}
+    phase_info = _extract_phase_status(dp)
+
     return {
         "flow_checkpoint_path": checkpoint_path,
         "state": fr.get("state"),
@@ -173,4 +176,38 @@ def checkpoint_status(doc: Dict[str, Any], *, checkpoint_path: str) -> Dict[str,
         "timeline_path": str((art / "timeline.jsonl").resolve()) if art else None,
         "summary_path": summary_path,
         "workspace_strategy": rc.get("workspace_strategy"),
+        **phase_info,
+    }
+
+
+def _extract_phase_status(dp: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract phase tracking info from dev_process state."""
+    total = dp.get("total_phases")
+    if not isinstance(total, int) or total < 1:
+        return {}
+    phase_index = dp.get("phase_index", 0)
+    current_id = dp.get("current_phase_id", "")
+    results = dp.get("phase_results") or {}
+    plan_json_path = str(dp.get("plan_json_path") or "")
+
+    phase_list: List[Dict[str, Any]] = []
+    for i in range(total):
+        pid = f"phase_{i:03d}"
+        pr = results.get(pid) or {}
+        status = str(pr.get("status") or "pending")
+        title = str(pr.get("title") or "")
+        if i == phase_index and status != "completed":
+            display_status = "current"
+        elif status == "completed":
+            display_status = "completed"
+        else:
+            display_status = "pending"
+        phase_list.append({"id": pid, "title": title, "status": display_status})
+
+    return {
+        "phase_index": phase_index,
+        "current_phase_id": current_id,
+        "total_phases": total,
+        "phases": phase_list,
+        "plan_json_path": plan_json_path if plan_json_path else None,
     }

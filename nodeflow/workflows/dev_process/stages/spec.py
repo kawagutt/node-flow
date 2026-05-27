@@ -90,13 +90,25 @@ def run_spec_stage(
         )
 
     spec_text = _parse_spec_stdout(str(execution_output.get("stdout") or ""))
-    spec_dir = Path(artifact_root) / "spec"
-    spec_dir.mkdir(parents=True, exist_ok=True)
-    spec_path = spec_dir / "spec.md"
-    spec_path.write_text(spec_text, encoding="utf-8")
+    dp = (body or {}).get("dev_process") if body else None
+    if dp is not None:
+        from nodeflow.workflows.dev_process.artifact_versions import write_versioned_spec
+
+        epoch_bump = bool((body or {}).get("spec_epoch_bump", False))
+        version_info = write_versioned_spec(artifact_root, spec_text, dp, epoch_bump=epoch_bump)
+        spec_path = version_info["latest_path"]
+    else:
+        spec_dir = Path(artifact_root) / "spec"
+        spec_dir.mkdir(parents=True, exist_ok=True)
+        spec_path = str(spec_dir / "spec.md")
+        Path(spec_path).write_text(spec_text, encoding="utf-8")
     assert_path_under_run_dir(artifact_root, str(spec_path))
-    return {
+    result: Dict[str, Any] = {
         "status": "completed",
         "spec_artifact": str(spec_path),
         "evidence_paths": [evidence_path],
     }
+    if dp is not None:
+        result["spec_version"] = version_info["version"]
+        result["versioned_spec_path"] = version_info["versioned_path"]
+    return result

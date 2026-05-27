@@ -10,6 +10,7 @@ from nodeflow.core.node_kinds import PythonActionNode
 from nodeflow.workflows.development_flow.review.prompt_common import (
     extract_diff_context,
     render_common_context,
+    resolve_reviewer_mission,
 )
 
 
@@ -25,10 +26,13 @@ class BuildWideScanReviewPromptNode(PythonActionNode):
         base_ref, diff_clipped, status_short, untracked, excerpts = extract_diff_context(
             inputs, params
         )
-        mission = (
-            "Run a wider change-set review (not a repository-wide file scan). "
-            "Focus on architectural side-effects, cross-file contract drift, "
-            "and risky dependencies that may be outside the primary edit scope.\n\n"
+        mission = resolve_reviewer_mission(
+            params,
+            (
+                "Run a wider change-set review (not a repository-wide file scan). "
+                "Focus on architectural side-effects, cross-file contract drift, "
+                "and risky dependencies that may be outside the primary edit scope.\n\n"
+            ),
         )
         text = render_common_context(
             mission=mission,

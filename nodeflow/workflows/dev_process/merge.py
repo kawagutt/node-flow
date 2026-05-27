@@ -299,16 +299,24 @@ def assert_merge_branch_owned_by_run(
     if not run_id:
         raise NodeExecutionFailure("run_context.run_id is required for git merge")
 
-    attempt = _workspace_attempt_from_body(body)
-    expected_branch = planned_branch_name_for_attempt(run_id, attempt)
-    branch = str(wc.get("planned_branch_name") or "").strip()
+    dp = body.get("dev_process") if isinstance(body.get("dev_process"), dict) else {}
+    tb = dp.get("task_branch") or {}
+    tb_name = tb.get("name", "")
+
+    if tb_name:
+        expected_branch = tb_name
+    else:
+        attempt = _workspace_attempt_from_body(body)
+        expected_branch = planned_branch_name_for_attempt(run_id, attempt)
+
+    branch = str(wc.get("planned_branch_name") or wc.get("current_branch") or "").strip()
     if branch != expected_branch:
         raise NodeExecutionFailure(
             f"merge branch mismatch: expected {expected_branch!r}, got {branch!r}"
         )
 
     repo_root = str(run_context.get("repo_root") or "").strip()
-    source_repo = str(wc.get("source_repo_root") or "").strip()
+    source_repo = str(wc.get("source_repo_root") or repo_root).strip()
     if not repo_root or not source_repo:
         raise NodeExecutionFailure(
             "run_context.repo_root and workspace_context.source_repo_root are required"
@@ -319,25 +327,26 @@ def assert_merge_branch_owned_by_run(
         )
 
     current_branch = str(wc.get("current_branch") or "").strip()
-    if current_branch != expected_branch:
+    if current_branch and current_branch != expected_branch:
         raise NodeExecutionFailure(
             f"workspace_context.current_branch mismatch: expected {expected_branch!r}, "
             f"got {current_branch!r}"
         )
 
-    artifact_root = str(run_context.get("artifact_root") or "").strip()
     workspace_root = str(wc.get("workspace_root") or "").strip()
-    if not artifact_root or not workspace_root:
-        raise NodeExecutionFailure(
-            "run_context.artifact_root and workspace_context.workspace_root are required for git merge"
-        )
-    worktrees_root = (Path(artifact_root).resolve() / "worktrees").resolve()
-    try:
-        Path(workspace_root).resolve().relative_to(worktrees_root)
-    except ValueError as e:
-        raise NodeExecutionFailure(
-            f"workspace_context.workspace_root must be under {worktrees_root}, got {workspace_root!r}"
-        ) from e
+    if not tb_name:
+        artifact_root = str(run_context.get("artifact_root") or "").strip()
+        if not artifact_root or not workspace_root:
+            raise NodeExecutionFailure(
+                "run_context.artifact_root and workspace_context.workspace_root are required for git merge"
+            )
+        worktrees_root = (Path(artifact_root).resolve() / "worktrees").resolve()
+        try:
+            Path(workspace_root).resolve().relative_to(worktrees_root)
+        except ValueError as e:
+            raise NodeExecutionFailure(
+                f"workspace_context.workspace_root must be under {worktrees_root}, got {workspace_root!r}"
+            ) from e
 
     return expected_branch
 

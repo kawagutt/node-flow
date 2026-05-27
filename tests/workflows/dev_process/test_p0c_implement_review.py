@@ -20,8 +20,9 @@ def test_approve_spec_merge_ready(tmp_path: Path) -> None:
     assert fr["state"] == STATE_AWAITING_FINAL
     assert fr["merge_ready"] is True
     artifact_root = Path(flow["run_context"]["artifact_root"])
-    assert (artifact_root / "implementation" / "summary.txt").is_file()
-    assert (artifact_root / "review" / "aggregate.json").is_file()
+    phase_dir = artifact_root / "phases" / "phase_000"
+    assert (phase_dir / "implementation" / "summary.txt").is_file()
+    assert (phase_dir / "review" / "aggregate.json").is_file()
 
 
 def test_approve_spec_blocking_review(tmp_path: Path) -> None:

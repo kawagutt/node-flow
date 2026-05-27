@@ -21,11 +21,14 @@ def run_test_implementation_stage(
     exec_argv: list[str] | None = None,
     exec_worker_kind: Optional[str] = None,
     body: Optional[Dict[str, Any]] = None,
+    rework_context: Optional[str] = None,
 ) -> Dict[str, Any]:
     prompt = (
         "Add or update automated tests for the implementation.\n\n"
         f"## Spec\n{approved_spec}\n\n## Plan\n{approved_plan}\n"
     )
+    if rework_context:
+        prompt += f"\n## Rework Context\n{rework_context}\n"
     cwd = str(repo_root)
 
     if body is not None:

@@ -4,6 +4,7 @@
 
 - **Schema:** `dev_process.flow.v2` — P8 checkpoints are not resumable.
 - **Architecture contract:** [dev_process_architecture.md](./dev_process_architecture.md)
+- **Phase plans:** `contract_sha256` covers goal/scope/tests/review/acceptance only; phase **title** is display-only (see architecture §12).
 - **P9 core flow:** `start` → spec loop → human spec gate → plan loop → **`awaiting_implementation`** (stops; no auto-implementation).
 - **P10:** All LLM execs on the main path go through `run_node_exec()`. Checkpoint `node_runs[]` records every execution as a `NodeRun` (1 node exec = 1 logical session = 1 evidence). Stage runners accept `body` and delegate exec/evidence/recording to `node_runner.run_node_exec()`. Argv resolution: `run_node_exec` → `resolve_node_exec` → `exec_policy_snapshot.nodes[node_name]`.
 - **P10 terminology:** Node = processing unit (e.g. `write_spec`), NodeRun = one execution record. `exec_policy.nodes` (not `jobs`) configures per-node worker and argv (active); model is recorded as audit metadata only (actual model selection is determined by argv). Registry type: `dev_process.<node_name>`.

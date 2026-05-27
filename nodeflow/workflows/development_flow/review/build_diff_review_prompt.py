@@ -10,6 +10,7 @@ from nodeflow.core.node_kinds import PythonActionNode
 from nodeflow.workflows.development_flow.review.prompt_common import (
     extract_diff_context,
     render_common_context,
+    resolve_reviewer_mission,
 )
 
 
@@ -25,11 +26,14 @@ class BuildDiffReviewPromptNode(PythonActionNode):
         base_ref, diff_clipped, status_short, untracked, excerpts = extract_diff_context(
             inputs, params
         )
-        mission = (
-            "Review the following implementation diff. "
-            "Focus on correctness, unintended scope changes, missing error handling, "
-            "bad naming, broken contracts, and likely test gaps. "
-            "Do not comment on style-only issues unless they affect maintainability.\n\n"
+        mission = resolve_reviewer_mission(
+            params,
+            (
+                "Review the following implementation diff. "
+                "Focus on correctness, unintended scope changes, missing error handling, "
+                "bad naming, broken contracts, and likely test gaps. "
+                "Do not comment on style-only issues unless they affect maintainability.\n\n"
+            ),
         )
         text = render_common_context(
             mission=mission,

@@ -56,21 +56,35 @@ def _run_context_for_prepare_workspace(body: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _clear_git_worktree_on_revise(body: Dict[str, Any]) -> None:
-    """Drop an existing implementation worktree; bump attempt only when one was active."""
+    """Drop legacy attempt workspace only; preserve task branch and its worktree."""
+    import subprocess
+
+    run_context = body["run_context"]
+    dp = body.get("dev_process") or {}
+    tb = dp.get("task_branch") or {}
+    tb_wt = tb.get("worktree_path")
+
     wc = body.get("workspace_context")
     if not isinstance(wc, dict) or not wc:
         return
-    run_context = body["run_context"]
     if _workspace_strategy(run_context) != WORKSPACE_STRATEGY_GIT_WORKTREE:
         body.pop("workspace_context", None)
         return
     root = wc.get("workspace_root")
-    if isinstance(root, str) and root.strip():
-        remove_git_worktree(
-            source_repo_root=run_context["repo_root"],
-            artifact_root=run_context["artifact_root"],
-            workspace_root=root,
-        )
+    if isinstance(root, str) and root.strip() and root != tb_wt:
+        try:
+            remove_git_worktree(
+                source_repo_root=run_context["repo_root"],
+                artifact_root=run_context["artifact_root"],
+                workspace_root=root,
+            )
+        except Exception:
+            subprocess.run(
+                ["git", "-C", run_context["repo_root"], "worktree", "remove", "--force", root],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
     body.pop("workspace_context", None)
     _increment_workspace_attempt(body)
 
@@ -131,6 +145,19 @@ def _workspace_repo_root(body: Dict[str, Any]) -> Path:
         if isinstance(root, str) and root.strip():
             return Path(root).resolve()
     return Path(body["run_context"]["repo_root"]).resolve()
+
+
+def _phase_repo_root(body: Dict[str, Any]) -> Path:
+    """Return the single repo root used by the phase loop.
+
+    Priority: task_branch.worktree_path > run_context.repo_root.
+    All phase git ops (record_phase_start, impl, review, commit, rewind) use this.
+    """
+    dp = body.get("dev_process") or {}
+    wt = dp.get("task_branch", {}).get("worktree_path")
+    if wt:
+        return Path(wt).resolve()
+    return _workspace_repo_root(body)
 
 
 def _empty_stages() -> Dict[str, Any]:

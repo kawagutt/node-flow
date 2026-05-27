@@ -131,9 +131,10 @@ def test_named_pipe_full_hermetic_path(tmp_path: Path) -> None:
         "record_only",
     ]
     assert _invoke_main(start_argv)[0] == 0
-    assert _invoke_main(argv_base + ["approve-spec"])[0] == 0
-    assert _invoke_main(argv_base + ["continue-implementation"])[0] == 0
-    assert _invoke_main(argv_base + ["approve-final"])[0] == 0
-    code, output = _invoke_main(argv_base + ["merge"])
+    ni_base = argv_base + ["--non-interactive"]
+    code, output = _invoke_main(ni_base + ["approve-spec"])
+    assert code == 0, output
+    assert _invoke_main(ni_base + ["approve-final"])[0] == 0
+    code, output = _invoke_main(ni_base + ["merge"])
     assert code == 0, output
     assert "merged" in output

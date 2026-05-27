@@ -114,13 +114,11 @@ class AggregateReviewsNode(PythonActionNode):
         params: MappingProxyType,
         context: ExecutionContext,
     ) -> Dict[str, Any]:
-        review_map = {
-            "diff": ("review_diff", "diff"),
-            "wide": ("review_wide", "diff"),
-            "tests": ("review_tests", "tests"),
-            "spec": ("review_spec_conformance", "spec"),
-            "spec_revision": ("review_spec_revision", "spec"),
-        }
+        from nodeflow.workflows.dev_process.review_node_spec import (
+            LEGACY_PRESET_REVIEW_NODES,
+            REVIEW_NODE_AREA,
+        )
+
         test_result = (
             inputs.get("test_result") if isinstance(inputs.get("test_result"), dict) else {}
         )
@@ -130,41 +128,39 @@ class AggregateReviewsNode(PythonActionNode):
 
         raw_expected = params.get("expected_review_keys")
         if raw_expected is None:
-            expected_keys = {input_key for _, (input_key, _) in review_map.items()}
+            expected_keys = set(LEGACY_PRESET_REVIEW_NODES)
         else:
             if not isinstance(raw_expected, (list, tuple)) or not all(
                 isinstance(x, str) for x in raw_expected
             ):
                 raise NodeExecutionFailure(
-                    "expected_review_keys must be a list of reviewer input_key strings"
+                    "expected_review_keys must be a list of review node_name strings"
                 )
             expected_keys = set(raw_expected)
-            valid_keys = {input_key for _, (input_key, _) in review_map.items()}
-            unknown = expected_keys - valid_keys
+            unknown = expected_keys - set(REVIEW_NODE_AREA)
             if unknown:
                 raise NodeExecutionFailure(
-                    f"expected_review_keys contains unknown keys: {sorted(unknown)!r}"
+                    f"expected_review_keys contains unknown review nodes: {sorted(unknown)!r}"
                 )
 
         blocking_findings: List[Dict[str, Any]] = []
         non_blocking_findings: List[Dict[str, Any]] = []
         spec_flags: List[bool] = []
 
-        for label, (input_key, area) in review_map.items():
-            if input_key not in expected_keys:
-                continue
-            er = inputs.get(input_key)
+        for node_name in sorted(expected_keys):
+            area = REVIEW_NODE_AREA[node_name]
+            er = inputs.get(node_name)
             if not isinstance(er, dict):
                 blocking_findings.append(
                     {
-                        "id": f"R_{label.upper()}_MISSING",
+                        "id": f"R_{node_name.upper()}_MISSING",
                         "area": "review",
-                        "summary": f"{label} review result is missing",
-                        "suggested_fix": f"wire {input_key} output into aggregate_reviews inputs",
+                        "summary": f"{node_name} review result is missing",
+                        "suggested_fix": f"wire {node_name} output into aggregate_reviews inputs",
                     }
                 )
                 continue
-            b, nb, s, _ = _consume_review(er, label=label, default_area=area)
+            b, nb, s, _ = _consume_review(er, label=node_name, default_area=area)
             blocking_findings.extend(b)
             non_blocking_findings.extend(nb)
             if s is not None:

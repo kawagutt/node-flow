@@ -192,7 +192,7 @@ def assert_expected_stage_evidence(body: Dict[str, Any], *, run_id: str) -> List
         raise NodeExecutionFailure("run_context.artifact_root is required for evidence validation")
 
     stages = body.get("stages") or {}
-    evidence_dir = (Path(artifact_root).resolve() / "evidence").resolve()
+    root_resolved = Path(artifact_root).resolve()
 
     for name in _STAGES_REQUIRING_EVIDENCE:
         st = stages.get(name) or {}
@@ -206,11 +206,16 @@ def assert_expected_stage_evidence(body: Dict[str, Any], *, run_id: str) -> List
                 raise NodeExecutionFailure(f"stages.{name}.evidence_paths contains invalid entry")
             p = Path(raw).resolve()
             try:
-                p.relative_to(evidence_dir)
+                p.relative_to(root_resolved)
             except ValueError as e:
                 raise NodeExecutionFailure(
-                    f"stages.{name}.evidence_paths entry escapes evidence/: {p}"
+                    f"stages.{name}.evidence_paths entry escapes artifact_root: {p}"
                 ) from e
+            rel = p.relative_to(root_resolved)
+            if "evidence" not in rel.parts:
+                raise NodeExecutionFailure(
+                    f"stages.{name}.evidence_paths entry not under evidence/ directory: {p}"
+                )
             if not p.is_file():
                 raise NodeExecutionFailure(f"evidence file missing: {p}")
             doc = read_json_evidence(p)

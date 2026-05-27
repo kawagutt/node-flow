@@ -36,6 +36,14 @@ def extract_diff_context(
     return base_ref, diff_clipped, status_short, untracked, excerpts
 
 
+def resolve_reviewer_mission(params: Any, default: str) -> str:
+    """Use per-node SKILL text when provided via ``reviewer_mission`` param."""
+    custom = params.get("reviewer_mission") if hasattr(params, "get") else None
+    if isinstance(custom, str) and custom.strip():
+        return custom.strip() + "\n\n"
+    return default
+
+
 def render_common_context(
     *,
     mission: str,

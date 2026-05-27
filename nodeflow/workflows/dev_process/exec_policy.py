@@ -38,6 +38,14 @@ NODE_NAMES = (
     "review_spec_conformance",
     "review_wide",
     "review_spec_revision",
+    # v1 review agents (1 agent = 1 dedicated node; see review_config.AGENT_TO_NODE_NAME)
+    "review_requirements",
+    "review_architecture",
+    "review_test_quality",
+    "review_checklist_compliance",
+    "review_impact",
+    "review_diff_detail",
+    "review_naming_doc",
 )
 
 SUPPORTED_WORKERS = frozenset({"codex"})
@@ -63,8 +71,21 @@ def default_argv_for_worker(worker_kind: str) -> List[str]:
 
 
 def default_node_entries() -> Dict[str, Dict[str, Any]]:
-    """Worker defaults only — argv resolved via default_argv then default_argv_for_node."""
-    return {name: {"worker": "codex"} for name in NODE_NAMES}
+    """Worker defaults; v1 review agents include audit model profile metadata."""
+    from nodeflow.workflows.dev_process.review_agent_model import (
+        AGENT_MODEL_PROFILE,
+        effective_model_profile,
+    )
+    from nodeflow.workflows.dev_process.review_config import (
+        KNOWN_REVIEW_AGENTS,
+        review_node_name,
+    )
+
+    entries: Dict[str, Dict[str, Any]] = {name: {"worker": "codex"} for name in NODE_NAMES}
+    for agent in KNOWN_REVIEW_AGENTS:
+        profile = AGENT_MODEL_PROFILE.get(agent) or effective_model_profile(agent)
+        entries[review_node_name(agent)] = {"worker": "codex", "model": profile}
+    return entries
 
 
 def _validate_policy_overrides(overrides: Dict[str, Any]) -> None:

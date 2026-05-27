@@ -282,7 +282,7 @@ def write_development_summary(
 
 
 def build_review_prompt(
-    reviewer_key: str,
+    node_name: str,
     *,
     repo_root: Path | str,
     base_revision: str,
@@ -292,6 +292,10 @@ def build_review_prompt(
     approved_plan: str,
     prompt_params: Dict[str, Any] | None = None,
 ) -> str:
+    from nodeflow.workflows.dev_process.review_node_spec import (
+        load_review_node_skill,
+        prompt_builder_key,
+    )
     from nodeflow.workflows.development_flow.review.build_diff_review_prompt import (
         BuildDiffReviewPromptNode,
     )
@@ -315,9 +319,14 @@ def build_review_prompt(
         "review_spec_conformance": BuildSpecReviewPromptNode,
         "review_spec_revision": BuildSpecRevisionReviewPromptNode,
     }
-    cls = _PROMPT_NODES.get(reviewer_key)
+    prompt_key = prompt_builder_key(node_name)
+    cls = _PROMPT_NODES.get(prompt_key)
     if cls is None:
-        raise NodeExecutionFailure(f"unknown reviewer key {reviewer_key!r}")
+        raise NodeExecutionFailure(f"unknown review node {node_name!r}")
+    skill_text = load_review_node_skill(node_name)
+    merged_params = dict(prompt_params or {})
+    if skill_text:
+        merged_params["reviewer_mission"] = skill_text
     node = cls()
     out = execute_or_raise(
         node,
@@ -328,7 +337,7 @@ def build_review_prompt(
             "test_result": test_result,
             "approved_spec_plan": {"spec": approved_spec, "plan": approved_plan},
         },
-        dict(prompt_params or {}),
+        merged_params,
     )
     prompt = out.get("codex_task_prompt") or {}
     if isinstance(prompt, dict):

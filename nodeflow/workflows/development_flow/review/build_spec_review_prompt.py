@@ -11,6 +11,7 @@ from nodeflow.workflows.development_flow.review.prompt_common import (
     as_text,
     extract_diff_context,
     render_common_context,
+    resolve_reviewer_mission,
 )
 
 
@@ -32,9 +33,12 @@ class BuildSpecReviewPromptNode(PythonActionNode):
             inputs, params
         )
 
-        mission = (
-            "Decide whether the diff conforms to the approved SPEC and PLAN. "
-            'If the change requires revising the spec (not just the code), set "spec_revision_needed": true.\n\n'
+        mission = resolve_reviewer_mission(
+            params,
+            (
+                "Decide whether the diff conforms to the approved SPEC and PLAN. "
+                'If the change requires revising the spec (not just the code), set "spec_revision_needed": true.\n\n'
+            ),
         )
         extra_sections = (
             "## Approved SPEC\n"

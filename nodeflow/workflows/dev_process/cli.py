@@ -130,6 +130,7 @@ def _run_resume_action(
     prompt_at_gates: bool = False,
     human_comment_text: str = "",
     revision_comment: str = "",
+    rework_provided: Optional[Dict[str, Any]] = None,
     **run_flow_kwargs: Any,
 ) -> None:
     revision_provided: Dict[str, Any] | None = None
@@ -147,6 +148,7 @@ def _run_resume_action(
             task_prompt=revision_comment.strip(),
             human_comment_text=human_comment_text,
             revision_provided=revision_provided,
+            rework_provided=rework_provided,
             interactive=interactive,
             auto_continue=auto_continue,
             prompt_at_gates=prompt_at_gates,
@@ -305,6 +307,25 @@ def cmd_status(ctx: click.Context, checkpoint: Optional[str], run_id: Optional[s
             lines.append(f"summary: {status['summary_path']}")
         else:
             lines.append("summary: <not written yet>")
+
+        if status.get("total_phases"):
+            total = status["total_phases"]
+            idx = status.get("phase_index", 0)
+            current_id = status.get("current_phase_id", "")
+            if idx >= total:
+                lines.append(f"phase: {total}/{total} (completed)")
+            else:
+                lines.append(f"phase: {idx + 1}/{total} ({current_id})")
+            lines.append("")
+            lines.append("Phases:")
+            for p in status.get("phases", []):
+                tag = p.get("status", "pending")
+                title = p.get("title", "")
+                label = f"  {tag:<12}{p['id']}"
+                if title:
+                    label += f"  {title}"
+                lines.append(label)
+
         click.echo("\n".join(lines))
 
 
@@ -351,9 +372,31 @@ def cmd_continue_implementation(
 @main.command("rework")
 @click.option("--checkpoint", default=None)
 @click.option("--run-id", default=None)
+@click.option(
+    "--owner",
+    default=None,
+    type=click.Choice(["implementation", "test", "plan", "spec"]),
+    help="Rework owner (required for mixed final-review rework).",
+)
+@click.option(
+    "--target-phase",
+    default=None,
+    help="Target phase for rewind, e.g. 'phase_001' (required for impl/test final-review rework).",
+)
 @click.pass_context
-def cmd_rework(ctx: click.Context, checkpoint: Optional[str], run_id: Optional[str]) -> None:
+def cmd_rework(
+    ctx: click.Context,
+    checkpoint: Optional[str],
+    run_id: Optional[str],
+    owner: Optional[str],
+    target_phase: Optional[str],
+) -> None:
     """Re-run implement + review in the same worktree."""
+    rework_kw: Dict[str, Any] = {}
+    if owner:
+        rework_kw["owner"] = owner
+    if target_phase:
+        rework_kw["target_phase"] = target_phase
     _run_resume_action(
         repo_root=ctx.obj["repo_root"],
         action=ACTION_REWORK,
@@ -363,6 +406,7 @@ def cmd_rework(ctx: click.Context, checkpoint: Optional[str], run_id: Optional[s
         interactive=ctx.obj["interactive"],
         auto_continue=ctx.obj["auto_continue"],
         prompt_at_gates=ctx.obj["prompt_at_gates"],
+        rework_provided=rework_kw if rework_kw else None,
     )
 
 
@@ -475,9 +519,73 @@ def cmd_approve_final(ctx: click.Context, checkpoint: Optional[str], run_id: Opt
 @main.command("merge")
 @click.option("--checkpoint", default=None)
 @click.option("--run-id", default=None)
+@click.option("--squash", is_flag=True, default=False, help="Squash phase commits before merge.")
 @click.pass_context
-def cmd_merge(ctx: click.Context, checkpoint: Optional[str], run_id: Optional[str]) -> None:
+def cmd_merge(
+    ctx: click.Context,
+    checkpoint: Optional[str],
+    run_id: Optional[str],
+    squash: bool,
+) -> None:
     """Execute merge policy (record_only or git_merge_branch)."""
+    if squash:
+        from nodeflow.workflows.dev_process.checkpoint import write_flow_checkpoint
+        from nodeflow.workflows.dev_process.squash import squash_phase_commits
+
+        repo_root: Path = ctx.obj["repo_root"]
+        try:
+            cp_path = resolve_checkpoint_path(repo_root, checkpoint=checkpoint, run_id=run_id)
+            doc = load_flow_checkpoint(cp_path)
+
+            fr = doc.get("flow_result") or {}
+            state = str(fr.get("state") or "")
+            if state != "awaiting_merge":
+                raise NodeExecutionFailure(f"squash requires state=awaiting_merge, got {state!r}")
+
+            dp = doc.get("dev_process", {})
+            task_branch = dp.get("task_branch", {})
+            wt = task_branch.get("worktree_path")
+            squash_repo = Path(wt) if wt else repo_root
+            merge_policy = str(
+                dp.get("merge_policy") or doc.get("run_context", {}).get("merge_policy") or ""
+            )
+            artifact_roots = [doc.get("run_context", {}).get("artifact_root", "")]
+            record_only = merge_policy == "record_only"
+            result = squash_phase_commits(
+                squash_repo,
+                dp,
+                record_only=record_only,
+                artifact_roots=artifact_roots,
+            )
+            click.echo(f"squash: {json.dumps(result, indent=2, ensure_ascii=False)}")
+
+            dp["squash"] = result
+
+            if result.get("squashed"):
+                final_rev = doc.get("stages", {}).get("final_review", {})
+                if final_rev:
+                    if not final_rev.get("reviewed_tree"):
+                        final_rev["reviewed_tree"] = result.get("reviewed_tree", "")
+                    final_rev["reviewed_branch_head_before_squash"] = final_rev.get(
+                        "reviewed_branch_head"
+                    )
+                    final_rev["reviewed_branch_head"] = result["squash_commit"]
+                    final_rev["squash_commit"] = result["squash_commit"]
+                    final_rev["squash_tree"] = result.get("squash_tree", "")
+                    final_rev["squash_tree_matches_reviewed_tree"] = result.get(
+                        "squash_tree_matches_reviewed_tree", False
+                    )
+
+            run_ctx = doc.get("run_context", {})
+            write_flow_checkpoint(
+                artifact_root=run_ctx.get("artifact_root", ""),
+                run_id=run_ctx.get("run_id", ""),
+                action="squash",
+                body=doc,
+            )
+        except NodeExecutionFailure as e:
+            raise click.ClickException(str(e)) from e
+
     _run_resume_action(
         repo_root=ctx.obj["repo_root"],
         action=ACTION_MERGE,

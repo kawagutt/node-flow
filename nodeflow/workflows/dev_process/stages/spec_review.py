@@ -69,7 +69,17 @@ def run_spec_review_stage(
         )
 
     aggregate = aggregate_stage_review(execution_output, stage="spec_review")
-    out_dir = Path(artifact_root) / "spec_review"
+    dp = (body or {}).get("dev_process") if body else None
+    if dp is not None:
+        from nodeflow.workflows.dev_process.artifact_versions import (
+            review_aggregate_metadata,
+            spec_review_dir,
+        )
+
+        aggregate.update(review_aggregate_metadata(dp, review_scope="spec"))
+        out_dir = spec_review_dir(artifact_root, dp)
+    else:
+        out_dir = Path(artifact_root) / "spec_review"
     out_dir.mkdir(parents=True, exist_ok=True)
     agg_path = out_dir / "aggregate.json"
     agg_path.write_text(json.dumps(aggregate, indent=2), encoding="utf-8")

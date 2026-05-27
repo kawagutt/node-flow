@@ -124,6 +124,17 @@ def assert_path_under_run_dir(run_dir: str, path: str) -> None:
         raise NodeExecutionFailure(f"path escapes run artifact_root: {target}") from e
 
 
+def git_tree_hash(repo_root: Path, commit: str) -> str:
+    """Return the git tree object hash for *commit*."""
+    cp = subprocess.run(
+        ["git", "-C", str(repo_root), "rev-parse", f"{commit}^{{tree}}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return (cp.stdout or "").strip() if cp.returncode == 0 else ""
+
+
 def git_head_revision(repo_root: Path) -> str:
     cp = subprocess.run(
         ["git", "-C", str(repo_root), "rev-parse", "HEAD"],

@@ -8,6 +8,7 @@ from typing import Any, Dict
 from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.workflows.dev_process.reuse import build_review_prompt
 from nodeflow.workflows.dev_process.review_presets import PRESET_DEEP, normalize_preset
+from nodeflow.workflows.dev_process.review_config import review_node_name
 from nodeflow.workflows.dev_process.review_prompt_limits import prompt_params_for_reviewer
 
 
@@ -34,8 +35,9 @@ def run_review_prompt_build(reviewer_key: str, inputs: Dict[str, Any]) -> Dict[s
     except NodeExecutionFailure:
         # Registry leaves are callable in isolation; preset may omit this reviewer.
         limits = prompt_params_for_reviewer(PRESET_DEEP, reviewer_key)
+    node_name = review_node_name(reviewer_key)
     text = build_review_prompt(
-        reviewer_key,
+        node_name,
         repo_root=Path(str(repo_root)),
         base_revision=str(base_ref or "HEAD"),
         diff_result=diff_result if isinstance(diff_result, dict) else {},

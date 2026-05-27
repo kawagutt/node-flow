@@ -89,7 +89,35 @@ def test_aggregate_reviews_schema_parse_failure_blocks() -> None:
     )
     rr = out["review_result"]
     assert rr["ok"] is False
-    assert any(b.get("id") == "R_DIFF_PARSE" for b in rr["blocking_findings"])
+    assert any(b.get("id") == "R_REVIEW_DIFF_PARSE" for b in rr["blocking_findings"])
+
+
+def test_aggregate_reviews_v1_review_nodes() -> None:
+    node = AggregateReviewsNode()
+    valid = json.dumps(
+        {
+            "ok": True,
+            "blocking_findings": [],
+            "non_blocking_findings": [],
+            "spec_revision_needed": False,
+        }
+    )
+    er = {"ok": True, "stdout": valid, "stderr": "", "raw_output": {}}
+    out = node.execute(
+        {
+            "review_architecture": er,
+            "review_test_quality": er,
+            "test_result": {"ok": True},
+            "diff_result": {"ok": True, "diff": "x", "untracked_files": []},
+        },
+        {
+            "expected_review_keys": [
+                "review_architecture",
+                "review_test_quality",
+            ],
+        },
+    )
+    assert out["review_result"]["ok"] is True
 
 
 def test_aggregate_reviews_missing_review_input_blocks() -> None:
@@ -116,4 +144,4 @@ def test_aggregate_reviews_missing_review_input_blocks() -> None:
     )
     rr = out["review_result"]
     assert rr["ok"] is False
-    assert any(b.get("id") == "R_WIDE_MISSING" for b in rr["blocking_findings"])
+    assert any(b.get("id") == "R_REVIEW_WIDE_MISSING" for b in rr["blocking_findings"])

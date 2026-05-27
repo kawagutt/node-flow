@@ -7,22 +7,26 @@ is explicitly tested in test_constraints.py::TestNoImplicitWorkerExec.
 
 from __future__ import annotations
 
+import json
 import sys
 
 import pytest
 
 from nodeflow.workflows.dev_process import exec_policy
+from nodeflow.workflows.dev_process.hermetic_argv import PHASE_PLAN_TEXT
 
-_MULTI_STUB_SCRIPT = (
-    "import json,sys; print(json.dumps("
-    '{"spec":"# Spec\\n\\nTask spec.",'
-    '"plan":"# Plan\\n\\nTask plan.",'
-    '"ok":True,'
-    '"blocking_findings":[],'
-    '"non_blocking_findings":[],'
-    '"spec_revision_needed":False}'
-    "))"
+_MULTI_STUB_PAYLOAD = json.dumps(
+    {
+        "spec": "# Spec\n\nTask spec.",
+        "plan": PHASE_PLAN_TEXT,
+        "ok": True,
+        "blocking_findings": [],
+        "non_blocking_findings": [],
+        "spec_revision_needed": False,
+    }
 )
+
+_MULTI_STUB_SCRIPT = f"import json; print({_MULTI_STUB_PAYLOAD!r})"
 
 
 @pytest.fixture(autouse=True)

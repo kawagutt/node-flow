@@ -21,11 +21,17 @@ def test_approve_spec_uses_git_worktree_workspace(tmp_path: Path) -> None:
     approved = approve_and_continue(repo, cp)
     assert approved["flow_result"]["state"] == STATE_AWAITING_FINAL
 
-    wc = approved.get("workspace_context") or {}
-    assert wc.get("strategy") == "git_worktree"
-    wt = Path(wc["workspace_root"])
+    import json as _json
+
+    cp_path = approved["flow_result"]["flow_checkpoint_path"]
+    cp_doc = _json.loads(Path(cp_path).read_text(encoding="utf-8"))
+    dp = cp_doc.get("dev_process") or {}
+    task_branch = dp.get("task_branch") or {}
+    assert task_branch.get("created") is True
+    wt_path = task_branch.get("worktree_path")
+    assert wt_path, "git_worktree strategy should set worktree_path"
+    wt = Path(wt_path)
     assert wt.is_dir()
     assert wt != repo.resolve()
     assert (wt / "README.md").is_file()
-    artifact_root = Path(approved["run_context"]["artifact_root"])
-    assert wt == (artifact_root / "worktrees" / "001").resolve()
+    assert not str(wt).startswith(str(repo.resolve()))

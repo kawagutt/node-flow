@@ -182,7 +182,128 @@ Plan path has **no** human gate.
 | **P10** | `run_node_exec()` on main path; `node_runs[]` on checkpoint records every LLM execution as a `NodeRun` (`node_name`, `node_type`, `stage`, `session_id`, `evidence_path`, `worker`, `model`, `argv`); `exec_policy_snapshot.nodes[node_name]` = argv resolution (not `jobs`); `exec_policy_path` input (start-only, CLI cwd-relative) with `policy_source` audit; resume rejects `exec_policy_path`; `model` is audit metadata only (not injected into worker argv; actual model determined by argv); evidence JSON includes `node_name`/`session_id`/`model`/`worker`; `provider_meta.session_id` → `provider_session_id`; unknown node names in policy file are rejected at start; `run_tests` is a local command — excluded from `NODE_NAMES` |
 | **P11** | Full implementation chain: `write_implementation` → `write_tests` → `run_tests` → `review_changes` → synthesis; owner routing (`spec` → spec cycle, `plan` → plan cycle, `implementation` → full chain, `test` → tests+review only, skipping `write_implementation`); stale markers propagation on upstream revision; `human_final_gate` → `awaiting_merge` → `merge`; rework from `awaiting_rework_decision` or `awaiting_final`; `node_runs[]` continuity across rework cycles; dead states removed (`awaiting_implementation_rework`, `awaiting_test_rework`) — single `awaiting_rework_decision` state |
 
-## 12. Breaking changes from P8
+## 12. Phase-based plan format (v1.6+)
+
+Plans use markdown ``## Phase N: <title>`` sections. The workflow assigns stable ids
+``phase_000``, ``phase_001``, … from **order**, not from the title string.
+
+Only strict phase-formatted plans are supported. Non-phase / legacy plans are **not**
+auto-converted: ``parse_new_plan()`` must succeed before ``plan_review`` runs. Checkpoints
+with old ``plan.md`` / ``plan.json`` fail on resume with an explicit message (use
+``revise-plan`` or restart the run).
+
+Implementation always uses the phase loop (``total_phases`` > 0). There is no
+non-phase ``continue_implementation`` fallback; checkpoints without phase state must
+regenerate the plan before implementation.
+
+### Phase contract and `contract_sha256`
+
+Each phase has a `contract_sha256` computed from:
+
+- Goal, Scope (include/exclude), Test plan
+- Review plan (targets, agents), Review checklist, Acceptance criteria
+
+**Not** included: phase title (`## Phase N: …`), heading text, or `phase_NNN` id
+(the id is derived separately).
+
+| Field | Role in rework |
+|-------|----------------|
+| Title | Display-only for contracts; completed phases keep **historical title** in `phase_results` (plan.md title may change without invalidating the phase) |
+| Contract fields above | Immutable for `status=completed` phases; `validate_rework_contracts()` compares hashes |
+| Pending / later phases | May be rewritten freely on plan rework |
+
+`review_targets` and `review_agents` are **sorted** in `contract_sha256` so list order in
+the plan markdown does not affect the hash. Reviewer **execution order** is not part of
+the contract.
+
+Continuation plans append new phases after all completed ones; completed contracts
+are never rewritten (see `plan_prompt.py`).
+
+Continuation merge retries pin ``dev_process.continuation_base_plan_version`` to the
+accepted plan snapshot on first entry. Each retry loads
+``plan/versions/<continuation_base_plan_version>.{md,json}`` as the merge base (not
+polluted ``plan/plan.md`` from a failed attempt). On ``plan_review`` fail, latest
+``plan/plan.*`` is restored from that version.
+
+``load_plan_data()`` rejects ``plan.md`` / ``plan.json`` drift (``plan_sha256`` and
+parsed phase ids / ``contract_sha256``).
+
+### Review agents v1
+
+Phase and final reviews use four **v1 agents** (one agent = one dedicated reviewer node):
+
+```text
+requirements, architecture, test_quality, checklist_compliance
+```
+
+Optional agents (`impact`, `diff_detail`, `naming_doc`) remain parseable but are omitted from
+the plan LLM prompt. **Agents** in the phase plan are aliases only; at runtime they resolve to
+``review_*`` node names for execution, ``review_inputs``, and aggregation. **Targets** are prompt
+supplements only.
+
+| Agent | Node | Role (in SKILL) | Diff limit (standard) |
+|-------|------|-----------------|------------------------|
+| `requirements` | `review_requirements` | spec / acceptance criteria | 6000 |
+| `architecture` | `review_architecture` | structure / boundaries | 8000 |
+| `test_quality` | `review_test_quality` | tests / failure cases | 6000 |
+| `checklist_compliance` | `review_checklist_compliance` | checklist / criteria | 8000 |
+
+Final review always runs: `requirements`, `test_quality`, `checklist_compliance`.
+
+Routing is ``review_config.REVIEW_AGENT_TO_NODE`` only — no central role-instruction dict in
+``run_review_stage()``. Per-node focus text lives in
+``skills/dev-process/nodes/<node_name>/SKILL.md`` and is injected when building the prompt.
+Configure **argv** per node in ``exec_policy.nodes.<review_node_name>`` (actual model
+selection is encoded in argv). The ``model`` field on each node entry is **audit metadata
+only** and is not injected into worker argv. ``node_runs[].node_name`` and ``review_inputs``
+keys use ``review_*`` names, not bare plan agent keys.
+
+### Phase review plan: `targets` vs `agents`
+
+Per-phase **Review plan** has two sub-fields with different runtime roles:
+
+- **targets** — *what to inspect* (allowed-value validation + text appended to the review prompt supplement). Does not select which reviewer nodes run.
+- **agents** — *who inspects* (determines which reviewers `run_review_stage()` executes). If omitted, the global `review_depth_preset` reviewer set is used instead.
+
+See `plan_prompt.py` for LLM-facing wording.
+
+Implementation: `plan_phases._compute_contract_sha256()`, `contract_check.validate_rework_contracts()`.
+
+Checkpoint: `_run_plan_cycle()` stores `run_plan_stage()` output at
+`body["stages"]["plan"]` before reading `plan_json_path` / calling `init_phase_state()`.
+
+### Plan rework: deferred version commit
+
+During plan rework with completed phases, `write_plan_latest_only()` may update
+`plan/plan.md` **before** contract validation. Until validation passes:
+
+- `dev_process.draft_plan_pending_contract_validation` = `true`
+- `dev_process.plan_version_status` = `draft_not_committed`
+- `stages.plan.accepted_plan_version` = last committed `current_plan_version`
+
+`commit_plan_version()` runs only after `validate_rework_contracts()` succeeds.
+On rejection, the draft is archived and flags are cleared after restore.
+
+### Task branch worktree cleanup (`git_worktree`)
+
+When `workspace_strategy=git_worktree`, `create_task_branch()` places the task worktree
+under ``<repo_parent>/.nodeflow-worktrees/`` (outside ``.nodeflow/runs/<run_id>``).
+The checkpoint records cleanup metadata in ``dev_process.cleanup_targets``:
+
+```json
+{"kind": "git_worktree", "branch": "phase-base/…", "worktree_path": "…", "worktree_root": "…"}
+```
+
+Operators should remove these worktrees (``git worktree remove``) when abandoning a run.
+
+### Final review and squash audit
+
+`stages.final_review` stores ``reviewed_branch_head`` and ``reviewed_tree`` at review time.
+``merge --squash`` adds ``squash_commit``, ``squash_tree``, and
+``squash_tree_matches_reviewed_tree`` so merge can proceed when the commit hash changes
+but the tree matches what final review inspected.
+
+## 13. Breaking changes from P8
 
 - `schema_version`: `dev_process.flow.v2` (was `dev_process.flow.v1`)
 - P8 checkpoints are **not** resumable

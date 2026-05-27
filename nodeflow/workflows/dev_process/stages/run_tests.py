@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.workflows.dev_process.paths import assert_path_under_run_dir
 from nodeflow.workflows.dev_process.reuse import run_tests, write_stage_checkpoint
 
@@ -29,6 +30,11 @@ def run_run_tests_stage(
         ]
     )
     test_result = run_tests(repo_root=repo_root, argv=test_argv_use, timeout=60)
+    if not isinstance(test_result, dict):
+        raise NodeExecutionFailure("run_tests must return a test_result dict")
+    if "ok" not in test_result:
+        raise NodeExecutionFailure("run_tests test_result must include boolean field 'ok'")
+    test_result = {**test_result, "ok": test_result["ok"] is True}
     stage_cp_dir = str(Path(artifact_root) / "run_tests")
     stage_result = write_stage_checkpoint(
         request={

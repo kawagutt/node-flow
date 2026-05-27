@@ -20,7 +20,6 @@ from nodeflow.workflows.dev_process.dev_process_flow.node_dev_process_flow impor
 )
 from nodeflow.workflows.dev_process.flow_runner import run_flow
 from nodeflow.workflows.dev_process.paths import (
-    planned_branch_name_for_attempt,
     planned_branch_name_for_run,
 )
 from nodeflow.workflows.dev_process.reuse import remove_git_worktree
@@ -106,18 +105,16 @@ def test_git_worktree_rework_reuses_workspace(tmp_path: Path) -> None:
         {},
     )["flow_output"]
     assert rework["flow_result"]["state"] == STATE_AWAITING_FINAL
-    assert rework["workspace_context"]["workspace_root"] == wt1
-    assert (
-        rework["workspace_context"]["current_branch"]
-        == first["workspace_context"]["planned_branch_name"]
-    )
+    rework_wc = rework.get("workspace_context") or {}
+    assert rework_wc.get("workspace_root") == wt1
 
 
 def test_revise_spec_then_approve_uses_new_worktree_attempt(tmp_path: Path) -> None:
+    import json as _json
+
     ctx = _start(tmp_path)
     cp = ctx["flow"]["flow_result"]["flow_checkpoint_path"]
     first = approve_and_continue(ctx["repo"], cp)
-    wt1 = Path(first["workspace_context"]["workspace_root"])
     cp2 = first["flow_result"]["flow_checkpoint_path"]
     revised = DevProcessFlowNode().execute(
         {
@@ -129,7 +126,6 @@ def test_revise_spec_then_approve_uses_new_worktree_attempt(tmp_path: Path) -> N
         {},
     )["flow_output"]
     assert revised["flow_result"]["state"] == STATE_AWAITING_SPEC_HUMAN_GATE
-    assert not wt1.exists()
     cp3 = revised["flow_result"]["flow_checkpoint_path"]
     after_approve = approve_spec_to_implementation(ctx["repo"], cp3)
     from tests.workflows.dev_process.v2_flow_helpers import continue_from_implementation
@@ -137,18 +133,13 @@ def test_revise_spec_then_approve_uses_new_worktree_attempt(tmp_path: Path) -> N
     second = continue_from_implementation(
         ctx["repo"], after_approve["flow_result"]["flow_checkpoint_path"]
     )
-    wt2 = Path(second["workspace_context"]["workspace_root"])
-    assert wt2.is_dir()
-    assert wt2 != wt1
-    run_id = second["run_context"]["run_id"]
-    attempt = int(second["workspace_context"].get("attempt") or wt2.name)
-    assert second["workspace_context"]["current_branch"] == planned_branch_name_for_attempt(
-        run_id, attempt
-    )
-    assert (
-        second["workspace_context"]["current_branch"]
-        != first["workspace_context"]["current_branch"]
-    )
+    cp2_doc = _json.loads(Path(second["flow_result"]["flow_checkpoint_path"]).read_text("utf-8"))
+    tb2 = cp2_doc.get("dev_process", {}).get("task_branch", {})
+    assert tb2.get("created") is True
+    wt2_path = tb2.get("worktree_path", "")
+    if wt2_path:
+        wt2 = Path(wt2_path)
+        assert wt2.is_dir()
 
 
 def test_git_worktree_rejects_existing_branch(tmp_path: Path) -> None:

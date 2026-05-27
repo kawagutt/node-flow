@@ -8,6 +8,7 @@ or resolve_node_exec() instead.
 
 from __future__ import annotations
 
+import json
 import sys
 
 
@@ -29,25 +30,67 @@ def _review_payload(*, blocking: bool) -> dict:
     }
 
 
+PHASE_PLAN_TEXT = (
+    "## Phase 1: Implement task\n\n"
+    "**Goal:**\nImplement the task.\n\n"
+    "**Scope:**\n- Implement feature.\n\n"
+    "**Excluded:**\n- Nothing.\n\n"
+    "**Test plan:**\n- Unit tests.\n\n"
+    "**Review plan:**\n- targets: implementation_phase\n- agents: architecture, checklist_compliance\n\n"
+    "**Review checklist:**\n- Code is clean.\n\n"
+    "**Acceptance criteria:**\n- Feature works."
+)
+
+
+THREE_PHASE_PLAN_TEXT = (
+    "## Phase 1: Setup\n\n"
+    "**Goal:**\nSetup.\n\n"
+    "**Scope:**\n- Init.\n\n"
+    "**Excluded:**\n- Nothing.\n\n"
+    "**Test plan:**\n- UNIQUE_TEST_PLAN_PHASE_000\n\n"
+    "**Review plan:**\n- targets: implementation_phase\n- agents: architecture, checklist_compliance\n\n"
+    "**Review checklist:**\n- Clean.\n\n"
+    "**Acceptance criteria:**\n- Done.\n\n"
+    "## Phase 2: Core\n\n"
+    "**Goal:**\nCore.\n\n"
+    "**Scope:**\n- Core work.\n\n"
+    "**Excluded:**\n- Nothing.\n\n"
+    "**Test plan:**\n- UNIQUE_TEST_PLAN_PHASE_001\n\n"
+    "**Review plan:**\n- targets: implementation_phase\n- agents: architecture, checklist_compliance\n\n"
+    "**Review checklist:**\n- Clean.\n\n"
+    "**Acceptance criteria:**\n- Done.\n\n"
+    "## Phase 3: Polish\n\n"
+    "**Goal:**\nPolish.\n\n"
+    "**Scope:**\n- Polish.\n\n"
+    "**Excluded:**\n- Nothing.\n\n"
+    "**Test plan:**\n- UNIQUE_TEST_PLAN_PHASE_002\n\n"
+    "**Review plan:**\n- targets: implementation_phase\n- agents: architecture, checklist_compliance\n\n"
+    "**Review checklist:**\n- Clean.\n\n"
+    "**Acceptance criteria:**\n- Done."
+)
+
+
 def spec_argv() -> list[str]:
-    script = 'import json; print(json.dumps({"spec": "# Spec\\n\\nTask spec."}))'
+    payload = json.dumps({"spec": "# Spec\n\nTask spec."})
+    script = f"import json; print({payload!r})"
     return [sys.executable, "-c", script]
 
 
 def plan_argv() -> list[str]:
-    script = 'import json; print(json.dumps({"plan": "# Plan\\n\\nTask plan."}))'
+    payload = json.dumps({"plan": PHASE_PLAN_TEXT})
+    script = f"import json; print({payload!r})"
     return [sys.executable, "-c", script]
 
 
 def spec_review_argv(*, blocking: bool = False) -> list[str]:
-    payload = _review_payload(blocking=blocking)
-    script = f"import json; print(json.dumps({payload!r}))"
+    payload = json.dumps(_review_payload(blocking=blocking))
+    script = f"import json; print({payload!r})"
     return [sys.executable, "-c", script]
 
 
 def plan_review_argv(*, blocking: bool = False) -> list[str]:
-    payload = _review_payload(blocking=blocking)
-    script = f"import json; print(json.dumps({payload!r}))"
+    payload = json.dumps(_review_payload(blocking=blocking))
+    script = f"import json; print({payload!r})"
     return [sys.executable, "-c", script]
 
 
@@ -56,6 +99,6 @@ def implement_argv() -> list[str]:
 
 
 def review_argv(*, blocking: bool = False) -> list[str]:
-    payload = _review_payload(blocking=blocking)
-    script = f"import json; print(json.dumps({payload!r}))"
+    payload = json.dumps(_review_payload(blocking=blocking))
+    script = f"import json; print({payload!r})"
     return [sys.executable, "-c", script]

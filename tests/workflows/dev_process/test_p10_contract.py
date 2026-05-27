@@ -12,7 +12,9 @@ Provider-level session isolation is worker-dependent and not guaranteed.
 Node names follow the canonical registry:
   write_spec, review_spec, write_plan, review_plan,
   write_implementation, write_tests,
-  review_diff, review_tests, review_spec_conformance, review_wide, review_spec_revision
+  review_diff, review_tests, review_spec_conformance, review_wide, review_spec_revision,
+  review_requirements, review_architecture, review_test_quality,
+  review_checklist_compliance, review_impact
 """
 
 from __future__ import annotations
@@ -184,8 +186,8 @@ def test_continue_implementation_populates_all_node_runs(tmp_path: Path) -> None
     names = [r["node_name"] for r in runs]
     assert "write_implementation" in names
     assert "write_tests" in names
-    for rk in ("review_diff", "review_tests", "review_spec_conformance"):
-        assert rk in names, f"missing reviewer node_run {rk}"
+    for rk in ("review_architecture", "review_checklist_compliance"):
+        assert rk in names, f"missing phase reviewer node_run {rk}"
 
 
 def test_node_runs_count_matches_evidence_count(tmp_path: Path) -> None:
@@ -197,8 +199,7 @@ def test_node_runs_count_matches_evidence_count(tmp_path: Path) -> None:
     cp = load_flow_checkpoint(flow["flow_checkpoint_path"])
     runs = cp.get("node_runs") or []
     art = _artifact_root(repo)
-    evidence_dir = art / "evidence"
-    evidence_files = list(evidence_dir.glob("*.json"))
+    evidence_files = list(art.rglob("evidence/*.json"))
     assert len(runs) == len(
         evidence_files
     ), f"node_runs={len(runs)} evidence_files={len(evidence_files)}"
@@ -335,8 +336,8 @@ def test_resume_rejects_exec_policy_path(tmp_path: Path) -> None:
         )
 
 
-def test_force_blocking_review_still_uses_run_node_exec(tmp_path: Path) -> None:
-    """force_blocking=True review goes through run_node_exec (argv_override) and records node_runs."""
+def test_phase_review_uses_plan_specified_agents(tmp_path: Path) -> None:
+    """Phase review runs plan-specified agents (hermetic plan has agents: architecture → 1 run)."""
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repo_with_commit(repo)
@@ -344,7 +345,9 @@ def test_force_blocking_review_still_uses_run_node_exec(tmp_path: Path) -> None:
     cp = load_flow_checkpoint(flow["flow_checkpoint_path"])
     runs = cp.get("node_runs") or []
     reviewer_runs = [r for r in runs if r["stage"] == "review"]
-    assert len(reviewer_runs) >= 3, f"expected >=3 reviewer node_runs, got {len(reviewer_runs)}"
+    assert (
+        len(reviewer_runs) >= 1
+    ), f"expected >=1 reviewer node_runs (plan-specified agents), got {len(reviewer_runs)}"
     for r in reviewer_runs:
         assert Path(r["evidence_path"]).is_file()
 

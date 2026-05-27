@@ -53,8 +53,15 @@ def test_full_happy_path_to_merged(tmp_path: Path) -> None:
     assert "write_spec" in names
     assert "write_implementation" in names
     assert "write_tests" in names
-    for rk in ("review_diff", "review_tests", "review_spec_conformance"):
-        assert rk in names, f"missing reviewer {rk}"
+    from nodeflow.workflows.dev_process.review_config import (
+        FINAL_REVIEW_AGENTS,
+        review_node_name,
+    )
+
+    for agent in ("architecture", "checklist_compliance"):
+        assert review_node_name(agent) in names, f"missing phase reviewer {agent}"
+    for agent in FINAL_REVIEW_AGENTS:
+        assert review_node_name(agent) in names, f"missing final reviewer {agent}"
 
 
 def test_approve_final_transitions_to_awaiting_merge(tmp_path: Path) -> None:
@@ -230,7 +237,7 @@ def test_evidence_count_matches_node_runs_after_rework(tmp_path: Path) -> None:
     cp = load_flow_checkpoint(reworked["flow_result"]["flow_checkpoint_path"])
     runs = cp.get("node_runs") or []
     art = list((repo / ".nodeflow/runs").iterdir())[0]
-    evidence_files = list((art / "evidence").glob("*.json"))
+    evidence_files = list(art.rglob("evidence/*.json"))
     assert len(runs) == len(evidence_files)
 
 
