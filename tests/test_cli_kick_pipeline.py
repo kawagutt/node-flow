@@ -58,8 +58,8 @@ def test_load_and_kick_dev_process_workspace_strategy_via_pipe(tmp_path) -> None
 
 
 def test_load_and_kick_dev_process_exec_argv_json_array(tmp_path) -> None:
-    from nodeflow.workflows.dev_process.hermetic_argv import spec_argv
     from tests.workflows.dev_process.git_fixtures import git_repo_with_commit
+    from tests.workflows.dev_process.hermetic_argv import spec_argv
 
     repo = tmp_path / "repo_argv"
     repo.mkdir()

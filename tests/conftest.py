@@ -13,7 +13,7 @@ import sys
 import pytest
 
 from nodeflow.workflows.dev_process import exec_policy
-from nodeflow.workflows.dev_process.hermetic_argv import PHASE_PLAN_TEXT
+from tests.workflows.dev_process.hermetic_argv import PHASE_PLAN_TEXT
 
 _MULTI_STUB_PAYLOAD = json.dumps(
     {

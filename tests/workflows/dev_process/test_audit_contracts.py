@@ -187,18 +187,21 @@ def test_review_prompt_registry_has_five_leaves() -> None:
 
 
 def test_reviewer_order_is_deterministic() -> None:
-    assert reviewer_keys_for_preset("light") == ("review_diff", "review_tests")
+    assert reviewer_keys_for_preset("light") == ("requirements", "test_quality")
     assert reviewer_keys_for_preset("standard") == (
-        "review_diff",
-        "review_tests",
-        "review_spec_conformance",
+        "requirements",
+        "architecture",
+        "test_quality",
+        "checklist_compliance",
     )
     assert reviewer_keys_for_preset("deep") == (
-        "review_diff",
-        "review_wide",
-        "review_tests",
-        "review_spec_conformance",
-        "review_spec_revision",
+        "requirements",
+        "architecture",
+        "test_quality",
+        "checklist_compliance",
+        "impact",
+        "diff_detail",
+        "naming_doc",
     )
 
 

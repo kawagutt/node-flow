@@ -1,4 +1,4 @@
-"""dev-process flow orchestration (v2 actions and run_flow)."""
+"""dev-process flow orchestration (v3 actions and run_flow)."""
 
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ from nodeflow.workflows.dev_process.constants import (
     ACTION_START,
     EXEC_WORKER_CODEX,
     MERGE_POLICY_RECORD_ONLY,
+    SCHEMA_VERSION,
     STATE_AWAITING_FINAL,
     STATE_AWAITING_IMPLEMENTATION,
     STATE_AWAITING_MERGE,
@@ -647,7 +648,7 @@ def _handle_start(
         "planned_branch_name": planned,
     }
     body: Dict[str, Any] = {
-        "schema_version": "dev_process.flow.v2",
+        "schema_version": SCHEMA_VERSION,
         "run_context": run_context,
         "flow_result": {
             "state": STATE_INITIALIZED,

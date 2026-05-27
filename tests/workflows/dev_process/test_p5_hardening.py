@@ -405,7 +405,7 @@ def test_resume_workspace_strategy_params_mismatch_fails(tmp_path: Path) -> None
 
 
 def test_exec_argv_via_params_hermetic(tmp_path: Path) -> None:
-    from nodeflow.workflows.dev_process.hermetic_argv import spec_argv
+    from tests.workflows.dev_process.hermetic_argv import spec_argv
 
     repo = tmp_path / "repo_exec_argv"
     repo.mkdir()
@@ -426,7 +426,7 @@ def test_exec_argv_via_params_hermetic(tmp_path: Path) -> None:
 def test_exec_argv_persisted_in_checkpoint(tmp_path: Path) -> None:
     from nodeflow.workflows.dev_process.checkpoint import load_flow_checkpoint
     from nodeflow.workflows.dev_process.flow_runner import _resolve_exec_argv, _stored_exec_argv
-    from nodeflow.workflows.dev_process.hermetic_argv import spec_argv
+    from tests.workflows.dev_process.hermetic_argv import spec_argv
 
     repo = tmp_path / "repo_exec_argv_resume"
     repo.mkdir()
@@ -467,7 +467,7 @@ def test_exec_model_mismatch_on_resume(tmp_path: Path) -> None:
     import pytest
 
     from nodeflow.core.base_node import NodeExecutionFailure
-    from nodeflow.workflows.dev_process.hermetic_argv import spec_argv
+    from tests.workflows.dev_process.hermetic_argv import spec_argv
 
     repo = tmp_path / "repo_exec_model_resume"
     repo.mkdir()

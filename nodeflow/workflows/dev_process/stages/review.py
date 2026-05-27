@@ -10,7 +10,7 @@ from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.workflows.dev_process.constants import EXEC_TIMEOUT_SECONDS
 from nodeflow.workflows.dev_process.evidence import record_exec_evidence
 from nodeflow.workflows.dev_process.exec_policy import default_argv_for_worker
-from nodeflow.workflows.dev_process.hermetic_argv import review_argv
+from nodeflow.workflows.dev_process.node_runner import blocking_review_argv
 from nodeflow.workflows.dev_process.paths import assert_path_under_run_dir
 from nodeflow.workflows.dev_process.reuse import (
     aggregate_reviews,
@@ -177,7 +177,7 @@ def run_review_stage(
         augmented_plan = approved_plan + "\n\n---\n" + "\n".join(review_supplement)
 
     if body is not None:
-        blocking_argv = review_argv(blocking=True) if force_blocking else None
+        blocking_argv = blocking_review_argv() if force_blocking else None
         for agent_key, node_name in zip(active_agents, active_node_names, strict=True):
             er, ep = _run_one_reviewer_via_node(
                 body=body,

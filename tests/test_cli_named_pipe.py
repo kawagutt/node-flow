@@ -11,8 +11,8 @@ import pytest
 from click.testing import CliRunner
 
 from nodeflow.cli import main, pipeline_main
-from nodeflow.workflows.dev_process.hermetic_argv import spec_argv
 from tests.workflows.dev_process.git_fixtures import git_repo_with_commit
+from tests.workflows.dev_process.hermetic_argv import spec_argv
 
 
 @pytest.fixture

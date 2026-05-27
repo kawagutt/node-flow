@@ -11,7 +11,7 @@ from nodeflow.workflows.dev_process.checkpoint import write_flow_checkpoint
 from nodeflow.workflows.dev_process.constants import (
     STATE_AWAITING_REWORK_DECISION,
     STATE_FAILED,
-    V2_CHECKPOINT_STAGES,
+    V3_CHECKPOINT_STAGES,
     WORKSPACE_STRATEGY_CURRENT_REPO,
     WORKSPACE_STRATEGY_GIT_WORKTREE,
 )
@@ -161,7 +161,7 @@ def _phase_repo_root(body: Dict[str, Any]) -> Path:
 
 
 def _empty_stages() -> Dict[str, Any]:
-    return {name: {"status": "pending"} for name in V2_CHECKPOINT_STAGES}
+    return {name: {"status": "pending"} for name in V3_CHECKPOINT_STAGES}
 
 
 def _read_spec_text(artifact_root: str) -> str:

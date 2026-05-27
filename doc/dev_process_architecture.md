@@ -1,6 +1,6 @@
 # Dev-process architecture (implementation contract)
 
-Canonical specification for NodeFlow dev-process v2 (`dev_process.flow.v2`).  
+Canonical specification for NodeFlow dev-process v3 (`dev_process.flow.v3`).  
 Implementations and tests must match this document.
 
 See also: [dev_process.md](./dev_process.md) (operator guide).
@@ -11,15 +11,29 @@ Define the **process graph**, **checkpoint states**, **artifacts**, and **phase 
 
 ## 2. Three-layer model
 
+### Target (PR2–PR4)
+
 | Layer | Role |
 |-------|------|
-| **process graph** | True execution flow (loops, steps) |
-| **checkpoint state** | Resumable stop points only |
-| **timeline** | Execution history including transient steps |
+| **Coordinator** | `DevProcessFlowNode` — loops, human gates, `revision_context`, checkpoint write |
+| **Subpipe** | Linear stage chains (`spec_cycle`, `plan_cycle`, `phase_step`) via generic `PipeNode` (PR3+) |
+| **Leaf ActionNode** | One execution attempt = one `node_runs[]` entry (PR2+) |
+
+Principle: `1 PipeSpec leaf node execution attempt = 1 node_runs[] entry`.
+
+### Current implementation (until PR4)
+
+`DevProcessFlowNode` is an **orchestrator** (ActionNode), **not** a PipeNode. It calls stage functions in `flow_actions.py` directly (no subpipe JSON yet).
+
+Observability split (unchanged):
+
+| Concern | Role |
+|---------|------|
+| **Process graph** | True execution flow (loops, steps) — expressed in code + timeline |
+| **Checkpoint state** | Resumable stop points only (`flow_result.state`, `stages`, …) |
+| **Timeline** | Execution history including transient steps |
 
 Transient steps (`writing_spec`, `reviewing_spec`, …) are **timeline events only**, not checkpoint states.
-
-`DevProcessFlowNode` is an **orchestrator** (ActionNode). It is **not** a PipeNode.
 
 ## 3. Canonical process graph
 
@@ -55,7 +69,7 @@ write_implementation → write_tests → run_tests → review_changes → synthe
 Node = processing unit; NodeRun = one execution record. `exec_policy.nodes[node_name]` configures worker and argv (active), plus model (audit metadata only — not injected into worker argv; actual model selection is determined by argv).
 
 1. **write** — `write_spec`, `write_plan`, `write_implementation`, `write_tests`
-2. **review** — `review_spec`, `review_plan`, plus change reviewers: `review_diff`, `review_tests`, `review_spec_conformance`, `review_wide`, `review_spec_revision`
+2. **review** — `review_spec`, `review_plan`, plus v1 change reviewers: `review_requirements`, `review_architecture`, `review_test_quality`, `review_checklist_compliance`, `review_impact`, `review_diff_detail`, `review_naming_doc`
 3. **local** — `run_tests` (local command, not an LLM node — excluded from exec policy)
 4. **synthesis** — aggregate review outputs, assign owner (P11)
 5. **gate / merge** — human_spec_gate, human_final_gate, merge
@@ -303,8 +317,17 @@ Operators should remove these worktrees (``git worktree remove``) when abandonin
 ``squash_tree_matches_reviewed_tree`` so merge can proceed when the commit hash changes
 but the tree matches what final review inspected.
 
-## 13. Breaking changes from P8
+## 13. Breaking changes
+
+### v3 (2026-05-27)
+
+- `schema_version`: `dev_process.flow.v3` (was `dev_process.flow.v2`)
+- **v2 checkpoints are not resumable**
+- `review_depth_preset` keys are v1 **agent** names (`requirements`, …), not legacy `review_diff` node names
+- `exec_policy.NODE_NAMES` and reference JSON list v1 review agent nodes only
+
+### P8 / v1
 
 - `schema_version`: `dev_process.flow.v2` (was `dev_process.flow.v1`)
-- P8 checkpoints are **not** resumable
+- P8 / v1 checkpoints are **not** resumable
 - `stages.spec_plan` removed; use `stages.spec`, `stages.plan`, …

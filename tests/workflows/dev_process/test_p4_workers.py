@@ -5,13 +5,13 @@ from __future__ import annotations
 import pytest
 
 from nodeflow.core.base_node import NodeExecutionFailure
-from nodeflow.workflows.dev_process.hermetic_argv import spec_argv
 from nodeflow.workflows.dev_process.workers import (
     EXEC_WORKER_CODEX,
     CodexExecWorker,
     resolve_exec_worker,
     run_exec,
 )
+from tests.workflows.dev_process.hermetic_argv import spec_argv
 
 
 def test_resolve_exec_worker_codex() -> None:

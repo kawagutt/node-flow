@@ -12,9 +12,8 @@ Provider-level session isolation is worker-dependent and not guaranteed.
 Node names follow the canonical registry:
   write_spec, review_spec, write_plan, review_plan,
   write_implementation, write_tests,
-  review_diff, review_tests, review_spec_conformance, review_wide, review_spec_revision,
   review_requirements, review_architecture, review_test_quality,
-  review_checklist_compliance, review_impact
+  review_checklist_compliance, review_impact, review_diff_detail, review_naming_doc
 """
 
 from __future__ import annotations
@@ -429,6 +428,42 @@ def test_legacy_jobs_key_in_policy_rejected(tmp_path: Path) -> None:
             task_prompt="t",
             exec_policy_path=str(policy_file),
         )
+
+
+_LEGACY_PRESET_REVIEW_NODE_NAMES = frozenset(
+    {
+        "review_diff",
+        "review_tests",
+        "review_spec_conformance",
+        "review_wide",
+        "review_spec_revision",
+    }
+)
+
+
+def test_exec_policy_node_names_exclude_legacy_preset_reviewers() -> None:
+    from nodeflow.workflows.dev_process.exec_policy import NODE_NAMES
+
+    overlap = set(NODE_NAMES) & _LEGACY_PRESET_REVIEW_NODE_NAMES
+    assert not overlap, f"legacy review nodes in exec_policy.NODE_NAMES: {sorted(overlap)!r}"
+
+
+def test_constraints_review_node_names_exclude_legacy_preset_reviewers() -> None:
+    from nodeflow.workflows.dev_process.constraints import REVIEW_NODE_NAMES
+
+    overlap = REVIEW_NODE_NAMES & _LEGACY_PRESET_REVIEW_NODE_NAMES
+    assert not overlap, f"legacy review nodes in REVIEW_NODE_NAMES: {sorted(overlap)!r}"
+
+
+def test_reference_exec_policy_excludes_legacy_preset_reviewers() -> None:
+    example = (
+        Path(__file__).resolve().parents[3] / "examples/reference/dev_process/exec_policy.json"
+    )
+    if not example.is_file():
+        pytest.skip("reference exec_policy.json not found")
+    nodes = json.loads(example.read_text(encoding="utf-8")).get("nodes") or {}
+    overlap = set(nodes) & _LEGACY_PRESET_REVIEW_NODE_NAMES
+    assert not overlap, f"legacy review nodes in reference exec_policy: {sorted(overlap)!r}"
 
 
 def test_reference_exec_policy_is_valid(tmp_path: Path) -> None:

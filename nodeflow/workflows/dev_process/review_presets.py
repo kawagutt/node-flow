@@ -10,19 +10,22 @@ PRESET_DEEP = "deep"
 
 VALID_PRESETS = frozenset({PRESET_LIGHT, PRESET_STANDARD, PRESET_DEEP})
 
-# input_key values passed to AggregateReviewsNode
-_REVIEWER_KEYS_LIGHT: Tuple[str, ...] = ("review_diff", "review_tests")
+# v1 review agent keys (resolved to review_* node names via review_config.review_node_name)
+_REVIEWER_KEYS_LIGHT: Tuple[str, ...] = ("requirements", "test_quality")
 _REVIEWER_KEYS_STANDARD: Tuple[str, ...] = (
-    "review_diff",
-    "review_tests",
-    "review_spec_conformance",
+    "requirements",
+    "architecture",
+    "test_quality",
+    "checklist_compliance",
 )
 _REVIEWER_KEYS_DEEP: Tuple[str, ...] = (
-    "review_diff",
-    "review_wide",
-    "review_tests",
-    "review_spec_conformance",
-    "review_spec_revision",
+    "requirements",
+    "architecture",
+    "test_quality",
+    "checklist_compliance",
+    "impact",
+    "diff_detail",
+    "naming_doc",
 )
 
 

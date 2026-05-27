@@ -17,11 +17,11 @@ def test_light_preset_fewer_reviewers() -> None:
     standard = reviewer_keys_for_preset("standard")
     deep = reviewer_keys_for_preset("deep")
     assert len(light) == 2
-    assert len(standard) == 3
-    assert len(deep) == 5
+    assert len(standard) == 4
+    assert len(deep) == 7
     assert len(light) < len(standard) < len(deep)
-    assert "review_diff" in light
-    assert "review_tests" in light
+    assert "requirements" in light
+    assert "test_quality" in light
 
 
 def test_unknown_preset_raises() -> None:
@@ -30,8 +30,8 @@ def test_unknown_preset_raises() -> None:
 
 
 def test_expected_evidence_counts_from_preset() -> None:
-    assert expected_review_evidence_count("standard") == 3
-    assert expected_exec_evidence_count_for_full_flow("standard") == 9
+    assert expected_review_evidence_count("standard") == 4
+    assert expected_exec_evidence_count_for_full_flow("standard") == 10
 
 
 def test_preset_limits_cover_all_reviewers() -> None:

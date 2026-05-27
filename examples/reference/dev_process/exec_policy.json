@@ -8,10 +8,12 @@
     "review_plan": { "worker": "codex" },
     "write_implementation": { "worker": "codex" },
     "write_tests": { "worker": "codex" },
-    "review_diff": { "worker": "codex" },
-    "review_tests": { "worker": "codex" },
-    "review_spec_conformance": { "worker": "codex" },
-    "review_wide": { "worker": "codex" },
-    "review_spec_revision": { "worker": "codex" }
+    "review_requirements": { "worker": "codex" },
+    "review_architecture": { "worker": "codex" },
+    "review_test_quality": { "worker": "codex" },
+    "review_checklist_compliance": { "worker": "codex" },
+    "review_impact": { "worker": "codex" },
+    "review_diff_detail": { "worker": "codex" },
+    "review_naming_doc": { "worker": "codex" }
   }
 }

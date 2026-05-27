@@ -251,9 +251,9 @@ class TestReviewNodeImplicitConstraints:
         assert "READ_ONLY_NODE" in ids
         assert "NO_GIT_PUSH" in ids
 
-    def test_review_diff_gets_read_only(self) -> None:
+    def test_review_requirements_gets_read_only(self) -> None:
         snap: Dict[str, Any] = {}
-        ids = resolve_constraints(snap, "review_diff")
+        ids = resolve_constraints(snap, "review_requirements")
         assert "READ_ONLY_NODE" in ids
 
     def test_write_node_no_implicit_read_only(self) -> None:
@@ -391,7 +391,7 @@ class TestConstraintsAudit:
         assert "## Global constraints" in content
         assert "NO_GIT_PUSH" in content
         assert "## Effective constraints by node" in content
-        assert "review_diff" in content
+        assert "review_requirements" in content
         assert "READ_ONLY_NODE" in content
 
     def test_audit_separates_global_from_per_node(self, tmp_path: Path) -> None:
@@ -412,7 +412,7 @@ class TestConstraintsAudit:
         assert "## Effective constraints by node" in content
         assert "### write_implementation" in content
         assert "EDIT_TARGET_ONLY" in content
-        assert "### review_diff" in content
+        assert "### review_requirements" in content
 
     def test_no_snapshot_returns_none(self, tmp_path: Path) -> None:
         from nodeflow.workflows.dev_process.flow_actions import _write_constraints_audit
@@ -447,11 +447,11 @@ class TestValidationArtifact:
             "message": "repo changed",
             "constraints": ["READ_ONLY_NODE"],
         }
-        path = _write_validation_artifact(str(tmp_path), "review_diff", result)
+        path = _write_validation_artifact(str(tmp_path), "review_requirements", result)
         content = json.loads(Path(path).read_text())
         assert content["ok"] is False
         assert content["violated"] == "READ_ONLY_NODE"
-        assert content["node_name"] == "review_diff"
+        assert content["node_name"] == "review_requirements"
 
 
 class TestPerNodeCodexHome:
@@ -481,7 +481,7 @@ class TestPerNodeCodexHome:
         snapshot: Dict[str, Any] = {"constraints": ["NO_GIT_PUSH"]}
         codex_home, _ = _write_node_codex_home(
             artifact_root=str(tmp_path),
-            node_name="review_diff",
+            node_name="review_requirements",
             constraint_ids=["NO_GIT_PUSH", "READ_ONLY_NODE"],
             snapshot=snapshot,
         )
@@ -490,7 +490,7 @@ class TestPerNodeCodexHome:
         assert "NO_GIT_PUSH" in content
 
     def test_per_node_isolation(self, tmp_path: Path) -> None:
-        """write_implementation and review_diff get different AGENTS.md files."""
+        """write_implementation and review_requirements get different AGENTS.md files."""
         from nodeflow.workflows.dev_process.node_runner import _write_node_codex_home
 
         snapshot: Dict[str, Any] = {"constraints": ["NO_GIT_PUSH"]}
@@ -503,7 +503,7 @@ class TestPerNodeCodexHome:
         )
         review_home, _ = _write_node_codex_home(
             artifact_root=str(tmp_path),
-            node_name="review_diff",
+            node_name="review_requirements",
             constraint_ids=["NO_GIT_PUSH", "READ_ONLY_NODE"],
             snapshot=snapshot,
         )

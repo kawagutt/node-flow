@@ -20,7 +20,7 @@ from nodeflow.workflows.dev_process.constants import (
 from nodeflow.workflows.dev_process.dev_process_flow.node_dev_process_flow import (
     DevProcessFlowNode,
 )
-from nodeflow.workflows.dev_process.hermetic_argv import (
+from tests.workflows.dev_process.hermetic_argv import (
     implement_argv,
     plan_argv,
     plan_review_argv,
@@ -50,16 +50,13 @@ def _hermetic_exec_policy() -> dict[str, Any]:
             "review_plan": {"worker": "codex", "argv": plan_review_argv()},
             "write_implementation": {"worker": "codex", "argv": implement_argv()},
             "write_tests": {"worker": "codex", "argv": implement_argv()},
-            "review_diff": {"worker": "codex", "argv": review_argv()},
-            "review_tests": {"worker": "codex", "argv": review_argv()},
-            "review_spec_conformance": {"worker": "codex", "argv": review_argv()},
-            "review_wide": {"worker": "codex", "argv": review_argv()},
-            "review_spec_revision": {"worker": "codex", "argv": review_argv()},
             "review_requirements": {"worker": "codex", "argv": review_argv()},
             "review_architecture": {"worker": "codex", "argv": review_argv()},
             "review_test_quality": {"worker": "codex", "argv": review_argv()},
             "review_checklist_compliance": {"worker": "codex", "argv": review_argv()},
             "review_impact": {"worker": "codex", "argv": review_argv()},
+            "review_diff_detail": {"worker": "codex", "argv": review_argv()},
+            "review_naming_doc": {"worker": "codex", "argv": review_argv()},
         },
     }
 

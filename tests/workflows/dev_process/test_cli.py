@@ -13,8 +13,8 @@ from nodeflow.workflows.dev_process.checkpoint import load_flow_checkpoint
 from nodeflow.workflows.dev_process.cli import main
 from nodeflow.workflows.dev_process.constants import STATE_AWAITING_SPEC_HUMAN_GATE, STATE_MERGED
 from nodeflow.workflows.dev_process.discovery import find_latest_checkpoint, resolve_checkpoint_path
-from nodeflow.workflows.dev_process.hermetic_argv import spec_argv
 from tests.workflows.dev_process.git_fixtures import git_repo_with_commit
+from tests.workflows.dev_process.hermetic_argv import spec_argv
 
 
 @pytest.fixture

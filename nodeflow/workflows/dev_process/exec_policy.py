@@ -33,12 +33,7 @@ NODE_NAMES = (
     "review_plan",
     "write_implementation",
     "write_tests",
-    "review_diff",
-    "review_tests",
-    "review_spec_conformance",
-    "review_wide",
-    "review_spec_revision",
-    # v1 review agents (1 agent = 1 dedicated node; see review_config.AGENT_TO_NODE_NAME)
+    # v1 review agents (1 agent = 1 dedicated node; see review_config.REVIEW_AGENT_TO_NODE)
     "review_requirements",
     "review_architecture",
     "review_test_quality",

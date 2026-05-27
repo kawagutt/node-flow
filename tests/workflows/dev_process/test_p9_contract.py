@@ -1,4 +1,4 @@
-"""P9 contract: v2 spec/plan split and stop at awaiting_implementation.
+"""P9 contract: v3 spec/plan split and stop at awaiting_implementation.
 
 Tests named ``test_preview_*`` exercise transitional P11 paths (continue_implementation,
 merge) and are not part of the P9 correctness contract.
@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from nodeflow.core.base_node import NodeExecutionFailure
 from nodeflow.workflows.dev_process.argv_builder import resolve_node_exec
 from nodeflow.workflows.dev_process.checkpoint import load_flow_checkpoint
 from nodeflow.workflows.dev_process.constants import (
@@ -23,12 +24,12 @@ from nodeflow.workflows.dev_process.constants import (
     STATE_AWAITING_PLAN_REVISION,
     STATE_AWAITING_SPEC_HUMAN_GATE,
     STATE_AWAITING_SPEC_REVISION,
-    V2_CHECKPOINT_STAGES,
+    V3_CHECKPOINT_STAGES,
 )
 from nodeflow.workflows.dev_process.flow_merge import _merge_gate_ok
 from nodeflow.workflows.dev_process.flow_runner import run_flow
-from nodeflow.workflows.dev_process.hermetic_argv import spec_argv
 from tests.workflows.dev_process.git_fixtures import git_repo_with_commit
+from tests.workflows.dev_process.hermetic_argv import spec_argv
 from tests.workflows.dev_process.v2_flow_helpers import (
     approve_spec_to_implementation,
     continue_from_implementation,
@@ -43,16 +44,33 @@ def _artifact_root(repo: Path) -> Path:
     return runs[0]
 
 
-def test_start_checkpoint_has_v2_stages_only(tmp_path: Path) -> None:
+def test_start_checkpoint_has_v3_stages_only(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repo_with_commit(repo)
     flow = start_spec_human_gate(repo)
     cp = load_flow_checkpoint(flow["flow_result"]["flow_checkpoint_path"])
     stages = cp.get("stages") or {}
-    assert set(stages.keys()) == set(V2_CHECKPOINT_STAGES)
+    assert set(stages.keys()) == set(V3_CHECKPOINT_STAGES)
     assert "spec_plan" not in stages
     assert "implement" not in stages
+
+
+def test_v2_checkpoint_resume_rejected(tmp_path: Path) -> None:
+    """dev_process.flow.v2 checkpoints are not resumable after v3 bump."""
+    import json
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git_repo_with_commit(repo)
+    flow = start_spec_human_gate(repo)
+    cp_path = Path(flow["flow_result"]["flow_checkpoint_path"])
+    doc = json.loads(cp_path.read_text(encoding="utf-8"))
+    doc["schema_version"] = "dev_process.flow.v2"
+    v2_path = cp_path.parent / "flow_v2_legacy.json"
+    v2_path.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+    with pytest.raises(NodeExecutionFailure, match="unsupported checkpoint schema_version"):
+        load_flow_checkpoint(v2_path)
 
 
 def test_start_writes_spec_not_plan(tmp_path: Path) -> None:

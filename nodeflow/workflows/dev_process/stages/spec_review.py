@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 from nodeflow.workflows.dev_process.constants import EXEC_TIMEOUT_SECONDS
 from nodeflow.workflows.dev_process.evidence import record_exec_evidence
 from nodeflow.workflows.dev_process.exec_policy import default_argv_for_worker
-from nodeflow.workflows.dev_process.hermetic_argv import spec_review_argv
+from nodeflow.workflows.dev_process.node_runner import blocking_review_argv
 from nodeflow.workflows.dev_process.paths import assert_path_under_run_dir
 from nodeflow.workflows.dev_process.stages.review_aggregate import (
     aggregate_stage_review,
@@ -40,7 +40,7 @@ def run_spec_review_stage(
     if body is not None:
         from nodeflow.workflows.dev_process.node_runner import run_node_exec
 
-        blocking_argv = spec_review_argv(blocking=True) if force_blocking else None
+        blocking_argv = blocking_review_argv() if force_blocking else None
         execution_output, evidence_path, _rec = run_node_exec(
             body,
             node_name="review_spec",

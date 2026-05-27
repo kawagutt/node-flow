@@ -459,3 +459,31 @@ def run_node_exec(
             )
 
     return execution_output, evidence_path, record
+
+
+def blocking_review_argv() -> list[str]:
+    """Hermetic argv emitting blocking review JSON (``force_blocking`` test hook).
+
+    TODO(PR2): remove — close ``force_blocking`` in stage functions and inject
+    blocking argv from tests via ``exec_policy`` argv override only.
+    """
+    import json
+    import sys
+
+    payload = json.dumps(
+        {
+            "ok": False,
+            "blocking_findings": [
+                {
+                    "id": "R001",
+                    "area": "review",
+                    "summary": "blocking review (test hook)",
+                    "suggested_fix": "fix",
+                }
+            ],
+            "non_blocking_findings": [],
+            "spec_revision_needed": False,
+        }
+    )
+    script = f"import json; print({payload!r})"
+    return [sys.executable, "-c", script]

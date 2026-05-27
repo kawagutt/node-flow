@@ -1,14 +1,21 @@
 # Dev Process Flow
 
-## v2 (2026-05-24): spec/plan split
+## v3 (2026-05-27): NodeFlow hierarchy prep
 
-- **Schema:** `dev_process.flow.v2` — P8 checkpoints are not resumable.
+- **Schema:** `dev_process.flow.v3` — v2 checkpoints are **not** resumable (breaking change from v2).
+- **P8 / v1 checkpoints** remain non-resumable.
+- **Review presets** use v1 agent keys (`requirements`, `architecture`, …) resolved to `review_*` node names at runtime.
+- **Node hierarchy (PR2+):** coordinator ActionNode + linear subpipes + per-agent review leaf nodes (see architecture §2).
+
+## v2 (2026-05-24): spec/plan split (superseded by v3)
+
+- Historical schema: `dev_process.flow.v2`.
 - **Architecture contract:** [dev_process_architecture.md](./dev_process_architecture.md)
 - **Phase plans:** `contract_sha256` covers goal/scope/tests/review/acceptance only; phase **title** is display-only (see architecture §12).
 - **P9 core flow:** `start` → spec loop → human spec gate → plan loop → **`awaiting_implementation`** (stops; no auto-implementation).
 - **P10:** All LLM execs on the main path go through `run_node_exec()`. Checkpoint `node_runs[]` records every execution as a `NodeRun` (1 node exec = 1 logical session = 1 evidence). Stage runners accept `body` and delegate exec/evidence/recording to `node_runner.run_node_exec()`. Argv resolution: `run_node_exec` → `resolve_node_exec` → `exec_policy_snapshot.nodes[node_name]`.
 - **P10 terminology:** Node = processing unit (e.g. `write_spec`), NodeRun = one execution record. `exec_policy.nodes` (not `jobs`) configures per-node worker and argv (active); model is recorded as audit metadata only (actual model selection is determined by argv). Registry type: `dev_process.<node_name>`.
-- **P10 node names:** `write_spec`, `review_spec`, `write_plan`, `review_plan`, `write_implementation`, `write_tests`, `review_diff`, `review_tests`, `review_spec_conformance`, `review_wide`, `review_spec_revision`. Stage artifact directories (`spec_review/`, `plan_review/`, etc.) are unchanged.
+- **P10 node names:** `write_spec`, `review_spec`, `write_plan`, `review_plan`, `write_implementation`, `write_tests`, plus v1 review agents: `review_requirements`, `review_architecture`, `review_test_quality`, `review_checklist_compliance`, `review_impact`, `review_diff_detail`, `review_naming_doc`. Stage artifact directories (`spec_review/`, `plan_review/`, etc.) are unchanged.
 - **P10 semantics:**
   - `model` in `NodeRun` and evidence JSON is **audit metadata only** — not injected into worker argv.
   - `session_id` is a **logical** id derived from `(run_id, node_name, index)`. Provider-level session isolation is worker-dependent and not guaranteed.
@@ -26,9 +33,9 @@
 ## Breaking changes (v1 refactor)
 
 - **`codex_argv` removed** — use **`exec_argv`** only.
-- **`standard` preset**: 5 reviewers → **3** (`review_diff`, `review_tests`, `review_spec_conformance`).
-- **`deep`**: only preset with full **5** reviewers (adds `review_wide`, `review_spec_revision`).
-- **`light`**: 2 reviewers (`review_diff`, `review_tests`).
+- **`light`**: 2 agents (`requirements`, `test_quality`).
+- **`standard`** (default): 4 agents (`requirements`, `architecture`, `test_quality`, `checklist_compliance`).
+- **`deep`**: 7 agents (adds `impact`, `diff_detail`, `naming_doc`).
 - Optional **`exec_model`** in checkpoint: audit/display metadata only; model selection stays in `exec_argv`.
 
 **v1 (2026-05-24): P0–P8 complete.** Core flow, real Codex smokes (`record_only` + `git_merge_branch`), stage interactive input, and named-pipe CLI.
@@ -106,9 +113,9 @@ Codex runs first in implementation; **`collect_diff` runs after Codex** so revie
 
 | preset | reviewers |
 |--------|-----------|
-| `light` | `review_diff`, `review_tests` |
-| `standard` (default) | `review_diff`, `review_tests`, `review_spec` |
-| `deep` | all five: + `review_wide`, `review_spec_revision` |
+| `light` | `requirements`, `test_quality` |
+| `standard` (default) | `requirements`, `architecture`, `test_quality`, `checklist_compliance` |
+| `deep` | + `impact`, `diff_detail`, `naming_doc` |
 
 Per-reviewer `max_diff_chars` is defined in `review_prompt_limits.py` (paired with preset contract).  
 Leaf registry: `dev_process.review_prompt.*`.

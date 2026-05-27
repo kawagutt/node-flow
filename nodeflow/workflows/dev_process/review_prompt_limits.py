@@ -73,13 +73,28 @@ def prompt_params_for_reviewer(preset: str, reviewer_key: str) -> Dict[str, int]
 
 
 def assert_preset_limits_cover_reviewers() -> None:
-    """Guard: every reviewer in a preset has limit entries."""
+    """Guard: every v1 agent in a preset resolves to a node with prompt limits."""
+    from nodeflow.workflows.dev_process.review_config import review_node_name
+    from nodeflow.workflows.dev_process.review_node_spec import LEGACY_PRESET_REVIEW_NODES
+
+    active_nodes: set[str] = set()
     for preset in (PRESET_LIGHT, PRESET_STANDARD, PRESET_DEEP):
-        keys = reviewer_keys_for_preset(preset)
+        for agent in reviewer_keys_for_preset(preset):
+            node_name = review_node_name(agent)
+            active_nodes.add(node_name)
+            prompt_params_for_review_node(preset, node_name)
+
+    # Internal _LIMITS table may retain legacy keys for prompt builders; they must not
+    # overlap active preset nodes and must stay within the legacy allowlist.
+    for preset in (PRESET_LIGHT, PRESET_STANDARD, PRESET_DEEP):
         table = _LIMITS[preset]
-        missing = [k for k in keys if k not in table]
-        if missing:
-            raise AssertionError(f"preset {preset!r} missing limits for {missing!r}")
-        extra = [k for k in table if k not in keys]
+        overlap = set(table) & active_nodes
+        if overlap:
+            raise AssertionError(
+                f"preset {preset!r}: _LIMITS keys overlap active v1 nodes {sorted(overlap)!r}"
+            )
+        extra = set(table) - LEGACY_PRESET_REVIEW_NODES
         if extra:
-            raise AssertionError(f"preset {preset!r} has limits for non-members {extra!r}")
+            raise AssertionError(
+                f"preset {preset!r}: _LIMITS has non-legacy keys {sorted(extra)!r}"
+            )

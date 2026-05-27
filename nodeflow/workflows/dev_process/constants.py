@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-SCHEMA_VERSION = "dev_process.flow.v2"
+SCHEMA_VERSION = "dev_process.flow.v3"
 
 STATE_INITIALIZED = "initialized"
 STATE_AWAITING_SPEC_REVISION = "awaiting_spec_revision"
@@ -48,8 +48,8 @@ STALE_DOWNSTREAM: dict[str, tuple[str, ...]] = {
     "test_implementation": ("review",),
 }
 
-# v2 checkpoint stage keys (no spec_plan / implement)
-V2_CHECKPOINT_STAGES: tuple[str, ...] = (
+# v3 checkpoint stage keys (no spec_plan / implement)
+V3_CHECKPOINT_STAGES: tuple[str, ...] = (
     "spec",
     "spec_review",
     "plan",
@@ -60,7 +60,7 @@ V2_CHECKPOINT_STAGES: tuple[str, ...] = (
     "review",
 )
 
-MERGE_GATE_STAGES: tuple[str, ...] = V2_CHECKPOINT_STAGES
+MERGE_GATE_STAGES: tuple[str, ...] = V3_CHECKPOINT_STAGES
 
 EVIDENCE_STAGE_KEYS: tuple[str, ...] = (
     "spec",
