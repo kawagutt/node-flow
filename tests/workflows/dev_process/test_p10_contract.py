@@ -3,8 +3,8 @@
 Every Codex exec on the main flow path must go through ``run_node_exec()`` and
 produce a ``node_runs[]`` entry with a unique ``session_id``.
 
-``model`` in ``NodeRun`` is audit metadata only; it is not injected into
-worker argv (see ``node_runner.py`` module docstring).
+``model`` in ``NodeRun`` is resolved from ``exec_policy_snapshot`` and applied to
+worker argv via ``worker_adapter`` (Codex: ``--model``).
 
 ``session_id`` is a logical id derived from ``(run_id, node_name, index)``.
 Provider-level session isolation is worker-dependent and not guaranteed.
@@ -284,6 +284,7 @@ def test_provider_session_id_does_not_overwrite_logical(tmp_path: Path) -> None:
     doc = json.loads(Path(ep).read_text(encoding="utf-8"))
     assert doc["session_id"] == "logical-abc"
     assert doc["provider_session_id"] == "provider-123"
+    assert doc["provider_session_id_applied"] == "provider-123"
 
 
 def test_exec_policy_path_loads_into_snapshot(tmp_path: Path) -> None:

@@ -96,6 +96,10 @@ class CodexExecNode(CliActionNode):
         resolved_cwd = self._resolve_cwd(p)
         resolved_env = self._resolve_env(p)
 
+        model = p.get("model")
+        if model is not None:
+            model = str(model)
+
         prompt_raw = inputs.get("prompt")
         stdin: str | None = None
         if isinstance(prompt_raw, dict):
@@ -121,7 +125,7 @@ class CodexExecNode(CliActionNode):
                     ok=False,
                     external_executor="codex",
                     provider="codex",
-                    model=None,
+                    model=model,
                     task_type=task_type,
                     summary="subprocess timeout",
                     stdout=exc.stdout or None if hasattr(exc, "stdout") else None,
@@ -144,7 +148,7 @@ class CodexExecNode(CliActionNode):
                 ok=ok,
                 external_executor="codex",
                 provider="codex",
-                model=None,
+                model=model,
                 task_type=task_type,
                 summary=None,
                 stdout=proc.stdout or None,

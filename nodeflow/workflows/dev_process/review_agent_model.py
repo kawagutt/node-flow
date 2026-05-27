@@ -1,7 +1,9 @@
-"""Model profile metadata for review nodes (audit + exec_policy default entries).
+"""Model profile metadata for review nodes (exec_policy default entries).
 
-Actual model selection is via ``exec_policy.nodes.<review_node_name>.argv``. The ``model``
-field written by ``default_node_entries()`` is audit metadata only — not applied to argv.
+The ``model`` field on review nodes is an audit profile key (``strong_reasoning``, etc.)
+resolved to a Codex slug by ``worker_adapter.resolve_worker_model``. For ``codex exec``
+argv, exec_policy ``model`` overrides any existing ``--model`` flag. For non-``codex exec``
+argv overrides, argv is left unchanged and the resolved model is audit metadata only.
 """
 
 from __future__ import annotations

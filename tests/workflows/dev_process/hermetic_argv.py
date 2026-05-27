@@ -107,3 +107,22 @@ def review_argv(*, blocking: bool = False) -> list[str]:
 def blocking_review_argv() -> list[str]:
     """Alias for ``review_argv(blocking=True)`` (force_review_blocking integration tests)."""
     return review_argv(blocking=True)
+
+
+def _model_probe_script() -> str:
+    return (
+        "import json, sys\n"
+        "def pick_model(args):\n"
+        "    i = 0\n"
+        "    while i < len(args):\n"
+        "        if args[i] in ('--model', '-m') and i + 1 < len(args):\n"
+        "            return args[i + 1]\n"
+        "        i += 1\n"
+        "    return None\n"
+        "print(json.dumps({'model': pick_model(sys.argv[1:])}))\n"
+    )
+
+
+def model_probe_argv() -> list[str]:
+    """Hermetic codex-like argv; stdout JSON includes resolved ``--model`` flag."""
+    return [sys.executable, "-c", _model_probe_script(), "codex", "exec", "--", "probe"]

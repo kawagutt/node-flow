@@ -256,6 +256,8 @@ def record_exec_evidence(
     constraints: Optional[List[str]] = None,
     codex_home: Optional[str] = None,
     agents_md_sha256: Optional[str] = None,
+    provider_session_id_requested: Optional[str] = None,
+    provider_session_mode: Optional[str] = None,
 ) -> str:
     """Write one evidence record and validate the store for this run."""
     _reject_stub_or_manual(execution_output)
@@ -327,8 +329,14 @@ def record_exec_evidence(
     for optional in ("token_count", "tokens"):
         if optional in provider_meta:
             doc[optional] = provider_meta[optional]
+    if provider_session_id_requested:
+        doc["provider_session_id_requested"] = provider_session_id_requested
+    if provider_session_mode:
+        doc["provider_session_mode"] = provider_session_mode
     if "session_id" in provider_meta:
-        doc["provider_session_id"] = provider_meta["session_id"]
+        applied = provider_meta["session_id"]
+        doc["provider_session_id"] = applied
+        doc["provider_session_id_applied"] = applied
 
     evidence_dir = Path(artifact_root) / "evidence"
     evidence_dir.mkdir(parents=True, exist_ok=True)

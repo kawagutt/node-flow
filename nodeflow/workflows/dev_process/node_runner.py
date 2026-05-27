@@ -2,14 +2,13 @@
 
 P10: every Codex exec in the main path flows through ``run_node_exec``.
 
-``model`` resolved from ``exec_policy_snapshot`` is recorded in both ``NodeRun``
-and the evidence JSON as **audit metadata**.  It is *not* injected into worker argv
-yet; model selection remains the responsibility of the argv preset.  A future phase
-(P10.5 / P11) may add argv-level model injection per worker type.
+``model`` from ``exec_policy_snapshot`` is applied to worker argv via
+``worker_adapter.prepare_worker_argv`` (Codex: ``--model``). Profile keys
+(``strong_reasoning``, etc.) map to default Codex slugs; explicit slugs pass through.
 
 ``session_id`` is a **logical** identifier deterministically derived from
-``(run_id, node_name, index)``.  Provider-level session isolation (e.g. Codex
-session resume) is worker-dependent and not guaranteed by ``run_node_exec`` itself.
+``(run_id, node_name, index)``. Optional ``provider_session_id`` on the node policy
+entry selects Codex ``exec resume <id>`` when the worker supports it.
 """
 
 from __future__ import annotations
@@ -21,7 +20,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from nodeflow.core.base_node import NodeExecutionFailure
-from nodeflow.workflows.dev_process.argv_builder import resolve_node_exec
+from nodeflow.workflows.dev_process.argv_builder import (
+    resolve_node_exec,
+    resolve_provider_session_id,
+)
 from nodeflow.workflows.dev_process.constants import EXEC_TIMEOUT_SECONDS
 from nodeflow.workflows.dev_process.constraints import (
     format_constraints_for_prompt,
@@ -31,6 +33,7 @@ from nodeflow.workflows.dev_process.constraints import (
 from nodeflow.workflows.dev_process.evidence import record_exec_evidence
 from nodeflow.workflows.dev_process.node_run import NODE_TYPE_PREFIX, NodeRun
 from nodeflow.workflows.dev_process.session_store import new_session_id
+from nodeflow.workflows.dev_process.worker_adapter import prepare_worker_argv
 from nodeflow.workflows.dev_process.workers import resolve_exec_worker, run_exec
 
 # Constraints that trigger hard validation
@@ -503,6 +506,14 @@ def run_node_exec(
     worker_kind, model, argv = resolve_node_exec(body, node_name)
     if argv_override is not None:
         argv = list(argv_override)
+    provider_session_id_requested = resolve_provider_session_id(body, node_name)
+    provider_session_mode = "resume" if provider_session_id_requested else None
+    argv, exec_model = prepare_worker_argv(
+        worker_kind,
+        argv,
+        model=model,
+        provider_session_id=provider_session_id_requested,
+    )
     worker = resolve_exec_worker(worker_kind)
 
     dp = body.get("dev_process") if isinstance(body.get("dev_process"), dict) else {}
@@ -538,7 +549,13 @@ def run_node_exec(
     node_runs = body.setdefault("node_runs", [])
     session_id = new_session_id(run_id=run_id, node_name=node_name, index=len(node_runs))
     execution_output = run_exec(
-        worker, prompt=prompt, cwd=cwd, argv=argv, timeout=timeout, env=exec_env
+        worker,
+        prompt=prompt,
+        cwd=cwd,
+        argv=argv,
+        timeout=timeout,
+        env=exec_env,
+        model=exec_model,
     )
 
     invoker = invoker_override or worker.invoker
@@ -553,11 +570,13 @@ def run_node_exec(
         cwd=cwd,
         node_name=node_name,
         session_id=session_id,
-        model=model,
+        model=exec_model,
         worker=worker_kind,
         constraints=constraint_ids,
         codex_home=codex_home,
         agents_md_sha256=agents_md_sha256,
+        provider_session_id_requested=provider_session_id_requested,
+        provider_session_mode=provider_session_mode,
     )
     record = NodeRun(
         node_name=node_name,
@@ -565,7 +584,7 @@ def run_node_exec(
         stage=stage,
         kind="llm",
         worker=worker_kind,
-        model=model,
+        model=exec_model,
         session_id=session_id,
         evidence_path=evidence_path,
         argv=argv,

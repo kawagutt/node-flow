@@ -36,3 +36,14 @@ def resolve_node_exec(body: Dict[str, Any], node_name: str) -> Tuple[str, Option
     if not _valid_argv(argv):
         argv = default_argv_for_worker(worker)
     return worker, model if isinstance(model, str) else None, list(argv)
+
+
+def resolve_provider_session_id(body: Dict[str, Any], node_name: str) -> Optional[str]:
+    """Optional provider session to resume (``exec_policy.nodes.<name>.provider_session_id``)."""
+    snap = _snapshot(body)
+    nodes = snap.get("nodes") if isinstance(snap.get("nodes"), dict) else {}
+    entry = nodes.get(node_name) if isinstance(nodes.get(node_name), dict) else {}
+    raw = entry.get("provider_session_id")
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return None

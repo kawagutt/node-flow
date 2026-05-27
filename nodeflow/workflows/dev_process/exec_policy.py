@@ -120,6 +120,13 @@ def _validate_policy_overrides(overrides: Dict[str, Any]) -> None:
                     f"unsupported worker {worker!r} in exec_policy.nodes.{name}; "
                     f"supported: {sorted(SUPPORTED_WORKERS)}"
                 )
+            provider_session_id = entry.get("provider_session_id")
+            if provider_session_id is not None and (
+                not isinstance(provider_session_id, str) or not provider_session_id.strip()
+            ):
+                raise NodeExecutionFailure(
+                    f"exec_policy.nodes.{name}.provider_session_id must be a non-empty string"
+                )
             node_constraints = entry.get("constraints")
             if node_constraints is not None:
                 if not isinstance(node_constraints, list):
@@ -209,7 +216,12 @@ def load_exec_policy_file(path: str | Path) -> Dict[str, Any]:
           "default_model": "gpt-4.1",         # optional
           "default_argv": ["codex", "exec"],   # optional
           "nodes": {                           # optional
-            "write_spec": {"worker": "codex", "model": "...", "argv": [...]},
+            "write_spec": {
+              "worker": "codex",
+              "model": "...",
+              "argv": [...],
+              "provider_session_id": "<codex-session-uuid>"
+            },
             ...
           }
         }

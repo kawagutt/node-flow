@@ -85,3 +85,61 @@ nodeflow --pipe dev-process --repo-root "$REPO" merge
 | Hermetic smoke `git_merge_branch` | pass |
 | `node_runs[]` = evidence count | verified |
 | **P11 real Codex smoke** | **pending** — v1 real Codex (record_only + git_merge_branch) は PASS 済み; P11 の spec/plan 分離 + continue-implementation 経路は hermetic のみ |
+
+---
+
+## PR5 — Codex argv order smoke (manual, pre-merge)
+
+**目的:** `worker_adapter` が生成する argv が Codex CLI で解釈されるか確認する。hermetic テストは Python 側の argv 組み立てのみ検証する。
+
+**注入順（Codex CLI 実機確認済み, 2026-05-27）:**
+
+```text
+codex exec --model <slug> <既存 exec flags...> resume <session_id> [-- passthrough...]
+```
+
+例: `codex exec --model gpt-5.5-medium --sandbox read-only resume <uuid>`
+
+`codex exec --model … resume … --sandbox …` は **`unexpected argument '--sandbox'`** で拒否される。`worker_adapter` は exec フラグを `resume` より前に置く。
+
+### 1. パースのみ（最短）
+
+```bash
+# 採用形（dev_process が生成する形）
+codex exec --model gpt-5.5-medium --sandbox read-only resume 00000000-0000-0000-0000-000000000001 \
+  --help 2>&1 | head -20
+
+# 拒否される形（resume の後に exec フラグは不可）
+codex exec --model gpt-5.5-medium resume 00000000-0000-0000-0000-000000000001 \
+  --sandbox read-only --help 2>&1 | head -20
+# → error: unexpected argument '--sandbox' found
+```
+
+実機結果 (2026-05-27): 採用形は `codex exec resume --help` が表示される。拒否形は上記エラー。
+
+### 2. adapter 出力の確認（Python）
+
+```bash
+cd /path/to/node-flow
+./.venv/bin/python -c "
+from nodeflow.workflows.dev_process.worker_adapter import prepare_worker_argv
+base = ['codex', 'exec', '--sandbox', 'workspace-write']
+argv, m = prepare_worker_argv('codex', base, model='gpt-5.5-medium', provider_session_id='sess-test')
+print('model:', m)
+print('argv:', argv)
+"
+```
+
+### 3. 実 exec（任意・認証必要）
+
+```bash
+codex exec --model gpt-5.5-medium --sandbox read-only 'Reply with OK only.'
+# 成功したら、既知 SESSION_ID で resume（--last でも可）
+codex exec resume --last 'Reply with OK only.'
+```
+
+| 結果 | 記録 |
+|------|------|
+| 採用形パース (`--model` … `--sandbox` … `resume`) | pass |
+| 旧形 (`resume` 後に `--sandbox`) | fail — `unexpected argument '--sandbox'` |
+| 実 exec（任意） | |

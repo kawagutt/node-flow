@@ -23,6 +23,7 @@ class ExecWorker(Protocol):
         argv: list[str],
         timeout: int = 120,
         env: Optional[Dict[str, str]] = None,
+        model: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Return execution_output dict; raise NodeExecutionFailure when not ok."""
 
@@ -39,11 +40,20 @@ class CodexExecWorker:
         argv: list[str],
         timeout: int = 120,
         env: Optional[Dict[str, str]] = None,
+        model: Optional[str] = None,
     ) -> Dict[str, Any]:
+        params: Dict[str, Any] = {
+            "argv": argv,
+            "timeout": timeout,
+            "cwd": cwd,
+            "env": env,
+        }
+        if model is not None:
+            params["model"] = model
         out = execute_or_raise(
             CodexExecNode(),
             {"prompt": prompt},
-            {"argv": argv, "timeout": timeout, "cwd": cwd, "env": env},
+            params,
         )
         execution_output = out.get("execution_output") or {}
         if not isinstance(execution_output, dict):
@@ -70,5 +80,13 @@ def run_exec(
     argv: list[str],
     timeout: int = 120,
     env: Optional[Dict[str, str]] = None,
+    model: Optional[str] = None,
 ) -> Dict[str, Any]:
-    return worker.run(prompt=prompt, cwd=cwd, argv=argv, timeout=timeout, env=env)
+    return worker.run(
+        prompt=prompt,
+        cwd=cwd,
+        argv=argv,
+        timeout=timeout,
+        env=env,
+        model=model,
+    )
