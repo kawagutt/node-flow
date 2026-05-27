@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
+from nodeflow.workflows.dev_process.checkpoint import load_flow_checkpoint
 from nodeflow.workflows.dev_process.constants import (
     STATE_AWAITING_FINAL,
     STATE_AWAITING_IMPLEMENTATION,
@@ -106,13 +107,45 @@ def _capture_test_plan(**kwargs: Any) -> dict[str, Any]:
 
 
 def _patch_phase_stages(review_fn=_ok_review):
+    def _fake_subpipe(spec_path: str, ctx: dict[str, Any], *, workspace: str) -> dict[str, Any]:
+        del workspace
+        body = ctx["body"]
+        params = ctx.get("params") or {}
+        if spec_path.endswith("phase_step.json"):
+            repo_root = Path(str(body["run_context"]["repo_root"]))
+            if not params.get("skip_implementation"):
+                _impl_touch_file(body=body, repo_root=repo_root)
+            body.setdefault("stages", {})["implementation"] = {"status": "completed"}
+            _capture_test_plan(body=body, approved_plan=params.get("phase_plan_text"))
+            body["stages"]["test_implementation"] = {"status": "completed"}
+            body["stages"]["lint_fix"] = {"lint_fix": "skipped"}
+            diff_result = collect_diff(
+                repo_root=repo_root,
+                base_revision=str(
+                    params.get("base_revision") or body["run_context"]["source_base_revision"]
+                ),
+            )
+            body["stages"]["run_tests"] = {
+                "status": "completed",
+                "test_result": {"ok": True},
+                "diff_result": diff_result,
+            }
+            body["stages"]["review"] = review_fn(body=body, diff_result=diff_result)
+            ctx["body"] = body
+            return ctx
+        if spec_path.endswith("final_review.json"):
+            body.setdefault("stages", {})["review"] = _ok_review(body=body, diff_result={})
+            ctx["body"] = body
+            return ctx
+        return ctx
+
     return (
         patch(
-            "nodeflow.workflows.dev_process.flow_actions.run_implementation_stage",
+            "nodeflow.workflows.dev_process.nodes.stage_nodes.run_implementation_stage",
             side_effect=_impl_touch_file,
         ),
         patch(
-            "nodeflow.workflows.dev_process.flow_actions.run_test_implementation_stage",
+            "nodeflow.workflows.dev_process.nodes.stage_nodes.run_test_implementation_stage",
             side_effect=_capture_test_plan,
         ),
         patch(
@@ -120,11 +153,15 @@ def _patch_phase_stages(review_fn=_ok_review):
             return_value={"lint_fix": "skipped"},
         ),
         patch(
-            "nodeflow.workflows.dev_process.flow_actions.run_run_tests_stage",
+            "nodeflow.workflows.dev_process.nodes.stage_nodes.run_run_tests_stage",
             return_value={"status": "completed", "test_result": {"ok": True}},
         ),
         patch(
-            "nodeflow.workflows.dev_process.flow_actions.run_review_stage", side_effect=review_fn
+            "nodeflow.workflows.dev_process.stages.review.run_review_stage", side_effect=review_fn
+        ),
+        patch(
+            "nodeflow.workflows.dev_process.flow_actions.run_subpipe",
+            side_effect=_fake_subpipe,
         ),
         patch(
             "nodeflow.workflows.dev_process.flow_actions._run_final_review",
@@ -140,6 +177,16 @@ def _patch_phase_stages(review_fn=_ok_review):
     )
 
 
+def _reload_body_from_out(body: dict[str, Any], out: dict[str, Any]) -> None:
+    cp_path = str(out.get("flow_checkpoint_path") or "")
+    if not cp_path:
+        body.clear()
+        body.update(out)
+        return
+    body.clear()
+    body.update(load_flow_checkpoint(cp_path))
+
+
 class TestThreePhaseHappyPath:
     def test_three_phases_then_final_review(self, tmp_path: Path) -> None:
         body, repo, artifact = _setup_run(tmp_path)
@@ -151,7 +198,7 @@ class TestThreePhaseHappyPath:
                 out = _handle_continue_implementation(
                     body, run_id="integration-run", force_review_blocking=False
                 )
-                body.update(out)
+                _reload_body_from_out(body, out)
                 state = body["flow_result"]["state"]
                 if state == STATE_AWAITING_FINAL:
                     break
@@ -188,7 +235,7 @@ class TestPhaseDiffBaseline:
                 out = _handle_continue_implementation(
                     body, run_id="integration-run", force_review_blocking=False
                 )
-                body.update(out)
+                _reload_body_from_out(body, out)
         finally:
             for p in patches:
                 p.stop()
@@ -217,7 +264,7 @@ class TestCurrentPhaseTestPlan:
             out = _handle_continue_implementation(
                 body, run_id="integration-run", force_review_blocking=False
             )
-            body.update(out)
+            _reload_body_from_out(body, out)
         finally:
             for p in patches:
                 p.stop()
@@ -260,13 +307,13 @@ class TestPhaseReworkRetry:
             out = _handle_continue_implementation(
                 body, run_id="integration-run", force_review_blocking=False
             )
-            body.update(out)
+            _reload_body_from_out(body, out)
             assert body["flow_result"]["state"] == STATE_AWAITING_IMPLEMENTATION
 
             out = _handle_continue_implementation(
                 body, run_id="integration-run", force_review_blocking=False
             )
-            body.update(out)
+            _reload_body_from_out(body, out)
             assert body["flow_result"]["state"] == STATE_AWAITING_REWORK_DECISION
             assert body["dev_process"]["current_phase_id"] == "phase_001"
             assert "workspace_context" in body
@@ -279,7 +326,7 @@ class TestPhaseReworkRetry:
                 interactive=False,
                 rework_provided={"rework_comment": "fix phase 1"},
             )
-            body.update(out)
+            _reload_body_from_out(body, out)
             assert body["flow_result"]["state"] == STATE_AWAITING_IMPLEMENTATION
             assert body["dev_process"]["phase_results"]["phase_001"]["status"] == "completed"
             assert body["dev_process"]["current_phase_id"] == "phase_002"

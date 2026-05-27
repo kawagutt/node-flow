@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict
 from unittest.mock import patch
 
+from nodeflow.workflows.dev_process.checkpoint import load_flow_checkpoint
 from nodeflow.workflows.dev_process.paths import git_tree_hash
 from nodeflow.workflows.dev_process.squash import squash_phase_commits
 
@@ -73,8 +74,8 @@ def test_squash_preserves_tree_for_final_review_audit(tmp_path: Path) -> None:
     assert result["squash_commit"] != reviewed_head
 
 
-@patch("nodeflow.workflows.dev_process.flow_actions.run_review_stage")
-def test_final_review_records_reviewed_tree(mock_review, tmp_path: Path) -> None:
+@patch("nodeflow.workflows.dev_process.flow_actions.run_subpipe")
+def test_final_review_records_reviewed_tree(mock_run_subpipe, tmp_path: Path) -> None:
     from nodeflow.workflows.dev_process.flow_actions import _run_final_review
 
     repo = _init_repo(tmp_path / "repo")
@@ -85,10 +86,18 @@ def test_final_review_records_reviewed_tree(mock_review, tmp_path: Path) -> None
         check=True,
     ).stdout.strip()
 
-    mock_review.return_value = {
-        "review_result": {"blocking_findings": []},
-        "status": "completed",
-    }
+    def _fake_run_subpipe(spec_path: str, ctx: dict[str, Any], *, workspace: str) -> dict[str, Any]:
+        del workspace
+        if spec_path.endswith("final_review.json"):
+            body = ctx["body"]
+            body.setdefault("stages", {})["review"] = {
+                "review_result": {"blocking_findings": []},
+                "status": "completed",
+            }
+            ctx["body"] = body
+        return ctx
+
+    mock_run_subpipe.side_effect = _fake_run_subpipe
 
     artifact = tmp_path / "artifacts"
     artifact.mkdir()
@@ -131,7 +140,8 @@ def test_final_review_records_reviewed_tree(mock_review, tmp_path: Path) -> None
         "stages": {},
     }
 
-    _run_final_review(body, run_id="r1")
-    final_rev = body["stages"]["final_review"]
+    out = _run_final_review(body, run_id="r1")
+    checkpoint_body = load_flow_checkpoint(str(out["flow_checkpoint_path"]))
+    final_rev = checkpoint_body["stages"]["final_review"]
     assert final_rev["reviewed_branch_head"] == head
     assert final_rev["reviewed_tree"] == expected_tree
